@@ -1,0 +1,920 @@
+{
+    "player1": {
+        "playerId": {
+            "_id": "6960cf65388b2061217a3a14",
+            "name": "Prashant Kumawat",
+            "profileImage": null
+        },
+        "playerName": "Prashant Kumawat"
+    },
+    "player2": {
+        "playerId": {
+            "_id": "6960e7be388b2061217a40e2",
+            "name": "Amit Patil",
+            "profileImage": null
+        },
+        "playerName": "Amit Patil"
+    },
+    "matchFormat": {
+        "serviceRule": {
+            "pointsPerService": 2,
+            "deuceServicePoints": 1
+        },
+        "setsToWin": 2,
+        "maxSets": 3,
+        "gamesToWin": 3,
+        "maxGames": 5,
+        "pointsToWinGame": 11,
+        "marginToWin": 2,
+        "deuceRule": true,
+        "maxPointsPerGame": null
+    },
+    "liveScore": {
+        "player1Points": 0,
+        "player2Points": 0
+    },
+    "result": {
+        "winner": {
+            "playerId": {
+                "_id": "6960cf65388b2061217a3a14",
+                "name": "Prashant Kumawat",
+                "profileImage": null
+            },
+            "playerName": "Prashant Kumawat"
+        },
+        "finalScore": {
+            "player1Sets": 2,
+            "player2Sets": 0
+        },
+        "matchDuration": 4,
+        "completedAt": "2026-01-27T10:24:49.701Z"
+    },
+    "_id": "697891815f4dd6eac2e1d269",
+    "tournamentId": "6960c80b49fae40c8a937651",
+    "mode": "direct-knockout",
+    "matchId": "DK-6960c80b49fae40c8a937651-R2-M3",
+    "round": "quarter-final",
+    "roundNumber": 2,
+    "matchNumber": 3,
+    "courtNumber": "5",
+    "matchStartTime": "2026-04-12T13:20:00.000Z",
+    "estimatedDuration": 45,
+    "status": "COMPLETED",
+    "currentSet": 2,
+    "currentGame": 3,
+    "nextMatchId": null,
+    "bracketPosition": "R1M3",
+    "sets": [
+        {
+            "winner": {
+                "playerId": "6960cf65388b2061217a3a14",
+                "playerName": "Prashant Kumawat"
+            },
+            "setNumber": 1,
+            "status": "COMPLETED",
+            "games": [
+                {
+                    "finalScore": {
+                        "player1": 11,
+                        "player2": 2
+                    },
+                    "winner": {
+                        "playerId": "6960cf65388b2061217a3a14",
+                        "playerName": "Prashant Kumawat"
+                    },
+                    "gameNumber": 1,
+                    "status": "COMPLETED",
+                    "startTime": "2026-01-27T10:24:33.837Z",
+                    "endTime": "2026-01-27T10:24:33.858Z",
+                    "_id": "697892615f4dd6eac2e1e855"
+                },
+                {
+                    "finalScore": {
+                        "player1": 11,
+                        "player2": 3
+                    },
+                    "winner": {
+                        "playerId": "6960cf65388b2061217a3a14",
+                        "playerName": "Prashant Kumawat"
+                    },
+                    "gameNumber": 2,
+                    "status": "COMPLETED",
+                    "startTime": "2026-01-27T10:24:33.859Z",
+                    "endTime": "2026-01-27T10:24:34.462Z",
+                    "_id": "697892615f4dd6eac2e1e857"
+                },
+                {
+                    "finalScore": {
+                        "player1": 11,
+                        "player2": 6
+                    },
+                    "winner": {
+                        "playerId": "6960cf65388b2061217a3a14",
+                        "playerName": "Prashant Kumawat"
+                    },
+                    "gameNumber": 3,
+                    "status": "COMPLETED",
+                    "startTime": "2026-01-27T10:24:34.463Z",
+                    "endTime": "2026-01-27T10:24:35.060Z",
+                    "_id": "697892625f4dd6eac2e1e866"
+                }
+            ],
+            "_id": "697892615f4dd6eac2e1e854"
+        },
+        {
+            "winner": {
+                "playerId": "6960cf65388b2061217a3a14",
+                "playerName": "Prashant Kumawat"
+            },
+            "setNumber": 2,
+            "status": "COMPLETED",
+            "games": [
+                {
+                    "finalScore": {
+                        "player1": 11,
+                        "player2": 6
+                    },
+                    "winner": {
+                        "playerId": "6960cf65388b2061217a3a14",
+                        "playerName": "Prashant Kumawat"
+                    },
+                    "gameNumber": 1,
+                    "status": "COMPLETED",
+                    "startTime": "2026-01-27T10:24:35.061Z",
+                    "endTime": "2026-01-27T10:24:48.241Z",
+                    "_id": "697892635f4dd6eac2e1e879"
+                },
+                {
+                    "finalScore": {
+                        "player1": 11,
+                        "player2": 6
+                    },
+                    "winner": {
+                        "playerId": "6960cf65388b2061217a3a14",
+                        "playerName": "Prashant Kumawat"
+                    },
+                    "gameNumber": 2,
+                    "status": "COMPLETED",
+                    "startTime": "2026-01-27T10:24:48.242Z",
+                    "endTime": "2026-01-27T10:24:49.013Z",
+                    "_id": "697892705f4dd6eac2e1e8a4"
+                },
+                {
+                    "finalScore": {
+                        "player1": 11,
+                        "player2": 4
+                    },
+                    "winner": {
+                        "playerId": "6960cf65388b2061217a3a14",
+                        "playerName": "Prashant Kumawat"
+                    },
+                    "gameNumber": 3,
+                    "status": "COMPLETED",
+                    "startTime": "2026-01-27T10:24:49.014Z",
+                    "endTime": "2026-01-27T10:24:49.699Z",
+                    "_id": "697892715f4dd6eac2e1e8bf"
+                }
+            ],
+            "_id": "697892635f4dd6eac2e1e878"
+        }
+    ],
+    "__v": 1,
+    "createdAt": "2026-01-27T10:20:49.377Z",
+    "updatedAt": "2026-01-27T10:24:50.383Z"
+}
+ LOG  Match 12: {
+    "player1": {
+        "playerId": {
+            "_id": "6960cd56388b2061217a3993",
+            "name": "Vinayak Joshi",
+            "profileImage": null
+        },
+        "playerName": "Vinayak Joshi"
+    },
+    "player2": {
+        "playerId": {
+            "_id": "6960dcc6388b2061217a3ece",
+            "name": "Sourabh Bandiwadekar",
+            "profileImage": null
+        },
+        "playerName": "Sourabh Bandiwadekar"
+    },
+    "matchFormat": {
+        "serviceRule": {
+            "pointsPerService": 2,
+            "deuceServicePoints": 1
+        },
+        "setsToWin": 2,
+        "maxSets": 3,
+        "gamesToWin": 3,
+        "maxGames": 5,
+        "pointsToWinGame": 11,
+        "marginToWin": 2,
+        "deuceRule": true,
+        "maxPointsPerGame": null
+    },
+    "liveScore": {
+        "player1Points": 0,
+        "player2Points": 0
+    },
+    "result": {
+        "winner": {
+            "playerId": {
+                "_id": "6960cd56388b2061217a3993",
+                "name": "Vinayak Joshi",
+                "profileImage": null
+            },
+            "playerName": "Vinayak Joshi"
+        },
+        "finalScore": {
+            "player1Sets": 2,
+            "player2Sets": 0
+        },
+        "matchDuration": 4,
+        "completedAt": "2026-01-27T10:25:29.430Z"
+    },
+    "_id": "697891815f4dd6eac2e1d26a",
+    "tournamentId": "6960c80b49fae40c8a937651",
+    "mode": "direct-knockout",
+    "matchId": "DK-6960c80b49fae40c8a937651-R2-M4",
+    "round": "quarter-final",
+    "roundNumber": 2,
+    "matchNumber": 4,
+    "courtNumber": "5",
+    "matchStartTime": "2026-04-12T13:50:00.000Z",
+    "estimatedDuration": 45,
+    "status": "COMPLETED",
+    "currentSet": 2,
+    "currentGame": 3,
+    "nextMatchId": null,
+    "bracketPosition": "R1M4",
+    "sets": [
+        {
+            "winner": {
+                "playerId": "6960cd56388b2061217a3993",
+                "playerName": "Vinayak Joshi"
+            },
+            "setNumber": 1,
+            "status": "COMPLETED",
+            "games": [
+                {
+                    "finalScore": {
+                        "player1": 11,
+                        "player2": 4
+                    },
+                    "winner": {
+                        "playerId": "6960cd56388b2061217a3993",
+                        "playerName": "Vinayak Joshi"
+                    },
+                    "gameNumber": 1,
+                    "status": "COMPLETED",
+                    "startTime": "2026-01-27T10:25:13.474Z",
+                    "endTime": "2026-01-27T10:25:13.498Z",
+                    "_id": "697892895f4dd6eac2e1f1b7"
+                },
+                {
+                    "finalScore": {
+                        "player1": 11,
+                        "player2": 3
+                    },
+                    "winner": {
+                        "playerId": "6960cd56388b2061217a3993",
+                        "playerName": "Vinayak Joshi"
+                    },
+                    "gameNumber": 2,
+                    "status": "COMPLETED",
+                    "startTime": "2026-01-27T10:25:13.499Z",
+                    "endTime": "2026-01-27T10:25:14.358Z",
+                    "_id": "697892895f4dd6eac2e1f1b9"
+                },
+                {
+                    "finalScore": {
+                        "player1": 11,
+                        "player2": 6
+                    },
+                    "winner": {
+                        "playerId": "6960cd56388b2061217a3993",
+                        "playerName": "Vinayak Joshi"
+                    },
+                    "gameNumber": 3,
+                    "status": "COMPLETED",
+                    "startTime": "2026-01-27T10:25:14.359Z",
+                    "endTime": "2026-01-27T10:25:14.970Z",
+                    "_id": "6978928a5f4dd6eac2e1f1c8"
+                }
+            ],
+            "_id": "697892895f4dd6eac2e1f1b6"
+        },
+        {
+            "winner": {
+                "playerId": "6960cd56388b2061217a3993",
+                "playerName": "Vinayak Joshi"
+            },
+            "setNumber": 2,
+            "status": "COMPLETED",
+            "games": [
+                {
+                    "finalScore": {
+                        "player1": 11,
+                        "player2": 6
+                    },
+                    "winner": {
+                        "playerId": "6960cd56388b2061217a3993",
+                        "playerName": "Vinayak Joshi"
+                    },
+                    "gameNumber": 1,
+                    "status": "COMPLETED",
+                    "startTime": "2026-01-27T10:25:14.971Z",
+                    "endTime": "2026-01-27T10:25:28.201Z",
+                    "_id": "6978928a5f4dd6eac2e1f1db"
+                },
+                {
+                    "finalScore": {
+                        "player1": 11,
+                        "player2": 4
+                    },
+                    "winner": {
+                        "playerId": "6960cd56388b2061217a3993",
+                        "playerName": "Vinayak Joshi"
+                    },
+                    "gameNumber": 2,
+                    "status": "COMPLETED",
+                    "startTime": "2026-01-27T10:25:28.202Z",
+                    "endTime": "2026-01-27T10:25:28.817Z",
+                    "_id": "697892985f4dd6eac2e1f206"
+                },
+                {
+                    "finalScore": {
+                        "player1": 11,
+                        "player2": 3
+                    },
+                    "winner": {
+                        "playerId": "6960cd56388b2061217a3993",
+                        "playerName": "Vinayak Joshi"
+                    },
+                    "gameNumber": 3,
+                    "status": "COMPLETED",
+                    "startTime": "2026-01-27T10:25:28.818Z",
+                    "endTime": "2026-01-27T10:25:29.429Z",
+                    "_id": "697892985f4dd6eac2e1f221"
+                }
+            ],
+            "_id": "6978928a5f4dd6eac2e1f1da"
+        }
+    ],
+    "__v": 1,
+    "createdAt": "2026-01-27T10:20:49.378Z",
+    "updatedAt": "2026-01-27T10:25:30.088Z"
+}
+ LOG  Match 13: {
+    "player1": {
+        "playerId": {
+            "_id": "6960e591388b2061217a4041",
+            "name": "Pushkar Parale",
+            "profileImage": null
+        },
+        "playerName": "Pushkar Parale"
+    },
+    "player2": {
+        "playerId": {
+            "_id": "6960cf65388b2061217a3a14",
+            "name": "Prashant Kumawat",
+            "profileImage": null
+        },
+        "playerName": "Prashant Kumawat"
+    },
+    "matchFormat": {
+        "serviceRule": {
+            "pointsPerService": 2,
+            "deuceServicePoints": 1
+        },
+        "setsToWin": 2,
+        "maxSets": 3,
+        "gamesToWin": 3,
+        "maxGames": 5,
+        "pointsToWinGame": 11,
+        "marginToWin": 2,
+        "deuceRule": true,
+        "maxPointsPerGame": null
+    },
+    "liveScore": {
+        "player1Points": 0,
+        "player2Points": 0
+    },
+    "result": {
+        "winner": {
+            "playerId": {
+                "_id": "6960e591388b2061217a4041",
+                "name": "Pushkar Parale",
+                "profileImage": null
+            },
+            "playerName": "Pushkar Parale"
+        },
+        "finalScore": {
+            "player1Sets": 2,
+            "player2Sets": 0
+        },
+        "matchDuration": 0,
+        "completedAt": "2026-01-27T10:26:42.109Z"
+    },
+    "_id": "697892c25f4dd6eac2e1fb2b",
+    "tournamentId": "6960c80b49fae40c8a937651",
+    "mode": "direct-knockout",
+    "matchId": "DK-6960c80b49fae40c8a937651-R3-M1",
+    "round": "semi-final",
+    "roundNumber": 3,
+    "matchNumber": 1,
+    "courtNumber": "4",
+    "matchStartTime": "2026-05-22T06:30:00.000Z",
+    "estimatedDuration": 45,
+    "status": "COMPLETED",
+    "currentSet": 2,
+    "currentGame": 3,
+    "nextMatchId": null,
+    "bracketPosition": "R1M1",
+    "sets": [
+        {
+            "winner": {
+                "playerId": "6960e591388b2061217a4041",
+                "playerName": "Pushkar Parale"
+            },
+            "setNumber": 1,
+            "status": "COMPLETED",
+            "games": [
+                {
+                    "finalScore": {
+                        "player1": 11,
+                        "player2": 5
+                    },
+                    "winner": {
+                        "playerId": "6960e591388b2061217a4041",
+                        "playerName": "Pushkar Parale"
+                    },
+                    "gameNumber": 1,
+                    "status": "COMPLETED",
+                    "startTime": "2026-01-27T10:26:31.062Z",
+                    "endTime": "2026-01-27T10:26:31.083Z",
+                    "_id": "697892d75f4dd6eac2e1fe7f"
+                },
+                {
+                    "finalScore": {
+                        "player1": 11,
+                        "player2": 3
+                    },
+                    "winner": {
+                        "playerId": "6960e591388b2061217a4041",
+                        "playerName": "Pushkar Parale"
+                    },
+                    "gameNumber": 2,
+                    "status": "COMPLETED",
+                    "startTime": "2026-01-27T10:26:31.084Z",
+                    "endTime": "2026-01-27T10:26:31.731Z",
+                    "_id": "697892d75f4dd6eac2e1fe81"
+                },
+                {
+                    "finalScore": {
+                        "player1": 11,
+                        "player2": 4
+                    },
+                    "winner": {
+                        "playerId": "6960e591388b2061217a4041",
+                        "playerName": "Pushkar Parale"
+                    },
+                    "gameNumber": 3,
+                    "status": "COMPLETED",
+                    "startTime": "2026-01-27T10:26:31.732Z",
+                    "endTime": "2026-01-27T10:26:32.376Z",
+                    "_id": "697892d75f4dd6eac2e1fe90"
+                }
+            ],
+            "_id": "697892d75f4dd6eac2e1fe7e"
+        },
+        {
+            "winner": {
+                "playerId": "6960e591388b2061217a4041",
+                "playerName": "Pushkar Parale"
+            },
+            "setNumber": 2,
+            "status": "COMPLETED",
+            "games": [
+                {
+                    "finalScore": {
+                        "player1": 11,
+                        "player2": 4
+                    },
+                    "winner": {
+                        "playerId": "6960e591388b2061217a4041",
+                        "playerName": "Pushkar Parale"
+                    },
+                    "gameNumber": 1,
+                    "status": "COMPLETED",
+                    "startTime": "2026-01-27T10:26:32.377Z",
+                    "endTime": "2026-01-27T10:26:40.804Z",
+                    "_id": "697892d85f4dd6eac2e1fea3"
+                },
+                {
+                    "finalScore": {
+                        "player1": 11,
+                        "player2": 3
+                    },
+                    "winner": {
+                        "playerId": "6960e591388b2061217a4041",
+                        "playerName": "Pushkar Parale"
+                    },
+                    "gameNumber": 2,
+                    "status": "COMPLETED",
+                    "startTime": "2026-01-27T10:26:40.804Z",
+                    "endTime": "2026-01-27T10:26:41.453Z",
+                    "_id": "697892e05f4dd6eac2e1fece"
+                },
+                {
+                    "finalScore": {
+                        "player1": 11,
+                        "player2": 2
+                    },
+                    "winner": {
+                        "playerId": "6960e591388b2061217a4041",
+                        "playerName": "Pushkar Parale"
+                    },
+                    "gameNumber": 3,
+                    "status": "COMPLETED",
+                    "startTime": "2026-01-27T10:26:41.454Z",
+                    "endTime": "2026-01-27T10:26:42.107Z",
+                    "_id": "697892e15f4dd6eac2e1fee9"
+                }
+            ],
+            "_id": "697892d85f4dd6eac2e1fea2"
+        }
+    ],
+    "__v": 1,
+    "createdAt": "2026-01-27T10:26:10.474Z",
+    "updatedAt": "2026-01-27T10:26:42.754Z"
+}
+ LOG  Match 14: {
+    "player1": {
+        "playerId": {
+            "_id": "6960cbb2388b2061217a394f",
+            "name": "Durgesh Shelar",
+            "profileImage": null
+        },
+        "playerName": "Durgesh Shelar"
+    },
+    "player2": {
+        "playerId": {
+            "_id": "6960cd56388b2061217a3993",
+            "name": "Vinayak Joshi",
+            "profileImage": null
+        },
+        "playerName": "Vinayak Joshi"
+    },
+    "matchFormat": {
+        "serviceRule": {
+            "pointsPerService": 2,
+            "deuceServicePoints": 1
+        },
+        "setsToWin": 2,
+        "maxSets": 3,
+        "gamesToWin": 3,
+        "maxGames": 5,
+        "pointsToWinGame": 11,
+        "marginToWin": 2,
+        "deuceRule": true,
+        "maxPointsPerGame": null
+    },
+    "liveScore": {
+        "player1Points": 0,
+        "player2Points": 0
+    },
+    "result": {
+        "winner": {
+            "playerId": {
+                "_id": "6960cbb2388b2061217a394f",
+                "name": "Durgesh Shelar",
+                "profileImage": null
+            },
+            "playerName": "Durgesh Shelar"
+        },
+        "finalScore": {
+            "player1Sets": 2,
+            "player2Sets": 0
+        },
+        "matchDuration": 1,
+        "completedAt": "2026-01-27T10:27:14.087Z"
+    },
+    "_id": "697892c25f4dd6eac2e1fb2c",
+    "tournamentId": "6960c80b49fae40c8a937651",
+    "mode": "direct-knockout",
+    "matchId": "DK-6960c80b49fae40c8a937651-R3-M2",
+    "round": "semi-final",
+    "roundNumber": 3,
+    "matchNumber": 2,
+    "courtNumber": "4",
+    "matchStartTime": "2026-05-22T07:00:00.000Z",
+    "estimatedDuration": 45,
+    "status": "COMPLETED",
+    "currentSet": 2,
+    "currentGame": 3,
+    "nextMatchId": null,
+    "bracketPosition": "R1M2",
+    "sets": [
+        {
+            "winner": {
+                "playerId": "6960cbb2388b2061217a394f",
+                "playerName": "Durgesh Shelar"
+            },
+            "setNumber": 1,
+            "status": "COMPLETED",
+            "games": [
+                {
+                    "finalScore": {
+                        "player1": 11,
+                        "player2": 2
+                    },
+                    "winner": {
+                        "playerId": "6960cbb2388b2061217a394f",
+                        "playerName": "Durgesh Shelar"
+                    },
+                    "gameNumber": 1,
+                    "status": "COMPLETED",
+                    "startTime": "2026-01-27T10:27:02.776Z",
+                    "endTime": "2026-01-27T10:27:02.807Z",
+                    "_id": "697892f65f4dd6eac2e20821"
+                },
+                {
+                    "finalScore": {
+                        "player1": 11,
+                        "player2": 6
+                    },
+                    "winner": {
+                        "playerId": "6960cbb2388b2061217a394f",
+                        "playerName": "Durgesh Shelar"
+                    },
+                    "gameNumber": 2,
+                    "status": "COMPLETED",
+                    "startTime": "2026-01-27T10:27:02.808Z",
+                    "endTime": "2026-01-27T10:27:03.416Z",
+                    "_id": "697892f65f4dd6eac2e20823"
+                },
+                {
+                    "finalScore": {
+                        "player1": 11,
+                        "player2": 3
+                    },
+                    "winner": {
+                        "playerId": "6960cbb2388b2061217a394f",
+                        "playerName": "Durgesh Shelar"
+                    },
+                    "gameNumber": 3,
+                    "status": "COMPLETED",
+                    "startTime": "2026-01-27T10:27:03.417Z",
+                    "endTime": "2026-01-27T10:27:04.093Z",
+                    "_id": "697892f75f4dd6eac2e20832"
+                }
+            ],
+            "_id": "697892f65f4dd6eac2e20820"
+        },
+        {
+            "winner": {
+                "playerId": "6960cbb2388b2061217a394f",
+                "playerName": "Durgesh Shelar"
+            },
+            "setNumber": 2,
+            "status": "COMPLETED",
+            "games": [
+                {
+                    "finalScore": {
+                        "player1": 11,
+                        "player2": 4
+                    },
+                    "winner": {
+                        "playerId": "6960cbb2388b2061217a394f",
+                        "playerName": "Durgesh Shelar"
+                    },
+                    "gameNumber": 1,
+                    "status": "COMPLETED",
+                    "startTime": "2026-01-27T10:27:04.094Z",
+                    "endTime": "2026-01-27T10:27:12.815Z",
+                    "_id": "697892f85f4dd6eac2e20845"
+                },
+                {
+                    "finalScore": {
+                        "player1": 11,
+                        "player2": 5
+                    },
+                    "winner": {
+                        "playerId": "6960cbb2388b2061217a394f",
+                        "playerName": "Durgesh Shelar"
+                    },
+                    "gameNumber": 2,
+                    "status": "COMPLETED",
+                    "startTime": "2026-01-27T10:27:12.816Z",
+                    "endTime": "2026-01-27T10:27:13.420Z",
+                    "_id": "697893005f4dd6eac2e20870"
+                },
+                {
+                    "finalScore": {
+                        "player1": 11,
+                        "player2": 3
+                    },
+                    "winner": {
+                        "playerId": "6960cbb2388b2061217a394f",
+                        "playerName": "Durgesh Shelar"
+                    },
+                    "gameNumber": 3,
+                    "status": "COMPLETED",
+                    "startTime": "2026-01-27T10:27:13.421Z",
+                    "endTime": "2026-01-27T10:27:14.086Z",
+                    "_id": "697893015f4dd6eac2e2088b"
+                }
+            ],
+            "_id": "697892f85f4dd6eac2e20844"
+        }
+    ],
+    "__v": 1,
+    "createdAt": "2026-01-27T10:26:10.474Z",
+    "updatedAt": "2026-01-27T10:27:14.740Z"
+}
+ LOG  Match 15: {
+    "player1": {
+        "playerId": {
+            "_id": "6960e591388b2061217a4041",
+            "name": "Pushkar Parale",
+            "profileImage": null
+        },
+        "playerName": "Pushkar Parale"
+    },
+    "player2": {
+        "playerId": {
+            "_id": "6960cbb2388b2061217a394f",
+            "name": "Durgesh Shelar",
+            "profileImage": null
+        },
+        "playerName": "Durgesh Shelar"
+    },
+    "matchFormat": {
+        "serviceRule": {
+            "pointsPerService": 2,
+            "deuceServicePoints": 1
+        },
+        "setsToWin": 2,
+        "maxSets": 3,
+        "gamesToWin": 3,
+        "maxGames": 5,
+        "pointsToWinGame": 11,
+        "marginToWin": 2,
+        "deuceRule": true,
+        "maxPointsPerGame": null
+    },
+    "liveScore": {
+        "player1Points": 0,
+        "player2Points": 0
+    },
+    "result": {
+        "winner": {
+            "playerId": {
+                "_id": "6960e591388b2061217a4041",
+                "name": "Pushkar Parale",
+                "profileImage": null
+            },
+            "playerName": "Pushkar Parale"
+        },
+        "finalScore": {
+            "player1Sets": 2,
+            "player2Sets": 0
+        },
+        "matchDuration": 0,
+        "completedAt": "2026-01-27T10:28:25.622Z"
+    },
+    "_id": "6978932b5f4dd6eac2e211d5",
+    "tournamentId": "6960c80b49fae40c8a937651",
+    "mode": "direct-knockout",
+    "matchId": "DK-6960c80b49fae40c8a937651-R4-M1",
+    "round": "final",
+    "roundNumber": 4,
+    "matchNumber": 1,
+    "courtNumber": "6",
+    "matchStartTime": "2026-02-06T10:30:00.000Z",
+    "estimatedDuration": 45,
+    "status": "COMPLETED",
+    "currentSet": 2,
+    "currentGame": 3,
+    "nextMatchId": null,
+    "bracketPosition": "R1M1",
+    "sets": [
+        {
+            "winner": {
+                "playerId": "6960e591388b2061217a4041",
+                "playerName": "Pushkar Parale"
+            },
+            "setNumber": 1,
+            "status": "COMPLETED",
+            "games": [
+                {
+                    "finalScore": {
+                        "player1": 11,
+                        "player2": 6
+                    },
+                    "winner": {
+                        "playerId": "6960e591388b2061217a4041",
+                        "playerName": "Pushkar Parale"
+                    },
+                    "gameNumber": 1,
+                    "status": "COMPLETED",
+                    "startTime": "2026-01-27T10:28:14.332Z",
+                    "endTime": "2026-01-27T10:28:14.358Z",
+                    "_id": "6978933e5f4dd6eac2e21548"
+                },
+                {
+                    "finalScore": {
+                        "player1": 11,
+                        "player2": 5
+                    },
+                    "winner": {
+                        "playerId": "6960e591388b2061217a4041",
+                        "playerName": "Pushkar Parale"
+                    },
+                    "gameNumber": 2,
+                    "status": "COMPLETED",
+                    "startTime": "2026-01-27T10:28:14.358Z",
+                    "endTime": "2026-01-27T10:28:15.024Z",
+                    "_id": "6978933e5f4dd6eac2e2154a"
+                },
+                {
+                    "finalScore": {
+                        "player1": 11,
+                        "player2": 6
+                    },
+                    "winner": {
+                        "playerId": "6960e591388b2061217a4041",
+                        "playerName": "Pushkar Parale"
+                    },
+                    "gameNumber": 3,
+                    "status": "COMPLETED",
+                    "startTime": "2026-01-27T10:28:15.025Z",
+                    "endTime": "2026-01-27T10:28:15.676Z",
+                    "_id": "6978933f5f4dd6eac2e21559"
+                }
+            ],
+            "_id": "6978933e5f4dd6eac2e21547"
+        },
+        {
+            "winner": {
+                "playerId": "6960e591388b2061217a4041",
+                "playerName": "Pushkar Parale"
+            },
+            "setNumber": 2,
+            "status": "COMPLETED",
+            "games": [
+                {
+                    "finalScore": {
+                        "player1": 11,
+                        "player2": 4
+                    },
+                    "winner": {
+                        "playerId": "6960e591388b2061217a4041",
+                        "playerName": "Pushkar Parale"
+                    },
+                    "gameNumber": 1,
+                    "status": "COMPLETED",
+                    "startTime": "2026-01-27T10:28:15.677Z",
+                    "endTime": "2026-01-27T10:28:24.332Z",
+                    "_id": "6978933f5f4dd6eac2e2156c"
+                },
+                {
+                    "finalScore": {
+                        "player1": 11,
+                        "player2": 2
+                    },
+                    "winner": {
+                        "playerId": "6960e591388b2061217a4041",
+                        "playerName": "Pushkar Parale"
+                    },
+                    "gameNumber": 2,
+                    "status": "COMPLETED",
+                    "startTime": "2026-01-27T10:28:24.333Z",
+                    "endTime": "2026-01-27T10:28:24.968Z",
+                    "_id": "697893485f4dd6eac2e21597"
+                },
+                {
+                    "finalScore": {
+                        "player1": 11,
+                        "player2": 6
+                    },
+                    "winner": {
+                        "playerId": "6960e591388b2061217a4041",
+                        "playerName": "Pushkar Parale"
+                    },
+                    "gameNumber": 3,
+                    "status": "COMPLETED",
+                    "startTime": "2026-01-27T10:28:24.968Z",
+                    "endTime": "2026-01-27T10:28:25.622Z",
+                    "_id": "697893485f4dd6eac2e215b2"
+                }
+            ],
+            "_id": "6978933f5f4dd6eac2e2156b"
+        }
+    ],
+    "__v": 1,
+    "createdAt": "2026-01-27T10:27:55.461Z",
+    "updatedAt": "2026-01-27T10:28:26.276Z"
+}
