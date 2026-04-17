@@ -26,7 +26,7 @@ const SportsModal = ({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade">
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.overlay}>
         <TouchableOpacity style={styles.closeButton} onPress={onClose}>
           <MaterialIcons name="close" size={24} color="#000" />

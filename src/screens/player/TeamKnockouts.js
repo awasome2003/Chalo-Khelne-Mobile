@@ -37,8 +37,20 @@ const TeamKnockouts = ({ route }) => {
   const [showMatchModal, setShowMatchModal] = useState(false);
   const [showScorecard, setShowScorecard] = useState(false);
 
+  // Captain's Pick States
+  const [showCaptainPick, setShowCaptainPick] = useState(false);
+  const [pickSetNumber, setPickSetNumber] = useState(null);
+  const [pickOptions, setPickOptions] = useState([]);
+  const [pickSubmitting, setPickSubmitting] = useState(false);
+
   // Match Metadata
   const [totalRounds, setTotalRounds] = useState(0);
+
+  // Round Robin Selection
+  const [selectedTeamIds, setSelectedTeamIds] = useState([]);
+  const [selectAllMode, setSelectAllMode] = useState(false);
+  const [rrGenerating, setRrGenerating] = useState(false);
+  const [rrGenerated, setRrGenerated] = useState(false);
 
   // =====================================================
   // LIFECYCLE & DATA FETCHING
@@ -161,36 +173,192 @@ const TeamKnockouts = ({ route }) => {
   };
 
   // =====================================================
+  // ROUND ROBIN HANDLERS
+  // =====================================================
+  const toggleTeamSelection = (teamId) => {
+    setSelectedTeamIds((prev) =>
+      prev.includes(teamId) ? prev.filter((id) => id !== teamId) : [...prev, teamId]
+    );
+  };
+
+  const handleSelectAll = () => {
+    if (selectedTeamIds.length === teams.length) {
+      setSelectedTeamIds([]);
+      setSelectAllMode(false);
+    } else {
+      setSelectedTeamIds(teams.map((t) => t._id));
+      setSelectAllMode(true);
+    }
+  };
+
+  const handleGenerateRoundRobin = async () => {
+    if (selectedTeamIds.length < 2) {
+      Alert.alert("Error", "Select at least 2 teams for round robin.");
+      return;
+    }
+    const totalMatches = (selectedTeamIds.length * (selectedTeamIds.length - 1)) / 2;
+    Alert.alert(
+      "Generate Round Robin",
+      `This will create ${totalMatches} matches where every selected team plays every other team.\n\nContinue?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Generate",
+          onPress: async () => {
+            setRrGenerating(true);
+            try {
+              const res = await fetch(
+                `${tournamentConfig.BASE_URL}/tournaments/team-knockout/round-robin/generate`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    tournamentId,
+                    scheduleDetails: {
+                      matchStartTime: new Date().toISOString(),
+                      matchInterval: "30",
+                      courtNumber: "1",
+                    },
+                    tournamentType: "Singles",
+                    setCount: 3,
+                  }),
+                }
+              );
+              const data = await res.json();
+              if (data.success) {
+                Alert.alert("Success", data.message);
+                setRrGenerated(true);
+                setSelectedTeamIds([]);
+                setSelectAllMode(false);
+                fetchAllData();
+              } else {
+                Alert.alert("Error", data.message || "Failed to generate");
+              }
+            } catch (err) {
+              Alert.alert("Error", "Failed to generate round robin matches");
+            } finally {
+              setRrGenerating(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // =====================================================
+  // CAPTAIN'S PICK — Doubles Pairing Selection
+  // =====================================================
+
+  // Check if a set needs captain's pick (doubles set without selection)
+  const setNeedsPick = (set) => {
+    if (!set) return false;
+    const isDoubles = (set.type || "").toLowerCase().includes("doubles") || (set.type || "").toLowerCase().includes("dbl");
+    const notSelected = !set.selectionId;
+    const notCompleted = set.status !== "COMPLETED";
+    return isDoubles && notSelected && notCompleted;
+  };
+
+  // Get doubles options for a set from the format config
+  const getPickOptionsForSet = (match, setNumber) => {
+    // Doubles pairing options based on format
+    // These map to the backend's teamKnockoutFormats config
+    const options = [
+      { id: "ab_xz", label: "A + B  vs  X + Z", homeLabel: "Captain + Player 1", awayLabel: "Captain + Player 2" },
+      { id: "bc_yx", label: "B + C  vs  Y + X", homeLabel: "Player 1 + Player 2", awayLabel: "Player 1 + Captain" },
+      { id: "ac_xy", label: "A + C  vs  X + Y", homeLabel: "Captain + Player 2", awayLabel: "Captain + Player 1" },
+      { id: "ab_xy", label: "A + B  vs  X + Y", homeLabel: "Captain + Player 1", awayLabel: "Captain + Player 1" },
+      { id: "bc_yz", label: "B + C  vs  Y + Z", homeLabel: "Player 1 + Player 2", awayLabel: "Player 1 + Player 2" },
+      { id: "ac_xz", label: "A + C  vs  X + Z", homeLabel: "Captain + Player 2", awayLabel: "Captain + Player 2" },
+    ];
+    return options;
+  };
+
+  const openCaptainPick = (setNumber) => {
+    const options = getPickOptionsForSet(selectedMatch, setNumber);
+    setPickSetNumber(setNumber);
+    setPickOptions(options);
+    setShowCaptainPick(true);
+  };
+
+  const submitCaptainPick = async (selectionId) => {
+    if (!selectedMatch?._id || !pickSetNumber) return;
+    setPickSubmitting(true);
+    try {
+      const url = tournamentConfig.ENDPOINTS.TEAM_KNOCKOUT.SELECT_PAIRING(selectedMatch._id);
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ setNumber: pickSetNumber, selectionId }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        Alert.alert("Pairing Selected", `Doubles pairing set for Set ${pickSetNumber}`);
+        setShowCaptainPick(false);
+        setPickSetNumber(null);
+        // Refresh match data
+        await fetchMatches();
+        // Update selectedMatch with fresh data
+        const freshMatch = matches.find((m) => m._id === selectedMatch._id);
+        if (freshMatch) setSelectedMatch(freshMatch);
+      } else {
+        Alert.alert("Error", data.message || "Failed to set pairing");
+      }
+    } catch (err) {
+      Alert.alert("Error", "Network error. Please try again.");
+    } finally {
+      setPickSubmitting(false);
+    }
+  };
+
+  // =====================================================
   // TEAM CARD COMPONENT
   // =====================================================
-  const TeamCard = ({ team, index }) => (
-    <TouchableOpacity
-      style={styles.teamCard}
-      onPress={() => {
-        setSelectedTeam(team);
-        setShowTeamModal(true);
-      }}
-      activeOpacity={0.7}
-    >
-      <View style={styles.teamCardHeader}>
-        <View style={styles.teamNumber}>
-          <Text style={styles.teamNumberText}>{index + 1}</Text>
-        </View>
-        <View style={styles.teamInfo}>
-          <Text style={styles.teamName} numberOfLines={1}>
-            {team.team?.name || "Unknown Team"}
-          </Text>
-          <View style={styles.teamMetaRow}>
-            <MaterialIcons name="person" size={14} color="#666" />
-            <Text style={styles.teamCaptain} numberOfLines={1}>
-              {team.team?.captain?.name || team.team?.captain || "Unknown"}
-            </Text>
+  const TeamCard = ({ team, index }) => {
+    const isSelected = selectedTeamIds.includes(team._id);
+    return (
+      <TouchableOpacity
+        style={[styles.teamCard, isSelected && styles.teamCardSelected]}
+        onPress={() => {
+          if (selectAllMode || selectedTeamIds.length > 0) {
+            toggleTeamSelection(team._id);
+          } else {
+            setSelectedTeam(team);
+            setShowTeamModal(true);
+          }
+        }}
+        onLongPress={() => {
+          toggleTeamSelection(team._id);
+        }}
+        activeOpacity={0.7}
+      >
+        <View style={styles.teamCardHeader}>
+          {/* Checkbox */}
+          <TouchableOpacity
+            onPress={() => toggleTeamSelection(team._id)}
+            style={[styles.teamCheckbox, isSelected && styles.teamCheckboxSelected]}
+          >
+            {isSelected && <MaterialIcons name="check" size={16} color="#fff" />}
+          </TouchableOpacity>
+
+          <View style={styles.teamNumber}>
+            <Text style={styles.teamNumberText}>{index + 1}</Text>
           </View>
+          <View style={styles.teamInfo}>
+            <Text style={styles.teamName} numberOfLines={1}>
+              {team.team?.name || team.teamName || "Unknown Team"}
+            </Text>
+            <View style={styles.teamMetaRow}>
+              <MaterialIcons name="person" size={14} color="#666" />
+              <Text style={styles.teamCaptain} numberOfLines={1}>
+                {team.team?.captain?.name || team.team?.captain || "Unknown"}
+              </Text>
+            </View>
+          </View>
+          <MaterialIcons name="chevron-right" size={24} color="#007AFF" />
         </View>
-        <MaterialIcons name="chevron-right" size={24} color="#007AFF" />
-      </View>
-    </TouchableOpacity>
-  );
+      </TouchableOpacity>
+    );
+  };
 
   // =====================================================
   // TEAM DETAILS MODAL
@@ -649,6 +817,37 @@ const TeamKnockouts = ({ route }) => {
                       </Text>
                     </View>
 
+                    {/* Captain's Pick Button — for doubles sets that need pairing selection */}
+                    {setNeedsPick(set) && (
+                      <TouchableOpacity
+                        style={{
+                          flexDirection: "row", alignItems: "center", justifyContent: "center",
+                          backgroundColor: "#7C3AED", borderRadius: 10, paddingVertical: 10, paddingHorizontal: 16,
+                          marginVertical: 8, gap: 8,
+                        }}
+                        onPress={() => openCaptainPick(set.setNumber)}
+                      >
+                        <MaterialIcons name="people" size={18} color="#FFF" />
+                        <Text style={{ color: "#FFF", fontWeight: "700", fontSize: 13 }}>
+                          Pick Doubles Pairing
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+
+                    {/* Show selected pairing if already picked */}
+                    {set.selectionId && (
+                      <View style={{
+                        flexDirection: "row", alignItems: "center", justifyContent: "center",
+                        backgroundColor: "#F3E8FF", borderRadius: 8, paddingVertical: 6, paddingHorizontal: 12,
+                        marginVertical: 4, gap: 6,
+                      }}>
+                        <MaterialIcons name="check-circle" size={14} color="#7C3AED" />
+                        <Text style={{ color: "#7C3AED", fontWeight: "600", fontSize: 11 }}>
+                          Pairing: {set.selectionId.replace(/_/g, " ").toUpperCase()}
+                        </Text>
+                      </View>
+                    )}
+
                     {/* Set Winner */}
                     {set.setWinner && (
                       <View style={styles.setWinnerRow}>
@@ -714,6 +913,103 @@ const TeamKnockouts = ({ route }) => {
   );
 
   // =====================================================
+  // CAPTAIN'S PICK MODAL
+  // =====================================================
+  const CaptainPickModal = () => (
+    <Modal
+      visible={showCaptainPick}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={() => setShowCaptainPick(false)}
+    >
+      <View style={{
+        flex: 1, backgroundColor: "rgba(0,0,0,0.6)",
+        justifyContent: "center", alignItems: "center", padding: 20,
+      }}>
+        <View style={{
+          backgroundColor: "#FFF", borderRadius: 20, width: "100%", maxWidth: 380,
+          overflow: "hidden",
+        }}>
+          {/* Header */}
+          <View style={{
+            backgroundColor: "#7C3AED", paddingVertical: 18, paddingHorizontal: 20,
+            flexDirection: "row", alignItems: "center", gap: 10,
+          }}>
+            <MaterialIcons name="people" size={22} color="#FFF" />
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: "#FFF", fontSize: 16, fontWeight: "800" }}>Captain's Pick</Text>
+              <Text style={{ color: "rgba(255,255,255,0.8)", fontSize: 11, marginTop: 2 }}>
+                Select doubles pairing for Set {pickSetNumber}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={() => setShowCaptainPick(false)}>
+              <MaterialIcons name="close" size={22} color="rgba(255,255,255,0.8)" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Teams Info */}
+          <View style={{
+            flexDirection: "row", justifyContent: "space-around", paddingVertical: 12,
+            backgroundColor: "#FAFAFA", borderBottomWidth: 1, borderBottomColor: "#F0F0F0",
+          }}>
+            <View style={{ alignItems: "center" }}>
+              <Text style={{ fontSize: 12, fontWeight: "800", color: "#1E40AF" }}>
+                {selectedMatch?.team1?.name || "Home"}
+              </Text>
+              <Text style={{ fontSize: 9, color: "#999", marginTop: 2 }}>HOME</Text>
+            </View>
+            <Text style={{ fontSize: 12, fontWeight: "800", color: "#CCC", alignSelf: "center" }}>VS</Text>
+            <View style={{ alignItems: "center" }}>
+              <Text style={{ fontSize: 12, fontWeight: "800", color: "#DC2626" }}>
+                {selectedMatch?.team2?.name || "Away"}
+              </Text>
+              <Text style={{ fontSize: 9, color: "#999", marginTop: 2 }}>AWAY</Text>
+            </View>
+          </View>
+
+          {/* Options */}
+          <ScrollView style={{ maxHeight: 300, paddingHorizontal: 16, paddingVertical: 12 }}>
+            {pickOptions.map((option) => (
+              <TouchableOpacity
+                key={option.id}
+                onPress={() => submitCaptainPick(option.id)}
+                disabled={pickSubmitting}
+                style={{
+                  borderWidth: 2, borderColor: "#E5E7EB", borderRadius: 14,
+                  padding: 14, marginBottom: 10, backgroundColor: "#FAFAFA",
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={{ fontSize: 15, fontWeight: "800", color: "#1F2937", textAlign: "center" }}>
+                  {option.label}
+                </Text>
+                <View style={{
+                  flexDirection: "row", justifyContent: "space-between", marginTop: 8,
+                }}>
+                  <Text style={{ fontSize: 10, color: "#6B7280" }}>
+                    Home: {option.homeLabel}
+                  </Text>
+                  <Text style={{ fontSize: 10, color: "#6B7280" }}>
+                    Away: {option.awayLabel}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* Loading indicator */}
+          {pickSubmitting && (
+            <View style={{ paddingVertical: 12, alignItems: "center" }}>
+              <ActivityIndicator size="small" color="#7C3AED" />
+              <Text style={{ fontSize: 11, color: "#7C3AED", marginTop: 4 }}>Setting pairing...</Text>
+            </View>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+
+  // =====================================================
   // MAIN RENDER
   // =====================================================
   if (loading) {
@@ -768,6 +1064,39 @@ const TeamKnockouts = ({ route }) => {
         {activeTab === "teams" ? (
           // TEAMS TAB
           <View style={styles.teamsContainer}>
+            {/* Select All + Generate Round Robin Header */}
+            {teams.length >= 2 && (
+              <View style={styles.rrHeader}>
+                <TouchableOpacity style={styles.selectAllBtn} onPress={handleSelectAll}>
+                  <View style={[styles.teamCheckbox, selectedTeamIds.length === teams.length && styles.teamCheckboxSelected]}>
+                    {selectedTeamIds.length === teams.length && <MaterialIcons name="check" size={14} color="#fff" />}
+                  </View>
+                  <Text style={styles.selectAllText}>
+                    {selectedTeamIds.length === teams.length ? "Deselect All" : "Select All"} ({selectedTeamIds.length}/{teams.length})
+                  </Text>
+                </TouchableOpacity>
+
+                {selectedTeamIds.length >= 2 && (
+                  <TouchableOpacity
+                    style={styles.generateRrBtn}
+                    onPress={handleGenerateRoundRobin}
+                    disabled={rrGenerating}
+                  >
+                    {rrGenerating ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <>
+                        <MaterialIcons name="autorenew" size={18} color="#fff" />
+                        <Text style={styles.generateRrBtnText}>
+                          Round Robin ({(selectedTeamIds.length * (selectedTeamIds.length - 1)) / 2} matches)
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+
             {teams.length > 0 ? (
               teams.map((team, index) => (
                 <TeamCard key={team._id || index} team={team} index={index} />
@@ -815,6 +1144,7 @@ const TeamKnockouts = ({ route }) => {
       {/* Modals */}
       <TeamDetailsModal />
       <MatchDetailsModal />
+      <CaptainPickModal />
     </View>
   );
 };
@@ -890,6 +1220,63 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+    borderWidth: 2,
+    borderColor: "transparent",
+  },
+  teamCardSelected: {
+    borderColor: "#007AFF",
+    backgroundColor: "#F0F7FF",
+  },
+  teamCheckbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: "#D1D5DB",
+    backgroundColor: "#FFF",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 10,
+  },
+  teamCheckboxSelected: {
+    backgroundColor: "#007AFF",
+    borderColor: "#007AFF",
+  },
+  rrHeader: {
+    marginBottom: 12,
+    gap: 10,
+  },
+  selectAllBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFF",
+    borderRadius: 12,
+    padding: 14,
+    gap: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  selectAllText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#374151",
+  },
+  generateRrBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#004E93",
+    borderRadius: 12,
+    padding: 14,
+    gap: 8,
+  },
+  generateRrBtnText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#FFF",
   },
   teamCardHeader: {
     flexDirection: "row",

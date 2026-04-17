@@ -13,6 +13,7 @@ import {
 import Icon from "react-native-vector-icons/FontAwesome";
 import tournamentConfig from "../../api/tournaments";
 import axios from "axios";
+import { readMatchResult, getLiveLabel } from "../../utils/matchResultUtils";
 
 const TournamentViewer = ({ tournamentId: rawTournamentId }) => {
   // Normalize tournamentId to be a string
@@ -462,7 +463,7 @@ const TournamentViewer = ({ tournamentId: rawTournamentId }) => {
                           <View style={styles.matchInfoItem}>
                             <Icon name="bar-chart" size={12} color="#FF6400" />
                             <Text style={styles.matchInfoText}>
-                              {match.result.finalScore.player1Sets || 0}-{match.result.finalScore.player2Sets || 0}
+                              {(() => { const r = readMatchResult(match); return r ? `${r.player1Score}-${r.player2Score}` : '0-0'; })()}
                             </Text>
                           </View>
                         )}
@@ -646,7 +647,7 @@ const TournamentViewer = ({ tournamentId: rawTournamentId }) => {
                               <View style={styles.matchInfoItem}>
                                 <Icon name="bar-chart" size={12} color="#FF6400" />
                                 <Text style={styles.matchInfoText}>
-                                  {match.result.finalScore.player1Sets || 0}-{match.result.finalScore.player2Sets || 0}
+                                  {(() => { const r = readMatchResult(match); return r ? `${r.player1Score}-${r.player2Score}` : '0-0'; })()}
                                 </Text>
                               </View>
                             )}
@@ -832,7 +833,7 @@ const TournamentViewer = ({ tournamentId: rawTournamentId }) => {
                             <View style={styles.matchInfoItem}>
                               <Icon name="bar-chart" size={12} color="#FF6400" />
                               <Text style={styles.matchInfoText}>
-                                {match.result.finalScore.player1Sets || 0}-{match.result.finalScore.player2Sets || 0}
+                                {(() => { const r = readMatchResult(match); return r ? `${r.player1Score}-${r.player2Score}` : '0-0'; })()}
                               </Text>
                             </View>
                           )}
@@ -1004,9 +1005,7 @@ const TournamentViewer = ({ tournamentId: rawTournamentId }) => {
                           {selectedMatch.player1?.userName || selectedMatch.player1?.playerName || 'Player 1'}
                         </Text>
                         <Text style={styles.setScore}>
-                          {selectedMatch.result?.finalScore?.player1Sets ||
-                            selectedMatch.score?.player1Sets ||
-                            selectedMatch.sets?.filter(set => set.winner?.playerId === selectedMatch.player1?.playerId)?.length || 0}
+                          {(() => { const r = readMatchResult(selectedMatch); return r?.player1Score || 0; })()}
                         </Text>
                       </View>
                       <View style={styles.scoreRow}>
@@ -1014,9 +1013,7 @@ const TournamentViewer = ({ tournamentId: rawTournamentId }) => {
                           {selectedMatch.player2?.userName || selectedMatch.player2?.playerName || 'Player 2'}
                         </Text>
                         <Text style={styles.setScore}>
-                          {selectedMatch.result?.finalScore?.player2Sets ||
-                            selectedMatch.score?.player2Sets ||
-                            selectedMatch.sets?.filter(set => set.winner?.playerId === selectedMatch.player2?.playerId)?.length || 0}
+                          {(() => { const r = readMatchResult(selectedMatch); return r?.player2Score || 0; })()}
                         </Text>
                       </View>
                     </View>
@@ -1031,7 +1028,7 @@ const TournamentViewer = ({ tournamentId: rawTournamentId }) => {
                           <Text style={styles.liveScoreValue}>{selectedMatch.liveScore.player2Points || 0}</Text>
                         </View>
                         <Text style={styles.liveScoreInfo}>
-                          Set {selectedMatch.currentSet || 1}, Game {selectedMatch.currentGame || 1}
+                          {getLiveLabel(selectedMatch)}
                         </Text>
                       </View>
                     )}
@@ -1039,10 +1036,10 @@ const TournamentViewer = ({ tournamentId: rawTournamentId }) => {
                     {/* Set-by-Set Breakdown */}
                     {(selectedMatch.sets?.length > 0 || selectedMatch.score?.setScores?.length > 0) && (
                       <View style={styles.setsBreakdown}>
-                        <Text style={styles.setsTitle}>Set Breakdown</Text>
+                        <Text style={styles.setsTitle}>{(() => { const r = readMatchResult(selectedMatch); return r?.labels?.round || "Round"; })()} Breakdown</Text>
                         {(selectedMatch.sets || selectedMatch.score?.setScores || []).map((set, index) => (
                           <View key={index} style={styles.setRow}>
-                            <Text style={styles.setLabel}>Set {set.setNumber || index + 1}</Text>
+                            <Text style={styles.setLabel}>{(() => { const r = readMatchResult(selectedMatch); return r?.labels?.round || "Round"; })()} {set.setNumber || index + 1}</Text>
                             <View style={styles.setScores}>
                               <Text style={styles.setScoreText}>
                                 {set.games?.reduce((total, game) =>
@@ -1086,11 +1083,10 @@ const TournamentViewer = ({ tournamentId: rawTournamentId }) => {
                       </View>
                       <View style={styles.statsGrid}>
                         <View style={styles.statItem}>
-                          <Text style={styles.statLabel}>Sets Won</Text>
+                          <Text style={styles.statLabel}>{(() => { const r = readMatchResult(selectedMatch); return (r?.labels?.result || "Rounds") + " Won"; })()}</Text>
                           <Text style={styles.statValue}>
                             {selectedMatch.statistics?.player1Stats?.setsWon ||
-                              selectedMatch.result?.finalScore?.player1Sets ||
-                              selectedMatch.score?.player1Sets ||
+                              (() => { const r = readMatchResult(selectedMatch); return r?.player1Score; })() ||
                               selectedMatch.sets?.filter(set => {
                                 if (set.winner?.playerId && selectedMatch.player1?.playerId) {
                                   return set.winner.playerId.toString() === selectedMatch.player1.playerId.toString();
@@ -1100,7 +1096,7 @@ const TournamentViewer = ({ tournamentId: rawTournamentId }) => {
                           </Text>
                         </View>
                         <View style={styles.statItem}>
-                          <Text style={styles.statLabel}>Games Won</Text>
+                          <Text style={styles.statLabel}>{(() => { const r = readMatchResult(selectedMatch); return (r?.labels?.score || "Score"); })()}</Text>
                           <Text style={styles.statValue}>
                             {selectedMatch.statistics?.player1Stats?.gamesWon ||
                               selectedMatch.sets?.reduce((total, set) =>
@@ -1150,21 +1146,14 @@ const TournamentViewer = ({ tournamentId: rawTournamentId }) => {
                       </View>
                       <View style={styles.statsGrid}>
                         <View style={styles.statItem}>
-                          <Text style={styles.statLabel}>Sets Won</Text>
+                          <Text style={styles.statLabel}>{(() => { const r = readMatchResult(selectedMatch); return (r?.labels?.result || "Rounds") + " Won"; })()}</Text>
                           <Text style={styles.statValue}>
                             {selectedMatch.statistics?.player2Stats?.setsWon ||
-                              selectedMatch.result?.finalScore?.player2Sets ||
-                              selectedMatch.score?.player2Sets ||
-                              selectedMatch.sets?.filter(set => {
-                                if (set.winner?.playerId && selectedMatch.player2?.playerId) {
-                                  return set.winner.playerId.toString() === selectedMatch.player2.playerId.toString();
-                                }
-                                return set.winner?.playerName === selectedMatch.player2?.playerName;
-                              })?.length || 0}
+                              (() => { const r = readMatchResult(selectedMatch); return r?.player2Score; })() || 0}
                           </Text>
                         </View>
                         <View style={styles.statItem}>
-                          <Text style={styles.statLabel}>Games Won</Text>
+                          <Text style={styles.statLabel}>{(() => { const r = readMatchResult(selectedMatch); return (r?.labels?.score || "Score"); })()}</Text>
                           <Text style={styles.statValue}>
                             {selectedMatch.statistics?.player2Stats?.gamesWon ||
                               selectedMatch.sets?.reduce((total, set) =>
@@ -1296,32 +1285,73 @@ const TournamentViewer = ({ tournamentId: rawTournamentId }) => {
                   )}
                 </View>
 
-                {/* 🔥 MATCH FORMAT INFO */}
-                {selectedMatch.matchFormat && (
+                {/* 🔥 MATCH FORMAT INFO — sport-aware labels */}
+                {selectedMatch.matchFormat && (() => {
+                  const mfmt = selectedMatch.matchFormat;
+                  const r = readMatchResult(selectedMatch);
+                  const labels = r?.labels || {};
+                  const st = mfmt.scoringType;
+                  const isSetBased = st === "sets" || (!st && mfmt.totalSets > 1);
+                  const isTimeBased = st === "time";
+                  const isInnings = st === "innings";
+                  return (
                   <View style={styles.detailSection}>
                     <Text style={styles.sectionTitle}>
                       <Icon name="cog" size={16} color="#6C757D" /> Match Format
                     </Text>
                     <View style={styles.formatGrid}>
+                      {isSetBased && mfmt.setsToWin && (
                       <View style={styles.formatItem}>
-                        <Text style={styles.formatLabel}>Sets to Win</Text>
-                        <Text style={styles.formatValue}>{selectedMatch.matchFormat.setsToWin || 3}</Text>
+                        <Text style={styles.formatLabel}>{labels.round || "Sets"} to Win</Text>
+                        <Text style={styles.formatValue}>{mfmt.setsToWin}</Text>
                       </View>
+                      )}
+                      {isSetBased && mfmt.gamesToWin && (
                       <View style={styles.formatItem}>
-                        <Text style={styles.formatLabel}>Games to Win</Text>
-                        <Text style={styles.formatValue}>{selectedMatch.matchFormat.gamesToWin || 3}</Text>
+                        <Text style={styles.formatLabel}>{labels.subRound || "Games"} to Win</Text>
+                        <Text style={styles.formatValue}>{mfmt.gamesToWin}</Text>
                       </View>
+                      )}
+                      {isSetBased && mfmt.pointsToWinGame && (
                       <View style={styles.formatItem}>
-                        <Text style={styles.formatLabel}>Points per Game</Text>
-                        <Text style={styles.formatValue}>{selectedMatch.matchFormat.pointsToWinGame || 11}</Text>
+                        <Text style={styles.formatLabel}>{labels.score || "Points"} per {labels.subRound || "Game"}</Text>
+                        <Text style={styles.formatValue}>{mfmt.pointsToWinGame}</Text>
                       </View>
+                      )}
+                      {isSetBased && mfmt.marginToWin && (
                       <View style={styles.formatItem}>
                         <Text style={styles.formatLabel}>Win Margin</Text>
-                        <Text style={styles.formatValue}>{selectedMatch.matchFormat.marginToWin || 2}</Text>
+                        <Text style={styles.formatValue}>{mfmt.marginToWin}</Text>
                       </View>
+                      )}
+                      {isTimeBased && mfmt.halvesCount && (
+                      <View style={styles.formatItem}>
+                        <Text style={styles.formatLabel}>Halves</Text>
+                        <Text style={styles.formatValue}>{mfmt.halvesCount}</Text>
+                      </View>
+                      )}
+                      {isTimeBased && mfmt.halvesDuration && (
+                      <View style={styles.formatItem}>
+                        <Text style={styles.formatLabel}>Duration (min)</Text>
+                        <Text style={styles.formatValue}>{mfmt.halvesDuration}</Text>
+                      </View>
+                      )}
+                      {isInnings && mfmt.oversCount && (
+                      <View style={styles.formatItem}>
+                        <Text style={styles.formatLabel}>Overs</Text>
+                        <Text style={styles.formatValue}>{mfmt.oversCount}</Text>
+                      </View>
+                      )}
+                      {isInnings && mfmt.inningsCount && (
+                      <View style={styles.formatItem}>
+                        <Text style={styles.formatLabel}>Innings</Text>
+                        <Text style={styles.formatValue}>{mfmt.inningsCount}</Text>
+                      </View>
+                      )}
                     </View>
                   </View>
-                )}
+                  );
+                })()}
 
                 {/* Players */}
                 <View style={styles.detailSection}>

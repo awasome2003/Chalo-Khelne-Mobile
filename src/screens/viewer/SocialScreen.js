@@ -76,11 +76,11 @@ const CommentModal = ({ visible, onClose, post, onAddComment, isAuthenticated, p
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent>
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
         <TouchableOpacity style={{ flex: 1 }} onPress={onClose} />
         <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={styles.modalContent}
         >
           <View style={styles.modalHeader}>

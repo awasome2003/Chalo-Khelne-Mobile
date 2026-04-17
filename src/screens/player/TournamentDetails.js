@@ -149,6 +149,8 @@ const TournamentDetails = ({ route, navigation }) => {
   const [isVerified, setIsVerified] = useState(false);
   const [showVerifyModal, setShowVerifyModal] = useState(false);
   const [empIdInput, setEmpIdInput] = useState("");
+  const [verifiedEmployeeId, setVerifiedEmployeeId] = useState(null);
+  const [verifyError, setVerifyError] = useState("");
 
   const actualTournamentId = tournamentId || item?.id || item?._id;
 
@@ -214,6 +216,8 @@ const TournamentDetails = ({ route, navigation }) => {
     else setBookingChecking(false);
   }, [actualTournamentId, user?.id]);
 
+  const isCorporateTournament = tournament.rawData?.whitelist && tournament.rawData.whitelist.length > 0;
+
   const handleRegistration = () => {
     if (!isAuthenticated) {
       Alert.alert("Login Required", "Please log in to register.", [
@@ -222,8 +226,56 @@ const TournamentDetails = ({ route, navigation }) => {
       ]);
       return;
     }
+
+    // Corporate tournament — verify employee before proceeding
+    if (isCorporateTournament && !isVerified) {
+      setShowVerifyModal(true);
+      return;
+    }
+
+    proceedToBooking();
+  };
+
+  const proceedToBooking = () => {
     if (categories.length > 0) setShowCategoryPopup(true);
-    else navigation.navigate("Booking Screen", { tournament, selectedCategory: null });
+    else navigation.navigate("Booking Screen", { tournament, selectedCategory: null, employeeId: verifiedEmployeeId });
+  };
+
+  const handleVerifyEmployee = () => {
+    const trimmedId = empIdInput.trim();
+    if (!trimmedId) {
+      setVerifyError("Please enter your Employee ID");
+      return;
+    }
+
+    const userMobile = user?.mobile || user?.phone || "";
+
+    // Normalize mobile — strip country code, spaces, dashes
+    const normalizeMobile = (m) => {
+      if (!m) return "";
+      return m.toString().replace(/[\s\-\+]/g, "").slice(-10);
+    };
+
+    const whitelist = tournament.rawData?.whitelist || [];
+    const matched = whitelist.some(emp => {
+      const idMatch = emp.employeeId && emp.employeeId.toString().trim().toLowerCase() === trimmedId.toLowerCase();
+      const mobileMatch = userMobile && emp.mobile && normalizeMobile(emp.mobile) === normalizeMobile(userMobile);
+      return idMatch || mobileMatch;
+    });
+
+    if (matched) {
+      setIsVerified(true);
+      setVerifiedEmployeeId(trimmedId);
+      setVerifyError("");
+      setShowVerifyModal(false);
+      // Proceed to booking after verification
+      setTimeout(() => {
+        if (categories.length > 0) setShowCategoryPopup(true);
+        else navigation.navigate("Booking Screen", { tournament, selectedCategory: null, employeeId: trimmedId });
+      }, 300);
+    } else {
+      setVerifyError("Employee ID not found. Please check with your HR or tournament organizer.");
+    }
   };
 
   const onRefresh = async () => {
@@ -284,6 +336,25 @@ const TournamentDetails = ({ route, navigation }) => {
           </View>
         ) : (
           <View style={styles.detailsContent}>
+
+            {/* Corporate Tournament Badge */}
+            {isCorporateTournament && (
+              <View style={styles.corporateBadge}>
+                <View style={styles.corporateBadgeIcon}>
+                  <MaterialIcons name="business" size={18} color="#FFF" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.corporateBadgeTitle}>Corporate Tournament</Text>
+                  <Text style={styles.corporateBadgeDesc}>Restricted to authorized employees only</Text>
+                </View>
+                {isVerified && (
+                  <View style={styles.verifiedChip}>
+                    <Ionicons name="checkmark-circle" size={14} color="#16A34A" />
+                    <Text style={styles.verifiedChipText}>Verified</Text>
+                  </View>
+                )}
+              </View>
+            )}
 
             {/* Quick Info Grid */}
             <View style={styles.infoGrid}>
@@ -369,8 +440,53 @@ const TournamentDetails = ({ route, navigation }) => {
 
           </View>
         )}
+        {/* Invite Players Button */}
+        {tournament && (
+          <TouchableOpacity
+            style={{
+              flexDirection: "row", alignItems: "center", justifyContent: "center",
+              backgroundColor: "#EEF2FF", marginHorizontal: 16, marginTop: 12,
+              paddingVertical: 12, borderRadius: 12, gap: 8,
+              borderWidth: 1, borderColor: "#C7D2FE",
+            }}
+            onPress={() => navigation.navigate("InvitePlayer", {
+              tournamentId: tournament._id || tournament.id || tournamentId,
+              tournamentName: tournament.title,
+            })}
+          >
+            <Ionicons name="paper-plane" size={18} color="#4F46E5" />
+            <Text style={{ color: "#4F46E5", fontWeight: "700", fontSize: 14 }}>
+              Invite Players
+            </Text>
+          </TouchableOpacity>
+        )}
+
         <View style={{ height: 120 }} />
       </ScrollView>
+
+      {/* Apply as Staff Banner — only for users with service roles (not plain Player) */}
+      {!loading && !isPastTournament && isAuthenticated && user?.role && user.role !== "Player" && (
+        <TouchableOpacity
+          style={{
+            position: 'absolute', bottom: 90 + (insets.bottom || 0), left: 16, right: 16,
+            flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+            backgroundColor: '#1E3A5F', borderRadius: 14, paddingVertical: 12, paddingHorizontal: 16, gap: 8,
+            shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 6, elevation: 4,
+          }}
+          onPress={() => navigation.navigate('BrowseTournamentJobsHome', {
+            preSelectedTournament: {
+              _id: tournament._id || tournament.id || tournamentId,
+              title: tournament.title || tournament.name,
+              sportsType: tournament.sportsType,
+            }
+          })}
+          activeOpacity={0.8}
+        >
+          <MaterialCommunityIcons name="briefcase-plus" size={18} color="#FF6A00" />
+          <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700' }}>Apply as Trainer / Referee / Staff</Text>
+          <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.5)" />
+        </TouchableOpacity>
+      )}
 
       {/* Floating Action Dock */}
       {!loading && !isPastTournament && (
@@ -402,7 +518,7 @@ const TournamentDetails = ({ route, navigation }) => {
       )}
 
       {/* Modern Category Selection Bottom Sheet */}
-      <Modal visible={showCategoryPopup} transparent animationType="slide">
+      <Modal visible={showCategoryPopup} transparent animationType="slide" onRequestClose={() => setShowCategoryPopup(false)}>
         <View style={styles.sheetOverlay}>
           <TouchableOpacity style={{ flex: 1 }} onPress={() => setShowCategoryPopup(false)} />
           <View style={styles.sheetContent}>
@@ -453,12 +569,68 @@ const TournamentDetails = ({ route, navigation }) => {
                 disabled={selectedCategories.length === 0}
                 onPress={() => {
                   setShowCategoryPopup(false);
-                  navigation.navigate("Booking Screen", { tournament, selectedCategory: selectedCategories });
+                  navigation.navigate("Booking Screen", { tournament, selectedCategory: selectedCategories, employeeId: verifiedEmployeeId });
                 }}
               >
                 <Text style={styles.confirmBtnText}>Proceed to Payment</Text>
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Employee Verification Modal */}
+      <Modal visible={showVerifyModal} transparent animationType="slide" onRequestClose={() => { setShowVerifyModal(false); setVerifyError(""); }}>
+        <View style={styles.sheetOverlay}>
+          <TouchableOpacity style={{ flex: 1 }} onPress={() => { setShowVerifyModal(false); setVerifyError(""); }} />
+          <View style={styles.verifySheet}>
+            <View style={styles.sheetHandle} />
+            <View style={styles.verifyHeader}>
+              <View style={styles.verifyIconCircle}>
+                <MaterialIcons name="verified-user" size={28} color="#FF6A00" />
+              </View>
+              <Text style={styles.verifyTitle}>Employee Verification</Text>
+              <Text style={styles.verifySubtitle}>
+                This is a corporate tournament. Please enter your Employee ID to verify your eligibility.
+              </Text>
+            </View>
+
+            <View style={styles.verifyInputWrapper}>
+              <MaterialIcons name="badge" size={22} color="#90A4AE" />
+              <TextInput
+                style={styles.verifyInput}
+                placeholder="Enter your Employee ID"
+                placeholderTextColor="#B0BEC5"
+                value={empIdInput}
+                onChangeText={(text) => { setEmpIdInput(text); setVerifyError(""); }}
+                autoCapitalize="characters"
+                returnKeyType="done"
+                onSubmitEditing={handleVerifyEmployee}
+              />
+            </View>
+
+            {verifyError ? (
+              <View style={styles.verifyErrorRow}>
+                <Ionicons name="alert-circle" size={16} color="#EF4444" />
+                <Text style={styles.verifyErrorText}>{verifyError}</Text>
+              </View>
+            ) : null}
+
+            <Text style={styles.verifyHint}>
+              Your Employee ID or registered mobile number will be matched against the company's approved list.
+            </Text>
+
+            <TouchableOpacity style={styles.verifyBtn} onPress={handleVerifyEmployee}>
+              <Text style={styles.verifyBtnText}>Verify & Continue</Text>
+              <Ionicons name="arrow-forward" size={18} color="#FFF" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.verifyCancelBtn}
+              onPress={() => { setShowVerifyModal(false); setVerifyError(""); }}
+            >
+              <Text style={styles.verifyCancelText}>Cancel</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -560,6 +732,28 @@ const styles = StyleSheet.create({
   confirmBtn: { backgroundColor: '#FF6A00', height: 60, borderRadius: 20, justifyContent: 'center', alignItems: 'center', shadowColor: '#FF6A00', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.3, shadowRadius: 15, elevation: 10 },
   confirmBtnText: { color: '#FFF', fontSize: 18, fontWeight: '800' },
   disabledBtn: { backgroundColor: '#ECEFF1', shadowOpacity: 0, elevation: 0 },
+  // Corporate Badge
+  corporateBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF7ED', borderRadius: 16, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: '#FED7AA', gap: 12 },
+  corporateBadgeIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#FF6A00', justifyContent: 'center', alignItems: 'center' },
+  corporateBadgeTitle: { fontSize: 14, fontWeight: '800', color: '#9A3412' },
+  corporateBadgeDesc: { fontSize: 12, color: '#C2410C', fontWeight: '500', marginTop: 2 },
+  verifiedChip: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#DCFCE7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, gap: 4 },
+  verifiedChipText: { fontSize: 11, fontWeight: '700', color: '#16A34A' },
+  // Verification Modal
+  verifySheet: { backgroundColor: '#FFF', borderTopLeftRadius: 35, borderTopRightRadius: 35, paddingHorizontal: 25, paddingBottom: 30 },
+  verifyHeader: { alignItems: 'center', paddingTop: 20, paddingBottom: 10 },
+  verifyIconCircle: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#FFF7ED', justifyContent: 'center', alignItems: 'center', marginBottom: 15, borderWidth: 2, borderColor: '#FED7AA' },
+  verifyTitle: { fontSize: 22, fontWeight: '900', color: '#263238', marginBottom: 8 },
+  verifySubtitle: { fontSize: 14, color: '#78909C', fontWeight: '500', textAlign: 'center', lineHeight: 20, paddingHorizontal: 10 },
+  verifyInputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8F9FA', borderRadius: 18, paddingHorizontal: 16, height: 60, marginTop: 20, borderWidth: 1.5, borderColor: '#E0E0E0', gap: 12 },
+  verifyInput: { flex: 1, fontSize: 16, fontWeight: '700', color: '#263238', letterSpacing: 1 },
+  verifyErrorRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10, gap: 6, paddingHorizontal: 4 },
+  verifyErrorText: { fontSize: 13, color: '#EF4444', fontWeight: '600', flex: 1 },
+  verifyHint: { fontSize: 12, color: '#B0BEC5', fontWeight: '500', marginTop: 12, textAlign: 'center', lineHeight: 18 },
+  verifyBtn: { backgroundColor: '#FF6A00', height: 56, borderRadius: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 20, gap: 8, shadowColor: '#FF6A00', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.25, shadowRadius: 15, elevation: 8 },
+  verifyBtnText: { color: '#FFF', fontSize: 17, fontWeight: '800' },
+  verifyCancelBtn: { alignItems: 'center', marginTop: 15 },
+  verifyCancelText: { fontSize: 15, fontWeight: '700', color: '#90A4AE' },
 });
 
 export default TournamentDetails;

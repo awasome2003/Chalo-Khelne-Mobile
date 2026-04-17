@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -9,12 +9,13 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  StatusBar,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { MaterialIcons } from "@expo/vector-icons";
-import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
+import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useAuth } from "../../context/AuthContext";
 import { useFocusEffect } from "@react-navigation/native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
 import API from "../../api/api";
 
 const { width } = Dimensions.get("window");
@@ -25,63 +26,32 @@ export default function PlayerVenueDetails({ route, navigation }) {
   const [loading, setLoading] = useState(true);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [isFavorite, setIsFavorite] = useState(false);
-  const [certifiedTrainers, setCertifiedTrainers] = useState([]);
-  const [loadingTrainers, setLoadingTrainers] = useState(false);
   const [error, setError] = useState(null);
+  const [showFullDesc, setShowFullDesc] = useState(false);
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
 
-
-  // Add this function to check if turf is in favorites when component mounts
   useFocusEffect(
     React.useCallback(() => {
-      const refreshData = async () => {
-        // Check favorite status
-        if (user && user.id) {
-          try {
-            const response = await fetch(
-              `${API.ENDPOINTS.USER.CHECK_FAVORITE}?userId=${user.id}&turfId=${turfId}`
-            );
-
-            if (response.ok) {
-              const data = await response.json();
-              setIsFavorite(data.isFavorite);
-            } else {
-              console.error(
-                "Failed to check favorite status:",
-                await response.text()
-              );
-            }
-          } catch (error) {
-            console.error("Error checking favorite status:", error);
-          }
-        }
-
-        fetchCertifiedTrainers();
-
-        // Fetch turf details if not already loaded
-        if (!turfDetails) {
-          fetchTurfDetails();
-        }
-      };
-
-      refreshData();
+      fetchTurfDetails();
+      if (user && (user._id || user.id)) {
+        checkFavorite();
+      }
     }, [turfId, user])
   );
 
-  const fetchCertifiedTrainers = async () => {
+  const checkFavorite = async () => {
     try {
-      setLoadingTrainers(true);
+      const userId = user._id || user.id;
       const response = await fetch(
-        `${API.ENDPOINTS.TURFS.CERTIFIED_TRAINERS(turfId)}`
+        `${API.ENDPOINTS.USER.CHECK_FAVORITE}?userId=${userId}&turfId=${turfId}`
       );
       if (response.ok) {
         const data = await response.json();
-        setCertifiedTrainers(data);
+        setIsFavorite(data.isFavorite);
       }
-    } catch (error) {
-      console.error("Error fetching certified trainers:", error);
-    } finally {
-      setLoadingTrainers(false);
+    } catch (err) {
+      // Silent fail
     }
   };
 
@@ -89,1203 +59,376 @@ export default function PlayerVenueDetails({ route, navigation }) {
     try {
       setLoading(true);
       const response = await fetch(API.ENDPOINTS.TURFS.BY_ID(turfId));
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status}`);
-      }
-
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
       setTurfDetails(data);
       setError(null);
-    } catch (error) {
-      console.error("Error fetching turf details:", error);
-      setError(error.message);
-      Alert.alert(
-        "Error",
-        "Failed to load venue details. Please try again later."
-      );
+    } catch (err) {
+      setError(err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  // function to toggle favorite status
   const toggleFavorite = async () => {
+    if (!user || !(user._id || user.id)) {
+      Alert.alert("Login Required", "Please login to save favorites");
+      return;
+    }
+    const newState = !isFavorite;
+    setIsFavorite(newState);
     try {
-      if (!user || !user.id) {
-        Alert.alert("Login Required", "Please login to save favorites", [
-          { text: "Cancel", style: "cancel" },
-          { text: "Login", onPress: () => navigation.navigate("Login") },
-        ]);
-        return;
-      }
-
-      // Optimistically update UI
-      const newFavoriteState = !isFavorite;
-      setIsFavorite(newFavoriteState);
-
       const response = await fetch(API.ENDPOINTS.USER.TOGGLE_FAVORITE, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userId: user.id,
+          userId: user._id || user.id,
           turfId,
-          action: newFavoriteState ? "add" : "remove",
+          action: newState ? "add" : "remove",
         }),
       });
-
       if (!response.ok) {
-        // Revert on failure
-        setIsFavorite(!newFavoriteState);
-        throw new Error("Failed to update favorite status");
+        setIsFavorite(!newState);
+        Alert.alert("Error", "Could not update favorites");
       }
-
-      // Show alert dialog based on action
-      if (newFavoriteState) {
-        Alert.alert(
-          "Added to Favorites",
-          "This venue has been added to your favorites.",
-          [{ text: "OK", style: "default" }],
-          { cancelable: true }
-        );
-      } else {
-        Alert.alert(
-          "Removed from Favorites",
-          "This venue has been removed from your favorites.",
-          [{ text: "OK", style: "default" }],
-          { cancelable: true }
-        );
-      }
-    } catch (error) {
-      console.error("Error toggling favorite:", error);
-      Alert.alert("Error", "Could not update favorites. Please try again.");
+    } catch {
+      setIsFavorite(!newState);
     }
   };
 
-  const getSportIcon = (sportName) => {
-    if (!sportName) return require("../../../assets/ping-pong.png");
+  // --- Loading / Error states ---
+  if (loading) {
+    return (
+      <View style={s.center}>
+        <ActivityIndicator size="large" color="#3B4DFD" />
+        <Text style={s.centerText}>Loading venue...</Text>
+      </View>
+    );
+  }
 
-    const sport = (sportName || "").toLowerCase().trim();
-    const iconMap = {
+  if (error || !turfDetails) {
+    return (
+      <View style={s.center}>
+        <Ionicons name="alert-circle-outline" size={56} color="#ccc" />
+        <Text style={s.centerText}>{error || "Venue not found"}</Text>
+        <TouchableOpacity style={s.retryBtn} onPress={fetchTurfDetails}>
+          <Text style={s.retryBtnText}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // --- Derive data from model ---
+  const images =
+    turfDetails.images?.length > 0
+      ? turfDetails.images.map((img) => `${API.UPLOADS_URL}/${img.replace(/\\/g, "/")}`)
+      : [];
+
+  const lowestPrice = turfDetails.sports?.length > 0
+    ? Math.min(...turfDetails.sports.map((s) => s.pricePerHour))
+    : null;
+
+  const addressStr = turfDetails.address
+    ? [turfDetails.address.area, turfDetails.address.city, turfDetails.address.pincode].filter(Boolean).join(", ")
+    : "Address not available";
+
+  // Convert facilities object to array of active amenities
+  const amenityLabels = {
+    artificialTurf: "Artificial Turf", multipleFields: "Multiple Fields", floodLights: "Flood Lights",
+    ledLights: "LED Lights", lockerRooms: "Locker Rooms", shower: "Shower", restrooms: "Restrooms",
+    grandstands: "Grandstands", coveredAreas: "Covered Areas", parking: "Parking", foodCourt: "Food Court",
+    coldDrinks: "Cold Drinks", drinkingWater: "Drinking Water", wifi: "Wi-Fi", loungeArea: "Lounge",
+    surveillanceCameras: "CCTV", securityPersonnel: "Security", firstAidKit: "First Aid",
+  };
+  const amenityIcons = {
+    artificialTurf: "leaf", multipleFields: "grid", floodLights: "flashlight", ledLights: "bulb",
+    lockerRooms: "lock-closed", shower: "water", restrooms: "man", grandstands: "people",
+    coveredAreas: "umbrella", parking: "car", foodCourt: "restaurant", coldDrinks: "cafe",
+    drinkingWater: "water-outline", wifi: "wifi", loungeArea: "bed", surveillanceCameras: "videocam",
+    securityPersonnel: "shield-checkmark", firstAidKit: "medkit",
+  };
+  const activeAmenities = turfDetails.facilities
+    ? Object.entries(turfDetails.facilities).filter(([_, v]) => v === true).map(([k]) => k)
+    : [];
+
+  const getSportIcon = (name) => {
+    const n = (name || "").toLowerCase();
+    const map = {
       cricket: require("../../../assets/sports_cricket.png"),
       football: require("../../../assets/sports_soccer.png"),
-      soccer: require("../../../assets/sports_soccer.png"),
       badminton: require("../../../assets/shuttlecock.png"),
       "table tennis": require("../../../assets/ping-pong.png"),
       tennis: require("../../../assets/ping-pong.png"),
     };
-    return iconMap[sport] || require("../../../assets/ping-pong.png");
-  };
-
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#FF6B00" />
-        <Text style={styles.loadingText}>Loading venue details...</Text>
-      </View>
-    );
-  }
-
-  if (error) {
-    return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>Error: {error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={fetchTurfDetails}>
-          <Text style={styles.retryButtonText}>Retry</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  if (!turfDetails) {
-    return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>Venue not found</Text>
-        <TouchableOpacity
-          style={styles.retryButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Text style={styles.retryButtonText}>Go Back</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  const images =
-    turfDetails.images && turfDetails.images.length > 0
-      ? turfDetails.images
-          .map((img) => ({
-            uri: img ? `${API.UPLOADS_URL}/${img}` : null,
-          }))
-          .filter((img) => img.uri)
-      : [{ uri: null }];
-
-  const ImageCarousel = () => {
-    const handlePrevImage = () => {
-      setActiveImageIndex((prevIndex) =>
-        prevIndex > 0 ? prevIndex - 1 : images.length - 1
-      );
-    };
-
-    const handleNextImage = () => {
-      setActiveImageIndex((prevIndex) =>
-        prevIndex < images.length - 1 ? prevIndex + 1 : 0
-      );
-    };
-
-    return (
-      <View style={styles.carouselWrapper}>
-        <ScrollView
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          onScroll={(event) => {
-            const slideIndex = Math.round(
-              event.nativeEvent.contentOffset.x / width
-            );
-            setActiveImageIndex(slideIndex);
-          }}
-          scrollEventThrottle={16}
-          contentContainerStyle={styles.scrollViewCarousel}
-        >
-          {images.map((image, index) => (
-            <View key={index} style={styles.imageWrapper}>
-              <Image
-                source={
-                  image.uri
-                    ? { uri: image.uri }
-                    : require("../../../assets/turf.jpg")
-                }
-                style={styles.image}
-                resizeMode="cover"
-              />
-            </View>
-          ))}
-        </ScrollView>
-
-        {/* Navigation Arrows */}
-        {images.length > 1 && (
-          <>
-            <TouchableOpacity
-              style={styles.leftArrow}
-              onPress={handlePrevImage}
-            >
-              <Ionicons name="chevron-back" size={15} color="#fff" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.rightArrow}
-              onPress={handleNextImage}
-            >
-              <Ionicons name="chevron-forward" size={15} color="#fff" />
-            </TouchableOpacity>
-          </>
-        )}
-
-        {/* Indicator */}
-        <View style={styles.indicatorContainer}>
-          {images.map((_, index) => (
-            <View
-              key={index}
-              style={[
-                styles.dot,
-                activeImageIndex === index && styles.activeDot,
-              ]}
-            />
-          ))}
-        </View>
-      </View>
-    );
-  };
-
-  const CertifiedTrainersSection = ({ trainers, loading }) => {
-    if (loading) {
-      return (
-        <View style={styles.trainersContainer}>
-          <Text style={styles.sectionTitle}>Our Certified Trainers</Text>
-          <ActivityIndicator size="small" color="#FF6B00" />
-        </View>
-      );
-    }
-
-    if (!trainers || trainers.length === 0) {
-      return null;
-    }
-
-    return (
-      <View style={styles.trainersContainer}>
-        <Text style={styles.sectionTitle}>Our Certified Trainers</Text>
-        <View style={styles.trainersListContainer}>
-          {trainers.map((trainer, index) => {
-            let imageUrl = trainer.profileImage;
-            if (imageUrl && imageUrl.startsWith("/")) {
-              imageUrl = `${API.BASE_URL}${imageUrl}`;
-            }
-
-            return (
-              <View key={index} style={styles.trainerListCard}>
-                <Image
-                  source={
-                    imageUrl
-                      ? { uri: imageUrl }
-                      : require("../../../assets/trainer.jpg")
-                  }
-                  style={styles.trainerListImage}
-                />
-
-                <View style={styles.trainerListInfo}>
-                  <View style={styles.trainerHeader}>
-                    <Text style={styles.trainerListName}>
-                      {trainer.firstName} {trainer.lastName}
-                    </Text>
-                    <View style={styles.ratingSection}>
-                      <Ionicons name="star" size={16} color="#FFD700" />
-                      <Text style={styles.ratingValue}>
-                        {trainer.rating ? trainer.rating.toFixed(1) : "0"}/5
-                      </Text>
-                    </View>
-                  </View>
-
-                  <Text style={styles.verifiedText}>
-                    {trainer.verifiedClubsCount
-                      ? `Verified by ${trainer.verifiedClubsCount} club${
-                          trainer.verifiedClubsCount > 1 ? "s" : ""
-                        }`
-                      : "Not verified yet"}
-                  </Text>
-
-                  <View style={styles.sportsAndDetails}>
-                    <View style={styles.sportsList}>
-                      {trainer.sports?.slice(0, 2).map((sport, sportIndex) => (
-                        <View key={sportIndex} style={styles.sportBadge}>
-                          <Text style={styles.sportBadgeText}>{sport}</Text>
-                        </View>
-                      ))}
-                      {trainer.sports?.length > 2 && (
-                        <View style={styles.sportBadge}>
-                          <Text style={styles.sportBadgeText}>
-                            +{trainer.sports.length - 2}
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                  </View>
-                </View>
-              </View>
-            );
-          })}
-        </View>
-      </View>
-    );
+    return map[n] || require("../../../assets/ping-pong.png");
   };
 
   return (
-    <View style={styles.container}>
-      <ScrollView
-        contentContainerStyle={styles.scrollViewContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Image Carousel */}
-        <ImageCarousel />
+    <View style={s.container}>
+      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
-        <View style={styles.headerActions}>
-          <TouchableOpacity
-            style={styles.favoriteButton}
-            onPress={toggleFavorite}
-          >
-            <Ionicons
-              name={isFavorite ? "heart" : "heart-outline"}
-              size={28}
-              color={isFavorite ? "#FF6A00" : "#666"}
-            />
-          </TouchableOpacity>
-        </View>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+        {/* Hero Image */}
+        <View style={s.heroContainer}>
+          <Image
+            source={images.length > 0 ? { uri: images[activeImageIndex] || images[0] } : require("../../../assets/turf.jpg")}
+            style={s.heroImage}
+            resizeMode="cover"
+          />
+          <LinearGradient colors={["rgba(0,0,0,0.5)", "transparent", "rgba(0,0,0,0.6)"]} style={StyleSheet.absoluteFill} />
 
-        {/* Venue Info Card */}
-        <View style={styles.venueCard}>
-          <Text style={styles.cardTitle}>{turfDetails.name || "NA"}</Text>
-
-          <View style={styles.rowBetween}>
-            <View style={styles.addressContainer}>
-              <Text style={styles.label}>Address :</Text>
-              <Text style={styles.address}>
-                {turfDetails.address
-                  ? [
-                      turfDetails.address.streetAddress,
-                      turfDetails.address.area,
-                      turfDetails.address.city,
-                      turfDetails.address.pincode
-                        ? `- ${turfDetails.address.pincode}`
-                        : "",
-                    ]
-                      .filter(Boolean)
-                      .join(", ") || "NA"
-                  : "NA"}
-              </Text>
-            </View>
-
-            <View style={styles.direction}>
-              <MaterialIcons name="directions" size={24} color="#007BFF" />
-              <Text style={styles.distance}>
-                {turfDetails.distance || "NA"}
-              </Text>
-            </View>
+          {/* Top Buttons */}
+          <View style={[s.topBar, { top: insets.top + 8 }]}>
+            <TouchableOpacity style={s.circleBtn} onPress={() => navigation.goBack()}>
+              <Ionicons name="arrow-back" size={22} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity style={s.circleBtn} onPress={toggleFavorite}>
+              <Ionicons name={isFavorite ? "heart" : "heart-outline"} size={22} color={isFavorite ? "#FF3040" : "#fff"} />
+            </TouchableOpacity>
           </View>
 
-          {turfDetails.clubName && (
-            <View style={styles.clubContainer}>
-              <Text style={styles.label}>Club :</Text>
-              <Text style={styles.clubName}>{turfDetails.clubName}</Text>
+          {/* Image dots */}
+          {images.length > 1 && (
+            <View style={s.dotsRow}>
+              {images.map((_, i) => (
+                <View key={i} style={[s.dot, activeImageIndex === i && s.dotActive]} />
+              ))}
             </View>
           )}
 
-          <Text style={styles.price}>
-            ₹{" "}
-            <Text style={styles.priceValue}>
-              {turfDetails.pricePerHour || "NA"}
-            </Text>{" "}
-            onward
-          </Text>
+          {/* Image scroll */}
+          <ScrollView
+            horizontal pagingEnabled showsHorizontalScrollIndicator={false}
+            style={StyleSheet.absoluteFill}
+            onScroll={(e) => setActiveImageIndex(Math.round(e.nativeEvent.contentOffset.x / width))}
+            scrollEventThrottle={16}
+          >
+            {(images.length > 0 ? images : [null]).map((uri, i) => (
+              <View key={i} style={{ width, height: 300 }} />
+            ))}
+          </ScrollView>
 
-          <View style={styles.additionalInfoContainer}>
-            <Text style={styles.time}>
-              <Text style={styles.label}>Time :</Text>{" "}
-              {turfDetails.operatingHours || "NA"}
-            </Text>
-            <View style={styles.ratingBlock}>
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Ionicons
-                  key={i}
-                  name={
-                    i < Math.floor(turfDetails.ratings?.average || 0)
-                      ? "star"
-                      : "star-outline"
-                  }
-                  size={18}
-                  color="#FFD700"
-                />
-              ))}
-              <Text style={styles.ratingText}>
-                {turfDetails.ratings?.average
-                  ? turfDetails.ratings.average.toFixed(1)
-                  : "NA"}
-                /5 ({turfDetails.ratings?.count || "NA"})
-              </Text>
+          {/* Bottom info overlay */}
+          <View style={s.heroBottom}>
+            <Text style={s.heroTitle}>{turfDetails.name}</Text>
+            <View style={s.heroMeta}>
+              <Ionicons name="location-outline" size={14} color="rgba(255,255,255,0.8)" />
+              <Text style={s.heroAddress}>{addressStr}</Text>
             </View>
           </View>
         </View>
 
-        {/* Available Sports Section */}
-        <AvailableSports
-          sports={turfDetails.sports || []}
-          getSportIcon={getSportIcon}
-        />
+        {/* Quick Stats */}
+        <View style={s.statsRow}>
+          <View style={s.statItem}>
+            <Text style={s.statValue}>
+              {turfDetails.ratings?.average ? turfDetails.ratings.average.toFixed(1) : "New"}
+            </Text>
+            <Text style={s.statLabel}>
+              {turfDetails.ratings?.count ? `${turfDetails.ratings.count} reviews` : "No reviews"}
+            </Text>
+          </View>
+          <View style={s.statDivider} />
+          <View style={s.statItem}>
+            <Text style={s.statValue}>
+              {lowestPrice ? `₹${lowestPrice}` : "N/A"}
+            </Text>
+            <Text style={s.statLabel}>per hour</Text>
+          </View>
+          <View style={s.statDivider} />
+          <View style={s.statItem}>
+            <Text style={s.statValue}>{turfDetails.sports?.length || 0}</Text>
+            <Text style={s.statLabel}>Sports</Text>
+          </View>
+        </View>
 
-        {/* About Turf Section */}
-        <AboutTurf
-          description={turfDetails.description || "No description available"}
-        />
+        {/* Sports & Pricing */}
+        {turfDetails.sports?.length > 0 && (
+          <View style={s.card}>
+            <Text style={s.cardTitle}>Sports & Pricing</Text>
+            <View style={s.sportsGrid}>
+              {turfDetails.sports.map((sport, i) => (
+                <View key={i} style={s.sportChip}>
+                  <Image source={getSportIcon(sport.name)} style={s.sportChipIcon} resizeMode="contain" />
+                  <View>
+                    <Text style={s.sportChipName}>{sport.name}</Text>
+                    <Text style={s.sportChipPrice}>₹{sport.pricePerHour}/hr</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
 
-        {/* Amenities Section */}
-        <AmenitiesSection amenities={turfDetails.amenities || []} />
+        {/* About */}
+        {turfDetails.description && (
+          <View style={s.card}>
+            <Text style={s.cardTitle}>About</Text>
+            <Text style={s.descText}>
+              {showFullDesc
+                ? turfDetails.description
+                : turfDetails.description.length > 150
+                ? turfDetails.description.slice(0, 150) + "..."
+                : turfDetails.description}
+            </Text>
+            {turfDetails.description.length > 150 && (
+              <TouchableOpacity onPress={() => setShowFullDesc(!showFullDesc)}>
+                <Text style={s.readMore}>{showFullDesc ? "Show Less" : "Read More"}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
 
-        {/* Turf Rules Section */}
-        <TurfRulesSection rules={turfDetails.rules || []} />
+        {/* Amenities */}
+        {activeAmenities.length > 0 && (
+          <View style={s.card}>
+            <Text style={s.cardTitle}>Amenities</Text>
+            <View style={s.amenitiesGrid}>
+              {activeAmenities.map((key) => (
+                <View key={key} style={s.amenityChip}>
+                  <Ionicons name={amenityIcons[key] || "checkmark-circle"} size={16} color="#3B4DFD" />
+                  <Text style={s.amenityText}>{amenityLabels[key] || key}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
 
-        {/* Certified Trainers Section */}
-        <CertifiedTrainersSection
-          trainers={certifiedTrainers}
-          loading={loadingTrainers}
-        />
+        {/* Club Info */}
+        {turfDetails.clubName && (
+          <View style={s.card}>
+            <Text style={s.cardTitle}>Club</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+              <Ionicons name="shield-checkmark" size={20} color="#059669" />
+              <Text style={{ fontSize: 15, fontWeight: "600", color: "#333" }}>{turfDetails.clubName}</Text>
+            </View>
+          </View>
+        )}
 
-        {/* Book Now Button */}
-        <BookNowButton turfId={turfId} navigation={navigation} />
+        {/* Ratings */}
+        {turfDetails.ratings?.count > 0 && (
+          <View style={s.card}>
+            <Text style={s.cardTitle}>Ratings</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Ionicons
+                  key={i}
+                  name={i < Math.floor(turfDetails.ratings.average) ? "star" : "star-outline"}
+                  size={22}
+                  color="#FFD700"
+                />
+              ))}
+              <Text style={{ fontSize: 16, fontWeight: "700", color: "#333", marginLeft: 4 }}>
+                {turfDetails.ratings.average.toFixed(1)}
+              </Text>
+              <Text style={{ fontSize: 13, color: "#999" }}>({turfDetails.ratings.count} reviews)</Text>
+            </View>
+          </View>
+        )}
       </ScrollView>
+
+      {/* Fixed Bottom Book Button */}
+      <View style={[s.bottomBar, { paddingBottom: insets.bottom + 12 }]}>
+        <View>
+          <Text style={s.bottomPrice}>
+            {lowestPrice ? `₹${lowestPrice}` : "N/A"}
+            <Text style={s.bottomPriceUnit}> /hour</Text>
+          </Text>
+          <Text style={s.bottomPriceSub}>onwards</Text>
+        </View>
+        <TouchableOpacity
+          style={s.bookBtn}
+          activeOpacity={0.85}
+          onPress={() => navigation.navigate("TurfBooking", { turfId })}
+        >
+          <Text style={s.bookBtnText}>Book Now</Text>
+          <Ionicons name="arrow-forward" size={18} color="#fff" />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
 
-const AvailableSports = ({ sports = [], getSportIcon }) => {
-  if (!sports || sports.length === 0) {
-    return (
-      <View style={styles.sportsContainer}>
-        <Text style={styles.sectionTitle}>Available Sports</Text>
-        <Text style={styles.noDataText}>No sports information available</Text>
-      </View>
-    );
-  }
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: "#F7F9FC" },
+  center: { flex: 1, justifyContent: "center", alignItems: "center", padding: 20 },
+  centerText: { fontSize: 16, color: "#999", marginTop: 12 },
+  retryBtn: { marginTop: 16, backgroundColor: "#3B4DFD", paddingHorizontal: 24, paddingVertical: 10, borderRadius: 12 },
+  retryBtnText: { color: "#fff", fontWeight: "700" },
 
-  return (
-    <View style={styles.sportsContainer}>
-      <Text style={styles.sectionTitle}>Available Sports</Text>
-      <View style={styles.sportsRow}>
-        {sports.map((sport, index) => {
-          const sportName = sport
-            ? typeof sport === "string"
-              ? sport
-              : sport.name || "Unknown"
-            : "Unknown";
+  // Hero
+  heroContainer: { width, height: 300, position: "relative" },
+  heroImage: { width: "100%", height: "100%", position: "absolute" },
+  topBar: { position: "absolute", left: 16, right: 16, flexDirection: "row", justifyContent: "space-between", zIndex: 10 },
+  circleBtn: {
+    width: 42, height: 42, borderRadius: 21,
+    backgroundColor: "rgba(0,0,0,0.35)", justifyContent: "center", alignItems: "center",
+  },
+  dotsRow: {
+    position: "absolute", bottom: 70, alignSelf: "center",
+    flexDirection: "row", gap: 6, zIndex: 5,
+  },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.5)" },
+  dotActive: { width: 20, backgroundColor: "#fff" },
+  heroBottom: { position: "absolute", bottom: 0, left: 0, right: 0, padding: 20 },
+  heroTitle: { fontSize: 24, fontWeight: "800", color: "#fff", letterSpacing: -0.5 },
+  heroMeta: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6 },
+  heroAddress: { fontSize: 13, color: "rgba(255,255,255,0.85)", flex: 1 },
 
-          return (
-            <View key={index} style={styles.sportItem}>
-              <View style={styles.sportIconWrap}>
-                <Image
-                  source={getSportIcon(sportName)}
-                  style={styles.sportIcon}
-                  resizeMode="contain"
-                />
-              </View>
-              <Text style={styles.sportLabel}>{sportName}</Text>
-            </View>
-          );
-        })}
-      </View>
-    </View>
-  );
-};
+  // Stats Row
+  statsRow: {
+    flexDirection: "row", backgroundColor: "#fff", marginHorizontal: 16, marginTop: -20,
+    borderRadius: 16, padding: 16, alignItems: "center",
+    shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 6,
+  },
+  statItem: { flex: 1, alignItems: "center" },
+  statValue: { fontSize: 18, fontWeight: "800", color: "#1a1a2e" },
+  statLabel: { fontSize: 11, color: "#999", marginTop: 2 },
+  statDivider: { width: 1, height: 30, backgroundColor: "#ECEFF1" },
 
-const AboutTurf = ({ description }) => {
-  const [showMore, setShowMore] = useState(false);
+  // Cards
+  card: { backgroundColor: "#fff", marginHorizontal: 16, marginTop: 16, padding: 18, borderRadius: 16 },
+  cardTitle: { fontSize: 17, fontWeight: "700", color: "#1a1a2e", marginBottom: 14 },
 
-  if (!description) {
-    return (
-      <View style={styles.aboutContainer}>
-        <Text style={styles.sectionTitle}>About Turf</Text>
-        <Text style={styles.noDataText}>No description available</Text>
-      </View>
-    );
-  }
+  // Sports
+  sportsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  sportChip: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    backgroundColor: "#F5F7FF", borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10,
+    borderWidth: 1, borderColor: "#E8EDFF",
+  },
+  sportChipIcon: { width: 28, height: 28 },
+  sportChipName: { fontSize: 14, fontWeight: "700", color: "#333" },
+  sportChipPrice: { fontSize: 12, color: "#3B4DFD", fontWeight: "600", marginTop: 1 },
 
-  return (
-    <View style={styles.aboutContainer}>
-      <Text style={styles.sectionTitle}>About Turf</Text>
-      <Text style={styles.aboutText}>
-        {showMore
-          ? description
-          : description.length > 200
-          ? description.slice(0, 200) + "..."
-          : description}
-      </Text>
+  // Description
+  descText: { fontSize: 14, lineHeight: 22, color: "#666" },
+  readMore: { fontSize: 14, color: "#3B4DFD", fontWeight: "600", marginTop: 6 },
 
-      {description.length > 200 && (
-        <TouchableOpacity
-          onPress={() => setShowMore(!showMore)}
-          style={styles.readMoreContainer}
-        >
-          <View style={styles.readMoreView}>
-            <Text style={styles.readMoreText}>
-              {showMore ? "Read Less" : "Read More"}
-            </Text>
-            <Ionicons
-              name={showMore ? "chevron-up" : "chevron-down"}
-              size={14}
-              color="#007bff"
-              style={styles.readMoreIcon}
-            />
-          </View>
-        </TouchableOpacity>
-      )}
-    </View>
-  );
-};
+  // Amenities
+  amenitiesGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  amenityChip: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    backgroundColor: "#F5F7FF", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20,
+  },
+  amenityText: { fontSize: 12, fontWeight: "600", color: "#555" },
 
-const AmenitiesSection = ({ amenities }) => {
-  if (!amenities || amenities.length === 0) {
-    return (
-      <View style={styles.amenitiesContainer}>
-        <Text style={styles.sectionTitle}>Amenities</Text>
-        <Text style={styles.noDataText}>
-          No amenities information available
-        </Text>
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.amenitiesContainer}>
-      <Text style={styles.sectionTitle}>Amenities</Text>
-      <View style={styles.amenitiesWrap}>
-        {amenities.map((item, idx) => (
-          <View key={idx} style={styles.amenityItem}>
-            <MaterialCommunityIcons
-              name={getAmenityIcon(item)}
-              size={18}
-              color="#666666"
-            />
-            <Text style={styles.amenityLabel}>{item}</Text>
-          </View>
-        ))}
-      </View>
-    </View>
-  );
-};
-
-const getAmenityIcon = (amenity) => {
-  const iconMap = {
-    "Artificial Turf": "sprout-outline",
-    "Drinking Water": "cup-water",
-    "Seating Lounge": "sofa",
-    Restroom: "toilet",
-    Parking: "parking",
-    "Changing Room": "wardrobe",
-    // Add more mappings as needed
-  };
-  return iconMap[amenity] || "check-circle-outline";
-};
-
-const TurfRulesSection = ({ rules }) => {
-  if (!rules || rules.length === 0) {
-    return (
-      <View style={styles.rulesContainer}>
-        <Text style={styles.sectionTitle}>Turf Rules</Text>
-        <Text style={styles.noDataText}>No rules information available</Text>
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.rulesContainer}>
-      <Text style={styles.sectionTitle}>Turf Rules</Text>
-      <Text style={styles.rulesHeader}>Rules & Regulations</Text>
-      <View style={styles.bulletList}>
-        {rules.map((rule, index) => (
-          <Text key={index} style={styles.bulletPoint}>
-            {"\u2022"} {rule}
-          </Text>
-        ))}
-      </View>
-    </View>
-  );
-};
-
-const BookNowButton = ({ turfId, navigation }) => {
-  const [isLoading, setIsLoading] = useState(false);
-
-  const handleBookNow = () => {
-    setIsLoading(true);
-
-    // Simulate API call with timeout
-    setTimeout(() => {
-      setIsLoading(false);
-      navigation.navigate("TurfBooking", { turfId: turfId });
-    }, 800);
-  };
-
-  return (
-    <View style={styles.bookButtonContainer}>
-      <TouchableOpacity
-        style={styles.bookButton}
-        onPress={handleBookNow}
-        disabled={isLoading}
-        activeOpacity={0.8}
-      >
-        {isLoading ? (
-          <ActivityIndicator color="#FFFFFF" size="small" />
-        ) : (
-          <>
-            <Text style={styles.bookButtonText}>Book Now</Text>
-            <View style={styles.arrowContainer}>
-              <Text style={styles.arrowIcon}>›</Text>
-            </View>
-          </>
-        )}
-      </TouchableOpacity>
-    </View>
-  );
-};
-
-// const BookNowButton = ({ turfId, navigation }) => {
-//   const [isOrange, setIsOrange] = useState(true);
-
-//   const handleBookNow = () => {
-//     console.log(`Booking turf with ID: ${turfId}`);
-//     // Navigate to booking screen based on the turf ID
-//     navigation.navigate("BookingScreen", { turfId: turfId });
-//   };
-
-//   const handleButtonToggle = () => {
-//     setIsOrange(!isOrange);
-//   };
-
-//   const renderButtonContent = () => {
-//     if (isOrange) {
-//       return (
-//         <TouchableOpacity
-//           style={[styles.button, styles.orangeButton]}
-//           onPress={() => {
-//             handleBookNow();
-//             handleButtonToggle();
-//           }}
-//         >
-//           <View style={styles.iconCircle}>
-//             <Text style={[styles.iconText, { color: "#FF6A00" }]}>{"»"}</Text>
-//           </View>
-//           <Text style={styles.buttonText}>Book Now</Text>
-//         </TouchableOpacity>
-//       );
-//     }
-
-//     return (
-//       <TouchableOpacity
-//         style={[styles.button, styles.blueButton]}
-//         onPress={() => {
-//           handleBookNow();
-//           handleButtonToggle();
-//         }}
-//       >
-//         <Text style={[styles.iconText, styles.blueArrowText]}>{"»»»»"}</Text>
-//         <View style={styles.iconCircleRight}>
-//           <Text style={[styles.iconText1, { color: "#1D6B88" }]}>{"›"}</Text>
-//         </View>
-//       </TouchableOpacity>
-//     );
-//   };
-
-//   return <View style={styles.bcontainer}>{renderButtonContent()}</View>;
-// };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#f2f4f7",
-  },
-  headerActions: {
-    position: "absolute",
-    top: 20,
-    right: 16,
-    flexDirection: "row",
-    zIndex: 10,
-  },
-  trainersListContainer: {
-    marginTop: 8,
-  },
-  trainerListCard: {
-    flexDirection: "row",
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  trainerListImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 12,
-    marginRight: 12,
-  },
-  trainerListInfo: {
-    flex: 1,
-    justifyContent: "space-between",
-  },
-  trainerHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 4,
-  },
-  trainerListName: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
-    flex: 1,
-  },
-  ratingSection: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  ratingValue: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#333",
-    marginLeft: 2,
-  },
-  ratingCount: {
-    fontSize: 14,
-    color: "#666",
-    marginLeft: 2,
-  },
-  verifiedText: {
-    fontSize: 14,
-    color: "#666",
-    marginBottom: 8,
-  },
-  sportsAndDetails: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  sportsList: {
-    flexDirection: "row",
-    flex: 1,
-  },
-  sportBadge: {
-    backgroundColor: "#f0f0f0",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    marginRight: 8,
-  },
-  sportBadgeText: {
-    fontSize: 12,
-    color: "#333",
-    fontWeight: "500",
-  },
-  viewDetailsButton: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  viewDetailsText: {
-    fontSize: 14,
-    color: "#007AFF",
-    marginRight: 4,
-  },
-  clubContainer: {
-    marginTop: 8,
-  },
-  clubName: {
-    fontSize: 14,
-    color: "#555",
-    marginTop: 2,
-    fontWeight: "500",
-  },
-  favoriteButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(255, 255, 255, 0.9)",
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 3,
-    marginTop: 30,
-  },
-  scrollViewContent: {
-    paddingBottom: 40,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  loadingText: {
-    marginTop: 10,
-    color: "#FF6B00",
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  errorText: {
-    color: "red",
-    fontSize: 18,
-    marginBottom: 20,
-    textAlign: "center",
-  },
-  retryButton: {
-    backgroundColor: "#FF6B00",
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-  },
-  retryButtonText: {
-    color: "#fff",
-    fontWeight: "bold",
-  },
-  carouselWrapper: {
-    marginTop: 40,
-    alignItems: "center",
-  },
-  imageWrapper: {
-    width: width,
-    height: 250,
-    borderRadius: 16,
-    overflow: "hidden",
-    elevation: 4,
-    backgroundColor: "#fff",
-  },
-  image: {
-    width: "100%",
-    height: "100%",
-  },
-  leftArrow: {
-    position: "absolute",
-    left: 10,
-    top: "45%",
-    zIndex: 2,
-    backgroundColor: "rgba(0,0,0,0.4)",
-    padding: 5,
-    borderRadius: 20,
-  },
-  rightArrow: {
-    position: "absolute",
-    right: 10,
-    top: "45%",
-    zIndex: 2,
-    backgroundColor: "rgba(0,0,0,0.4)",
-    padding: 5,
-    borderRadius: 20,
-  },
-  indicatorContainer: {
-    flexDirection: "row",
-    justifyContent: "center",
-    marginTop: 2,
-  },
-  dot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: "#ccc",
-    marginHorizontal: 4,
-  },
-  activeDot: {
-    width: 20,
-    backgroundColor: "#FF7A00",
-    borderRadius: 5,
-  },
-  venueCard: {
-    marginHorizontal: 16,
-    marginTop: 20,
-    padding: 16,
-    backgroundColor: "#fff",
-    borderRadius: 8,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 6,
-  },
-  rowBetween: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-  },
-  addressContainer: {
-    flex: 1,
-    paddingRight: 8,
-  },
-  label: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#222",
-  },
-  address: {
-    fontSize: 14,
-    lineHeight: 22,
-    color: "#555",
-    marginTop: 2,
-    fontFamily: "Roboto",
-    fontWeight: "400",
-    letterSpacing: -0.41,
-    textAlignVertical: "center",
-  },
-  direction: {
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 2,
-  },
-  distance: {
-    fontSize: 12,
-    color: "#666",
-    marginTop: 4,
-  },
-  price: {
-    marginTop: 8,
-    fontSize: 15,
-    color: "#222",
-  },
-  priceValue: {
-    fontWeight: "600",
-  },
-  additionalInfoContainer: {
-    marginTop: 6,
-  },
-  time: {
-    fontSize: 14,
-    color: "#222",
-  },
-  ratingBlock: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 2,
-    marginTop: 6,
-  },
-  ratingText: {
-    fontSize: 13,
-    color: "#444",
-    marginLeft: 6,
-  },
-  trainersContainer: {
-    backgroundColor: "#fff",
-    marginHorizontal: 16,
-    marginTop: 16,
-    padding: 16,
-    borderRadius: 8,
-  },
-  trainersRow: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  trainerCard: {
-    width: 120,
-    alignItems: "center",
-    backgroundColor: "#f8f9fa",
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#e9ecef",
-  },
-  trainerImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    marginBottom: 8,
-  },
-  trainerName: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#333",
-    textAlign: "center",
-    marginBottom: 4,
-  },
-  trainerSports: {
-    fontSize: 12,
-    color: "#666",
-    textAlign: "center",
-    marginBottom: 2,
-  },
-  trainerExperience: {
-    fontSize: 11,
-    color: "#999",
-    textAlign: "center",
-  },
-  noDataText: {
-    fontSize: 14,
-    color: "#888",
-    fontStyle: "italic",
-    marginVertical: 8,
-  },
-  sportsContainer: {
-    backgroundColor: "#fff",
-    marginHorizontal: 16,
-    marginTop: 16,
-    padding: 16,
-    borderRadius: 8,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    marginBottom: 8,
-    color: "#333",
-  },
-  sportsRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 5,
-  },
-  sportItem: {
-    alignItems: "center",
-    width: 70,
-  },
-  sportIconWrap: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    borderWidth: 1,
-    borderColor: "#1D6A8B",
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#E6F0FA",
-  },
-  sportIcon: {
-    width: 24,
-    height: 24,
-  },
-  sportLabel: {
-    fontSize: 12,
-    textAlign: "center",
-    color: "#333",
-    marginTop: 4,
-  },
-  aboutContainer: {
-    backgroundColor: "#fff",
-    marginHorizontal: 16,
-    marginTop: 16,
-    padding: 16,
-    borderRadius: 8,
-  },
-  aboutText: {
-    fontSize: 14,
-    fontWeight: "400",
-    color: "#666666",
-    lineHeight: 22,
-    marginBottom: 8,
-  },
-  readMoreContainer: {
-    alignSelf: "flex-end",
-  },
-  readMoreView: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  readMoreText: {
-    fontSize: 14,
-    color: "#007bff",
-    fontWeight: "500",
-    marginRight: 4,
-  },
-  readMoreIcon: {
-    marginTop: 2,
-  },
-  amenitiesContainer: {
-    backgroundColor: "#fff",
-    marginHorizontal: 16,
-    marginTop: 16,
-    padding: 16,
-    borderRadius: 8,
-  },
-  amenitiesWrap: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-    marginBottom: 10,
-  },
-  amenityItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    backgroundColor: "#f1f4f9",
-    borderRadius: 20,
-  },
-  amenityLabel: {
-    fontSize: 13,
-    color: "#444",
-    marginLeft: 6,
-  },
-  rulesContainer: {
-    backgroundColor: "#fff",
-    marginHorizontal: 16,
-    marginTop: 16,
-    padding: 16,
-    borderRadius: 12,
-  },
-  rulesHeader: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 6,
-  },
-  bulletList: {
-    marginBottom: 12,
-  },
-  bulletPoint: {
-    fontSize: 14,
-    color: "#555",
-    marginBottom: 4,
-  },
-  bcontainer: {
-    alignItems: "center",
-    height: 60,
-    width: "100%",
-    paddingHorizontal: 16,
-    marginTop: 16,
-  },
-  bookButtonContainer: {
-    width: "100%",
-    paddingHorizontal: 16,
-    marginTop: 24,
-    marginBottom: 16,
-    alignItems: "center",
-  },
-  bookButton: {
-    width: "100%",
-    height: 56,
-    backgroundColor: "#FF6B00",
-    borderRadius: 28,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 16,
-    // Add shadow
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 4,
-  },
-  bookButtonText: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "600",
-    letterSpacing: 0.5,
-    marginRight: 8,
-  },
-  arrowContainer: {
-    marginLeft: 4,
-  },
-  arrowIcon: {
-    color: "white",
-    fontSize: 24,
-    fontWeight: "bold",
-  },
-  orangeButton: {
-    backgroundColor: "#FF6A00",
-    justifyContent: "flex-start",
-  },
-  blueButton: {
-    backgroundColor: "#1D6B88",
-    justifyContent: "space-between",
-  },
-  iconText: {
-    fontSize: 45,
-    fontWeight: "bold",
-    alignItems: "center",
-    marginTop: -11,
-    marginLeft: 25,
-  },
-  blueArrowText: {
-    color: "#FFFFFF",
-    fontSize: 45,
-    fontWeight: "bold",
-    marginTop: -25,
-    right: -55,
-  },
-  iconCircle: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 999,
-    marginLeft: -10,
-    height: 40,
-    width: 66,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  iconCircleRight: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 999,
-    height: 40,
-    width: 66,
-    marginRight: -12,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  iconText1: {
-    fontSize: 45,
-    fontWeight: "bold",
-    marginTop: -11,
-    marginLeft: 30,
-  },
+  // Bottom Bar
+  bottomBar: {
+    position: "absolute", bottom: 0, left: 0, right: 0,
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    backgroundColor: "#fff", paddingHorizontal: 20, paddingTop: 14,
+    borderTopWidth: 1, borderTopColor: "#F0F0F0",
+    shadowColor: "#000", shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 10,
+  },
+  bottomPrice: { fontSize: 22, fontWeight: "800", color: "#1a1a2e" },
+  bottomPriceUnit: { fontSize: 13, fontWeight: "500", color: "#999" },
+  bottomPriceSub: { fontSize: 11, color: "#999", marginTop: 1 },
+  bookBtn: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: "#3B4DFD", paddingHorizontal: 28, paddingVertical: 14, borderRadius: 16,
+  },
+  bookBtnText: { fontSize: 16, fontWeight: "700", color: "#fff" },
 });
 
-// Export the component for use in other files
 export { PlayerVenueDetails };

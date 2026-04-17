@@ -25,6 +25,7 @@ import * as Sharing from "expo-sharing"; // ✅ for system share sheet
 import * as Clipboard from "expo-clipboard"; // ✅ for copying links/text
 import { showMessage } from "react-native-flash-message";
 import managerPaymentAPI from "../../api/managerPayment";
+import CouponInput from "../../components/CouponInput";
 
 const QRPaymentScreen = ({ navigation, route }) => {
   const {
@@ -242,6 +243,7 @@ const QRPaymentScreen = ({ navigation, route }) => {
         status: "pending",
         team: bookingData?.team || {}, // Include team info if exists
         selectedCategories: bookingData?.selectedCategories || [], // Include selected categories
+        employeeId: bookingData?.employeeId || null,
       };
 
       const response = await axios.post(
@@ -311,8 +313,8 @@ const QRPaymentScreen = ({ navigation, route }) => {
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 100}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0}
       >
         <ScrollView contentContainerStyle={[styles.container, keyboardVisible && styles.containerWithKeyboard]}>
 
@@ -340,6 +342,31 @@ const QRPaymentScreen = ({ navigation, route }) => {
             </View>
           </View>
 
+
+          {/* Coupon Section */}
+          <View style={styles.card}>
+            <CouponInput
+              totalAmount={Number(amount) || 0}
+              applicableType="tournament"
+              applicableId={tournamentId}
+              userId={userId}
+              onApply={(data) => {
+                showMessage({
+                  message: "Coupon Applied!",
+                  description: `You save ₹${data.discount_amount}. Pay ₹${data.final_amount} instead of ₹${data.original_amount}`,
+                  type: "success",
+                  duration: 4000,
+                });
+              }}
+              onRemove={() => {
+                showMessage({
+                  message: "Coupon Removed",
+                  type: "info",
+                  duration: 2000,
+                });
+              }}
+            />
+          </View>
 
           {/* QR Code Section */}
           {qrCode ? (

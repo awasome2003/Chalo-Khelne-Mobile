@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   RefreshControl,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { MaterialIcons, FontAwesome5, Feather, Ionicons } from '@expo/vector-icons';
 import API from '../../api/tournaments';
@@ -25,8 +26,8 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
   const [error, setError] = useState(null);
 
   // NEW STATE FOR REDESIGN
-  const isGroupStage = tournamentType?.toLowerCase() === 'group stage';
-  const [viewMode, setViewMode] = useState(isGroupStage ? 'GROUPS' : 'LEADERBOARD');
+  const isGroupStage = tournamentType?.toLowerCase().includes('group stage');
+  const [viewMode, setViewMode] = useState('LEADERBOARD');
   const [groups, setGroups] = useState([]);
   const [matches, setMatches] = useState([]);
   const [selectedGroup, setSelectedGroup] = useState(null);
@@ -38,6 +39,17 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
   const [knockoutMatches, setKnockoutMatches] = useState([]);
   const [highlightedPlayerId, setHighlightedPlayerId] = useState(null);
   const [highlightedPathIds, setHighlightedPathIds] = useState(new Set());
+  const [topPlayersByGroup, setTopPlayersByGroup] = useState({}); // { groupId: [players] }
+  const [groupCategoryFilter, setGroupCategoryFilter] = useState('all');
+
+  // Match details modal state
+  const [selectedMatch, setSelectedMatch] = useState(null);
+  const [activeSetIndex, setActiveSetIndex] = useState(0);
+
+  // Reset active set when a new match opens
+  useEffect(() => {
+    if (selectedMatch) setActiveSetIndex(0);
+  }, [selectedMatch]);
 
   // No changes needed to columns, keeping them for the leaderboard view mode
 
@@ -46,6 +58,7 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
     if (isGroupStage) {
       fetchGroups();
       fetchKnockoutMatches();
+      fetchAllGroupTopPlayers();
     }
     fetchLeaderboardData();
   }, [tournamentType, tournamentId]);
@@ -62,6 +75,29 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
       console.error('Error fetching groups:', err);
     } finally {
       if (!isGroupStage) setLoading(false);
+    }
+  };
+
+  // Fetch top players for ALL groups in one request — used for group cards preview
+  const fetchAllGroupTopPlayers = async () => {
+    try {
+      const resp = await axios.get(API.ENDPOINTS.TOP_PLAYERS.BY_TOURNAMENT(tournamentId));
+      // Response: { success: true, topPlayers: [{ playerName, points, groupId, ... }] }
+      const flatPlayers = resp.data?.topPlayers || [];
+      const map = {};
+      flatPlayers.forEach(player => {
+        const gid = player.groupId?.toString?.() || player.groupId;
+        if (!gid) return;
+        if (!map[gid]) map[gid] = [];
+        map[gid].push(player);
+      });
+      // Sort each group's players by points (descending)
+      Object.keys(map).forEach(gid => {
+        map[gid].sort((a, b) => (b.points || 0) - (a.points || 0));
+      });
+      setTopPlayersByGroup(map);
+    } catch (err) {
+      // Silent — top players may not be generated yet
     }
   };
 
@@ -193,9 +229,9 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
       let endpoint;
       const type = tournamentType?.toLowerCase();
 
-      if (type === 'group stage') {
+      if (type?.includes('group stage')) {
         endpoint = API.ENDPOINTS.LEADERBOARD.GROUP_STAGE_PLAYERS(tournamentId);
-      } else if (type === 'knockout') {
+      } else if (type?.includes('knockout')) {
         endpoint = API.ENDPOINTS.LEADERBOARD.KNOCKOUT_TEAMS(tournamentId);
       } else {
         throw new Error('Invalid tournament type');
@@ -229,7 +265,8 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
     const mainFetch = fetchLeaderboardData();
     const groupFetch = isGroupStage ? fetchGroups() : Promise.resolve();
     const knockoutFetch = isGroupStage ? fetchKnockoutMatches() : Promise.resolve();
-    Promise.all([mainFetch, groupFetch, knockoutFetch]).finally(() => setRefreshing(false));
+    const topPlayersFetch = isGroupStage ? fetchAllGroupTopPlayers() : Promise.resolve();
+    Promise.all([mainFetch, groupFetch, knockoutFetch, topPlayersFetch]).finally(() => setRefreshing(false));
   }, [isGroupStage]);
 
   // FILTERING AND SORTING
@@ -242,7 +279,7 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(item => {
-        if (tournamentType?.toLowerCase() === 'group stage') {
+        if (tournamentType?.toLowerCase().includes('group stage')) {
           return item.playerName?.toLowerCase().includes(query);
         } else {
           return item.teamName?.toLowerCase().includes(query) ||
@@ -324,53 +361,139 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
       .join(' ');
   };
 
-  const renderGroups = () => (
+  const renderGroups = () => {
+    // Derive unique categories from groups
+    const categories = Array.from(
+      new Set(groups.map(g => g.category).filter(Boolean))
+    );
+
+    // Apply category filter
+    const filteredGroups = groupCategoryFilter === 'all'
+      ? groups
+      : groups.filter(g => g.category === groupCategoryFilter);
+
+    return (
     <View style={styles.tabContent}>
-      {groups.length > 0 ? (
-        <View style={styles.groupGrid}>
-          {groups.map((group, index) => (
-            <TouchableOpacity
-              key={group._id || index}
-              style={styles.groupCard}
-              onPress={() => {
-                setSelectedGroup(group);
-                fetchGroupData(group._id);
-              }}
-            >
-              <LinearGradient
-                colors={['#F4CE74', '#FF7426']}
-                style={styles.groupCardHeader}
+      {/* Category Filter */}
+      {categories.length > 1 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.categoryFilterRow}
+          style={{ marginBottom: 14 }}
+        >
+          <TouchableOpacity
+            onPress={() => setGroupCategoryFilter('all')}
+            style={[
+              styles.categoryChip,
+              groupCategoryFilter === 'all' && styles.categoryChipActive,
+            ]}
+            activeOpacity={0.8}
+          >
+            <Text style={[
+              styles.categoryChipText,
+              groupCategoryFilter === 'all' && styles.categoryChipTextActive,
+            ]}>
+              All ({groups.length})
+            </Text>
+          </TouchableOpacity>
+          {categories.map((cat) => {
+            const count = groups.filter(g => g.category === cat).length;
+            const isActive = groupCategoryFilter === cat;
+            return (
+              <TouchableOpacity
+                key={cat}
+                onPress={() => setGroupCategoryFilter(cat)}
+                style={[styles.categoryChip, isActive && styles.categoryChipActive]}
+                activeOpacity={0.8}
               >
-                <Text style={styles.groupCardTitle}>{group.name || group.groupName || `Group ${index + 1}`}</Text>
-                <Ionicons name="people" size={20} color="white" />
-              </LinearGradient>
-              <View style={styles.groupCardBody}>
-                <View style={styles.groupStatRow}>
-                  <Text style={styles.groupStatLabel}>Players:</Text>
-                  <Text style={styles.groupStatValue}>{group.players?.length || group.teams?.length || 0}</Text>
-                </View>
-                {group.category && (
+                <Text style={[
+                  styles.categoryChipText,
+                  isActive && styles.categoryChipTextActive,
+                ]}>
+                  {formatCategory(cat)} ({count})
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
+
+      {filteredGroups.length > 0 ? (
+        <View style={styles.groupGrid}>
+          {filteredGroups.map((group, index) => {
+            const groupTopPlayers = (topPlayersByGroup[group._id] || []).slice(0, 3);
+            return (
+              <TouchableOpacity
+                key={group._id || index}
+                style={styles.groupCard}
+                onPress={() => {
+                  setSelectedGroup(group);
+                  fetchGroupData(group._id);
+                }}
+              >
+                <LinearGradient
+                  colors={['#F4CE74', '#FF7426']}
+                  style={styles.groupCardHeader}
+                >
+                  <Text style={styles.groupCardTitle}>{group.name || group.groupName || `Group ${index + 1}`}</Text>
+                  <Ionicons name="people" size={20} color="white" />
+                </LinearGradient>
+                <View style={styles.groupCardBody}>
                   <View style={styles.groupStatRow}>
-                    <Text style={styles.groupStatLabel}>Category:</Text>
-                    <Text style={[styles.groupStatValue, { color: '#FF6A00' }]}>{formatCategory(group.category)}</Text>
+                    <Text style={styles.groupStatLabel}>Players:</Text>
+                    <Text style={styles.groupStatValue}>{group.players?.length || group.teams?.length || 0}</Text>
                   </View>
-                )}
-              </View>
-              <View style={styles.groupCardFooter}>
-                <Text style={styles.viewMatchesText}>View Matches</Text>
-                <Ionicons name="arrow-forward" size={16} color="#FF6A00" />
-              </View>
-            </TouchableOpacity>
-          ))}
+                  {group.category && (
+                    <View style={styles.groupStatRow}>
+                      <Text style={styles.groupStatLabel}>Category:</Text>
+                      <Text style={[styles.groupStatValue, { color: '#FF6A00' }]}>{formatCategory(group.category)}</Text>
+                    </View>
+                  )}
+
+                  {/* Top Players Preview */}
+                  {groupTopPlayers.length > 0 && (
+                    <View style={styles.groupTopPlayersBox}>
+                      <View style={styles.groupTopPlayersHeader}>
+                        <Ionicons name="trophy" size={11} color="#FF6A00" />
+                        <Text style={styles.groupTopPlayersTitle}>Top Players</Text>
+                      </View>
+                      {groupTopPlayers.map((player, pIdx) => {
+                        const medal = pIdx === 0 ? '#FFD700' : pIdx === 1 ? '#C0C0C0' : '#CD7F32';
+                        return (
+                          <View key={pIdx} style={styles.groupTopPlayerRow}>
+                            <View style={[styles.groupTopPlayerRank, { backgroundColor: medal }]}>
+                              <Text style={styles.groupTopPlayerRankText}>{pIdx + 1}</Text>
+                            </View>
+                            <Text style={styles.groupTopPlayerName} numberOfLines={1}>
+                              {player.playerName || player.userName || player.name || 'Unknown'}
+                            </Text>
+                            <Text style={styles.groupTopPlayerPts}>{player.points ?? player.totalPoints ?? 0}</Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  )}
+                </View>
+                <View style={styles.groupCardFooter}>
+                  <Text style={styles.viewMatchesText}>View Matches</Text>
+                  <Ionicons name="arrow-forward" size={16} color="#FF6A00" />
+                </View>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       ) : (
         <View style={styles.noDataBox}>
           <Ionicons name="layers-outline" size={48} color="#ddd" />
-          <Text style={styles.noDataText}>No groups created yet</Text>
+          <Text style={styles.noDataText}>
+            {groupCategoryFilter === 'all' ? 'No groups created yet' : 'No groups in this category'}
+          </Text>
         </View>
       )}
     </View>
-  );
+    );
+  };
 
   const renderMatches = () => (
     <View style={styles.tabContent}>
@@ -444,7 +567,7 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
               <View style={styles.matchTeam}>
                 <Text style={styles.matchTeamName}>{match.player1?.userName || match.player1?.playerName || match.team1?.name || 'TBD'}</Text>
                 <Text style={styles.matchScore}>
-                  {match.result?.finalScore?.player1Sets ?? match.liveScore?.player1SetScore ?? 0}
+                  {(() => { const r = require('../../utils/matchResultUtils').readMatchResult(match); return r?.player1Score ?? 0; })()}
                 </Text>
               </View>
               <View style={styles.matchVs}>
@@ -452,7 +575,7 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
               </View>
               <View style={styles.matchTeam}>
                 <Text style={styles.matchScore}>
-                  {match.result?.finalScore?.player2Sets ?? match.liveScore?.player2SetScore ?? 0}
+                  {(() => { const r = require('../../utils/matchResultUtils').readMatchResult(match); return r?.player2Score ?? 0; })()}
                 </Text>
                 <Text style={styles.matchTeamName}>{match.player2?.userName || match.player2?.playerName || match.team2?.name || 'TBD'}</Text>
               </View>
@@ -672,17 +795,21 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
                               {/* Left Connector (Receive from previous) */}
                               {rIndex > 0 && <View style={[styles.connectorLeft, isDimmed && { opacity: 0.1 }]} />}
 
-                              <View style={[
-                                styles.bracketCard,
-                                { height: CARD_HEIGHT, width: 180 },
-                                isDimmed && { opacity: 0.3, borderColor: '#eee' },
-                                isHighlighted && { borderColor: '#004E93', borderWidth: 2, elevation: 4 }
-                              ]}>
-                                <TouchableOpacity
-                                  style={styles.bracketRow}
-                                  onPress={() => handlePlayerPress(p1Id)}
-                                  activeOpacity={0.7}
-                                >
+                              <TouchableOpacity
+                                onLongPress={() => {
+                                  // Long-press a player to highlight their bracket path
+                                  if (p1Id || p2Id) handlePlayerPress(p1Id || p2Id);
+                                }}
+                                onPress={() => setSelectedMatch(match)}
+                                activeOpacity={0.85}
+                                style={[
+                                  styles.bracketCard,
+                                  { height: CARD_HEIGHT, width: 180 },
+                                  isDimmed && { opacity: 0.3, borderColor: '#eee' },
+                                  isHighlighted && { borderColor: '#004E93', borderWidth: 2, elevation: 4 }
+                                ]}
+                              >
+                                <View style={styles.bracketRow}>
                                   <Text
                                     style={[
                                       styles.bracketName,
@@ -694,15 +821,11 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
                                     {p1Name}
                                   </Text>
                                   <Text style={[styles.bracketScore, isLive && styles.liveScoreText]}>{p1Score}</Text>
-                                </TouchableOpacity>
+                                </View>
 
                                 <View style={styles.bracketDivider} />
 
-                                <TouchableOpacity
-                                  style={styles.bracketRow}
-                                  onPress={() => handlePlayerPress(p2Id)}
-                                  activeOpacity={0.7}
-                                >
+                                <View style={styles.bracketRow}>
                                   <Text
                                     style={[
                                       styles.bracketName,
@@ -714,14 +837,14 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
                                     {p2Name}
                                   </Text>
                                   <Text style={[styles.bracketScore, isLive && styles.liveScoreText]}>{p2Score}</Text>
-                                </TouchableOpacity>
+                                </View>
 
                                 {match.status && (
                                   <View style={[styles.bracketStatusIndicator,
                                   { backgroundColor: isCompleted ? '#4CAF50' : isLive ? '#2196F3' : '#FF9800' }
                                   ]} />
                                 )}
-                              </View>
+                              </TouchableOpacity>
 
                               {/* Right Connectors (Feed to next) */}
                               {rIndex < sortedRoundKeys.length - 1 && (
@@ -795,6 +918,13 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
         {isGroupStage && (
           <View style={styles.tabBar}>
             <TouchableOpacity
+              style={[styles.tabItem, viewMode === 'LEADERBOARD' && styles.activeTabItem]}
+              onPress={() => setViewMode('LEADERBOARD')}
+            >
+              <Text style={[styles.tabText, viewMode === 'LEADERBOARD' && styles.activeTabText]}>Full Standings</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
               style={[styles.tabItem, (viewMode === 'GROUPS' || viewMode === 'MATCHES') && styles.activeTabItem]}
               onPress={() => setViewMode(selectedGroup ? 'MATCHES' : 'GROUPS')}
             >
@@ -809,13 +939,6 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
                 <Text style={[styles.tabText, viewMode === 'KNOCKOUT' && styles.activeTabText]}>Knockout</Text>
               </TouchableOpacity>
             )}
-
-            <TouchableOpacity
-              style={[styles.tabItem, viewMode === 'LEADERBOARD' && styles.activeTabItem]}
-              onPress={() => setViewMode('LEADERBOARD')}
-            >
-              <Text style={[styles.tabText, viewMode === 'LEADERBOARD' && styles.activeTabText]}>Full Standings</Text>
-            </TouchableOpacity>
           </View>
         )}
 
@@ -825,6 +948,207 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
           renderContent()
         )}
       </ScrollView>
+
+      {/* Match Details Modal */}
+      <Modal
+        visible={!!selectedMatch}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSelectedMatch(null)}
+      >
+        <View style={styles.matchModalOverlay}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setSelectedMatch(null)} />
+          <View style={styles.matchModalSheet}>
+            <View style={styles.matchModalHandle} />
+
+            {selectedMatch && (() => {
+              const m = selectedMatch;
+              const p1Name = m.player1?.playerName || m.player1?.playerId?.name || m.player1?.name || 'TBD';
+              const p2Name = m.player2?.playerName || m.player2?.playerId?.name || m.player2?.name || 'TBD';
+              const p1Sets = m.score?.player1Sets ?? m.result?.finalScore?.player1Sets ?? 0;
+              const p2Sets = m.score?.player2Sets ?? m.result?.finalScore?.player2Sets ?? 0;
+              const winnerName = m.winnerName || m.result?.winner?.playerName || m.winner?.playerName;
+              const sets = Array.isArray(m.sets) ? m.sets : [];
+              const courtNumber = m.courtNumber;
+              const roundLabel = m.round ? formatCategory(m.round) : `Round ${m.roundNumber || ''}`;
+              const isCompleted = m.status === 'completed' || m.status === 'COMPLETED';
+              const isLive = m.status === 'in-progress';
+
+              return (
+                <ScrollView showsVerticalScrollIndicator={false}>
+                  {/* Header */}
+                  <View style={styles.matchModalHeader}>
+                    <View>
+                      <Text style={styles.matchModalRound}>{roundLabel}</Text>
+                      {courtNumber && <Text style={styles.matchModalCourt}>Court {courtNumber}</Text>}
+                    </View>
+                    <View style={[styles.matchModalStatusBadge, {
+                      backgroundColor: isCompleted ? '#E8F5E9' : isLive ? '#FFEBEE' : '#FFF3E0',
+                    }]}>
+                      {isLive && <View style={styles.matchModalLiveDot} />}
+                      <Text style={[styles.matchModalStatusText, {
+                        color: isCompleted ? '#2E7D32' : isLive ? '#D32F2F' : '#FF8F00',
+                      }]}>
+                        {isCompleted ? 'COMPLETED' : isLive ? 'LIVE' : 'SCHEDULED'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Players + final set score */}
+                  <View style={styles.matchModalScoreboard}>
+                    <View style={styles.matchModalPlayerCol}>
+                      <Text style={[
+                        styles.matchModalPlayerName,
+                        winnerName === p1Name && styles.matchModalWinnerName,
+                      ]} numberOfLines={2}>
+                        {p1Name}
+                      </Text>
+                      {winnerName === p1Name && (
+                        <View style={styles.matchModalWinnerChip}>
+                          <Ionicons name="trophy" size={11} color="#FFB300" />
+                          <Text style={styles.matchModalWinnerChipText}>Winner</Text>
+                        </View>
+                      )}
+                    </View>
+                    <View style={styles.matchModalScoreCol}>
+                      <Text style={styles.matchModalScoreBig}>{p1Sets}</Text>
+                      <Text style={styles.matchModalScoreSep}>:</Text>
+                      <Text style={styles.matchModalScoreBig}>{p2Sets}</Text>
+                    </View>
+                    <View style={styles.matchModalPlayerCol}>
+                      <Text style={[
+                        styles.matchModalPlayerName,
+                        winnerName === p2Name && styles.matchModalWinnerName,
+                      ]} numberOfLines={2}>
+                        {p2Name}
+                      </Text>
+                      {winnerName === p2Name && (
+                        <View style={styles.matchModalWinnerChip}>
+                          <Ionicons name="trophy" size={11} color="#FFB300" />
+                          <Text style={styles.matchModalWinnerChipText}>Winner</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+
+                  {/* Set-by-set breakdown — tabbed */}
+                  {sets.length > 0 ? (
+                    <View style={styles.matchModalSection}>
+                      <Text style={styles.matchModalSectionTitle}>Set-by-Set Scores</Text>
+
+                      {/* Set Tabs (horizontally scrollable for many sets) */}
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.matchModalSetTabs}
+                      >
+                        {sets.map((set, idx) => {
+                          const isActive = idx === activeSetIndex;
+                          const setWon = !!set.winner?.playerName;
+                          return (
+                            <TouchableOpacity
+                              key={idx}
+                              activeOpacity={0.8}
+                              onPress={() => setActiveSetIndex(idx)}
+                              style={[
+                                styles.matchModalSetTab,
+                                isActive && styles.matchModalSetTabActive,
+                              ]}
+                            >
+                              <Text style={[
+                                styles.matchModalSetTabText,
+                                isActive && styles.matchModalSetTabTextActive,
+                              ]}>
+                                Set {set.setNumber || idx + 1}
+                              </Text>
+                              {setWon && (
+                                <View style={[
+                                  styles.matchModalSetTabDot,
+                                  isActive && { backgroundColor: '#fff' },
+                                ]} />
+                              )}
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </ScrollView>
+
+                      {/* Active Set Content */}
+                      {(() => {
+                        const set = sets[activeSetIndex];
+                        if (!set) return null;
+                        const games = Array.isArray(set.games) ? set.games : [];
+                        const setWinner = set.winner?.playerName;
+
+                        return (
+                          <View style={styles.matchModalSetCard}>
+                            {setWinner && (
+                              <View style={styles.matchModalSetHeader}>
+                                <Text style={styles.matchModalSetWinner}>
+                                  Won by <Text style={{ fontWeight: '800', color: '#FF6A00' }}>{setWinner}</Text>
+                                </Text>
+                              </View>
+                            )}
+                            {games.length > 0 ? (
+                              <View style={styles.matchModalGameGrid}>
+                                <View style={styles.matchModalGameRow}>
+                                  <Text style={styles.matchModalGameLabelHeader}>Game</Text>
+                                  <Text style={styles.matchModalGameScoreHeader} numberOfLines={1}>{p1Name}</Text>
+                                  <Text style={styles.matchModalGameScoreHeader} numberOfLines={1}>{p2Name}</Text>
+                                </View>
+                                {games.map((g, gi) => {
+                                  const s1 = g.finalScore?.player1 ?? 0;
+                                  const s2 = g.finalScore?.player2 ?? 0;
+                                  const gameWinner = g.winner?.playerName;
+                                  return (
+                                    <View key={gi} style={styles.matchModalGameRow}>
+                                      <Text style={styles.matchModalGameLabel}>Game {g.gameNumber || gi + 1}</Text>
+                                      <Text style={[
+                                        styles.matchModalGameScore,
+                                        gameWinner === p1Name && styles.matchModalGameScoreWin,
+                                      ]}>
+                                        {s1}
+                                      </Text>
+                                      <Text style={[
+                                        styles.matchModalGameScore,
+                                        gameWinner === p2Name && styles.matchModalGameScoreWin,
+                                      ]}>
+                                        {s2}
+                                      </Text>
+                                    </View>
+                                  );
+                                })}
+                              </View>
+                            ) : (
+                              <Text style={styles.matchModalNoGames}>No game-level data for this set</Text>
+                            )}
+                          </View>
+                        );
+                      })()}
+                    </View>
+                  ) : isCompleted ? (
+                    <View style={styles.matchModalEmptyBox}>
+                      <Ionicons name="information-circle-outline" size={28} color="#CFD8DC" />
+                      <Text style={styles.matchModalEmptyText}>Detailed set scores not available</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.matchModalEmptyBox}>
+                      <Ionicons name="time-outline" size={28} color="#CFD8DC" />
+                      <Text style={styles.matchModalEmptyText}>Match has not started yet</Text>
+                    </View>
+                  )}
+
+                  <TouchableOpacity
+                    style={styles.matchModalCloseBtn}
+                    onPress={() => setSelectedMatch(null)}
+                  >
+                    <Text style={styles.matchModalCloseBtnText}>Close</Text>
+                  </TouchableOpacity>
+                </ScrollView>
+              );
+            })()}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -967,6 +1291,81 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#FF6A00',
     fontWeight: '600',
+  },
+  groupTopPlayersBox: {
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F5F5F5',
+  },
+  groupTopPlayersHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 6,
+  },
+  groupTopPlayersTitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#FF6A00',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  groupTopPlayerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    gap: 6,
+  },
+  groupTopPlayerRank: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  groupTopPlayerRankText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#fff',
+  },
+  groupTopPlayerName: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#37474F',
+  },
+  groupTopPlayerPts: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FF6A00',
+  },
+  categoryFilterRow: {
+    paddingVertical: 4,
+    paddingHorizontal: 2,
+    gap: 8,
+  },
+  categoryChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#fff',
+    borderWidth: 1.5,
+    borderColor: '#ECEFF1',
+    marginRight: 8,
+  },
+  categoryChipActive: {
+    backgroundColor: '#FF6A00',
+    borderColor: '#FF6A00',
+  },
+  categoryChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#546E7A',
+    letterSpacing: 0.3,
+  },
+  categoryChipTextActive: {
+    color: '#fff',
   },
   backToGroups: {
     flexDirection: 'row',
@@ -1378,6 +1777,265 @@ const styles = StyleSheet.create({
     width: 1,
     height: 40, // Fixed height for visual structure
     backgroundColor: '#999',
+  },
+
+  // Match Details Modal
+  matchModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'flex-end',
+  },
+  matchModalSheet: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 24,
+    maxHeight: '88%',
+  },
+  matchModalHandle: {
+    width: 44,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: '#ECEFF1',
+    alignSelf: 'center',
+    marginBottom: 14,
+  },
+  matchModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 18,
+  },
+  matchModalRound: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#1A1A1A',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+  matchModalCourt: {
+    fontSize: 12,
+    color: '#78909C',
+    fontWeight: '600',
+    marginTop: 3,
+  },
+  matchModalStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    gap: 5,
+  },
+  matchModalStatusText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  matchModalLiveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#D32F2F',
+  },
+  matchModalScoreboard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8F9FA',
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 18,
+  },
+  matchModalPlayerCol: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  matchModalPlayerName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#37474F',
+    textAlign: 'center',
+  },
+  matchModalWinnerName: {
+    color: '#1A1A1A',
+    fontWeight: '900',
+  },
+  matchModalWinnerChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF8E1',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 8,
+    marginTop: 6,
+    gap: 3,
+  },
+  matchModalWinnerChipText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#FFA000',
+  },
+  matchModalScoreCol: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    gap: 8,
+  },
+  matchModalScoreBig: {
+    fontSize: 36,
+    fontWeight: '900',
+    color: '#FF6A00',
+  },
+  matchModalScoreSep: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#CFD8DC',
+  },
+  matchModalSection: {
+    marginBottom: 14,
+  },
+  matchModalSectionTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#90A4AE',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginBottom: 10,
+    marginLeft: 4,
+  },
+  matchModalSetTabs: {
+    paddingVertical: 4,
+    paddingHorizontal: 2,
+    gap: 8,
+    marginBottom: 12,
+  },
+  matchModalSetTab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 12,
+    backgroundColor: '#F5F7F8',
+    borderWidth: 1.5,
+    borderColor: '#ECEFF1',
+    gap: 6,
+    marginRight: 8,
+  },
+  matchModalSetTabActive: {
+    backgroundColor: '#FF6A00',
+    borderColor: '#FF6A00',
+  },
+  matchModalSetTabText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#546E7A',
+    letterSpacing: 0.3,
+  },
+  matchModalSetTabTextActive: {
+    color: '#fff',
+  },
+  matchModalSetTabDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#FF6A00',
+  },
+  matchModalSetCard: {
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#ECEFF1',
+  },
+  matchModalSetHeader: {
+    marginBottom: 10,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F7F8',
+  },
+  matchModalSetTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#263238',
+  },
+  matchModalSetWinner: {
+    fontSize: 13,
+    color: '#78909C',
+    fontWeight: '500',
+  },
+  matchModalGameGrid: {
+    gap: 4,
+  },
+  matchModalGameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  matchModalGameLabelHeader: {
+    flex: 1.2,
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#B0BEC5',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  matchModalGameScoreHeader: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#B0BEC5',
+    textAlign: 'center',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  matchModalGameLabel: {
+    flex: 1.2,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#546E7A',
+  },
+  matchModalGameScore: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#455A64',
+    textAlign: 'center',
+  },
+  matchModalGameScoreWin: {
+    color: '#FF6A00',
+    fontWeight: '900',
+  },
+  matchModalNoGames: {
+    fontSize: 12,
+    color: '#B0BEC5',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    paddingVertical: 8,
+  },
+  matchModalEmptyBox: {
+    alignItems: 'center',
+    paddingVertical: 30,
+    gap: 8,
+  },
+  matchModalEmptyText: {
+    fontSize: 13,
+    color: '#90A4AE',
+    fontWeight: '500',
+  },
+  matchModalCloseBtn: {
+    backgroundColor: '#1A1A1A',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 14,
+  },
+  matchModalCloseBtnText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
 });
 

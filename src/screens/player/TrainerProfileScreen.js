@@ -53,11 +53,13 @@ const TrainerProfileScreen = ({ route, navigation }) => {
       if (formattedUrl.match(/^[A-Z]:\\/)) {
         // Extract just the filename for Windows paths
         const filename = formattedUrl.split("\\").pop();
-        formattedUrl = `${API.BASE_URL}/api/uploads/certificates/${filename}`;
+        formattedUrl = `${API.SERVER_URL}/uploads/certificates/${filename}`;
       } else if (formattedUrl.startsWith("/uploads")) {
-        formattedUrl = `${API.BASE_URL}${formattedUrl}`;
+        formattedUrl = `${API.SERVER_URL}${formattedUrl}`;
       } else if (!formattedUrl.startsWith("http")) {
-        formattedUrl = `${API.BASE_URL}/api/${formattedUrl}`;
+        // Strip leading "uploads/" if present to avoid double path
+        const cleanPath = formattedUrl.replace(/^\.?\/?uploads\//i, "");
+        formattedUrl = `${API.SERVER_URL}/uploads/${cleanPath}`;
       }
     }
 

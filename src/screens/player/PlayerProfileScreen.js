@@ -28,6 +28,8 @@ const Profile = () => {
     const route = useRoute();
     const { user, updateUser, logout } = useAuth();
     const [isTrainer, setIsTrainer] = useState(false);
+    const [availableRoles, setAvailableRoles] = useState(["Player"]);
+    const [currentRole, setCurrentRole] = useState("Player");
     const [loading, setLoading] = useState(true);
     const [uploadingImage, setUploadingImage] = useState(false);
     const [imageError, setImageError] = useState(false);
@@ -138,6 +140,8 @@ const Profile = () => {
             );
             const data = await response.json();
             setCanSwitchRole(data.canSwitch);
+            if (data.availableRoles) setAvailableRoles(data.availableRoles);
+            if (data.currentRole) setCurrentRole(data.currentRole);
         } catch (error) {
             console.error("Error checking role switch availability:", error);
             setCanSwitchRole(false);
@@ -231,25 +235,47 @@ const Profile = () => {
         }
     };
 
+    const switchToRole = async (targetRole) => {
+        const userId = user?._id || user?.id;
+        if (!userId) return;
+
+        try {
+            const token = await getToken();
+            const response = await fetch(AUTH.ENDPOINTS.USER.SWITCH_ROLE(userId), {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ targetRole }),
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                await AsyncStorage.setItem("auth_token", data.token);
+                await AsyncStorage.setItem("auth_user", JSON.stringify(data.user));
+                await updateUser(data.user, data.token);
+
+                setCurrentRole(targetRole);
+                setIsTrainer(targetRole === "Trainer");
+
+                Alert.alert("Success", data.message);
+            } else {
+                Alert.alert("Error", data.message || "Failed to switch role");
+            }
+        } catch (error) {
+            console.error("Error switching role:", error);
+            Alert.alert("Error", "An error occurred while switching roles");
+        }
+    };
+
     const handleRoleSwitch = () => {
         const targetRole = isTrainer ? "Player" : "Trainer";
-
-        Alert.alert(
-            "Switch Role",
-            `Do you want to switch to ${targetRole} mode? This will change your app experience and available features.`,
-            [
-                {
-                    text: "Cancel",
-                    style: "cancel",
-                },
-                {
-                    text: "Confirm",
-                    style: "default",
-                    onPress: toggleSwitch,
-                },
-            ],
-            { cancelable: true }
-        );
+        Alert.alert("Switch Role", `Switch to ${targetRole} mode?`, [
+            { text: "Cancel", style: "cancel" },
+            { text: "Confirm", onPress: () => switchToRole(targetRole) },
+        ]);
     };
 
 
@@ -313,15 +339,25 @@ const Profile = () => {
                     )}
                 </View>
                 <Text style={styles.profileName}>{profileData.name || "NA"}</Text>
-                <View style={styles.badgeContainer}>
-                    <LinearGradient
-                        colors={isTrainer ? ["#FF6A00", "#EE0979"] : ["#004E93", "#00b4db"]}
-                        style={styles.roleBadge}
-                    >
-                        <Text style={styles.roleText}>
-                            {isTrainer ? "Trainer" : "Player"}
-                        </Text>
-                    </LinearGradient>
+                <View style={[styles.badgeContainer, { flexDirection: 'row', gap: 6, flexWrap: 'wrap', justifyContent: 'center' }]}>
+                    {availableRoles.map((role) => {
+                        const isActive = currentRole === role;
+                        const colors = role === "Trainer" ? ["#FF6A00", "#EE0979"]
+                            : role === "Referee" ? ["#3B82F6", "#6366F1"]
+                            : ["#004E93", "#00b4db"];
+                        return (
+                            <LinearGradient
+                                key={role}
+                                colors={isActive ? colors : ["#E5E7EB", "#D1D5DB"]}
+                                style={[styles.roleBadge, { marginHorizontal: 0 }]}
+                            >
+                                <Text style={[styles.roleText, !isActive && { color: '#6B7280' }]}>
+                                    {role === "Referee" ? "Umpire" : role}
+                                    {isActive ? " ★" : ""}
+                                </Text>
+                            </LinearGradient>
+                        );
+                    })}
                 </View>
             </View>
 
@@ -461,27 +497,50 @@ const Profile = () => {
                 </View>
             )}
 
-            {canSwitchRole && (
+            {canSwitchRole && availableRoles.length > 1 && (
                 <View style={styles.card1}>
-                    <Text style={styles.sectionTitle}>Switch Account</Text>
-                    <View style={styles.switchRoleContainer}>
-                        <View style={styles.roleInfo}>
-                            <MaterialIcons name="account-circle" size={24} color="#004E93" />
-                            <View style={styles.roleTextContainer}>
-                                <Text style={styles.currentRoleLabel}>Current Role</Text>
-                                <Text style={styles.currentRoleValue}>
-                                    {isTrainer ? "Trainer" : "Player"}
-                                </Text>
-                            </View>
-                        </View>
-
-                        <TouchableOpacity
-                            style={styles.switchButton}
-                            onPress={handleRoleSwitch}
-                        >
-                            <MaterialIcons name="swap-horiz" size={20} color="#fff" />
-                            <Text style={styles.switchButtonText}>Switch Role</Text>
-                        </TouchableOpacity>
+                    <Text style={styles.sectionTitle}>Switch Account Role</Text>
+                    <Text style={{ fontSize: 11, color: '#999', marginBottom: 12, marginTop: -4 }}>
+                        Tap a role to switch your active mode
+                    </Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                        {availableRoles.map((role) => {
+                            const isActive = currentRole === role;
+                            const icon = role === "Trainer" ? "school"
+                                : role === "Referee" ? "sports"
+                                : "person";
+                            return (
+                                <TouchableOpacity
+                                    key={role}
+                                    style={{
+                                        flex: 1, minWidth: 90, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                                        paddingVertical: 12, paddingHorizontal: 14, borderRadius: 14, gap: 6,
+                                        backgroundColor: isActive ? '#004E93' : '#F3F4F6',
+                                        borderWidth: isActive ? 0 : 1, borderColor: '#E5E7EB',
+                                    }}
+                                    onPress={() => {
+                                        if (isActive) return;
+                                        Alert.alert(
+                                            "Switch Role",
+                                            `Switch to ${role === "Referee" ? "Umpire" : role} mode?`,
+                                            [
+                                                { text: "Cancel", style: "cancel" },
+                                                { text: "Switch", onPress: () => switchToRole(role) },
+                                            ]
+                                        );
+                                    }}
+                                    activeOpacity={isActive ? 1 : 0.7}
+                                >
+                                    <MaterialIcons name={icon} size={18} color={isActive ? '#FFF' : '#666'} />
+                                    <Text style={{
+                                        fontSize: 13, fontWeight: '800',
+                                        color: isActive ? '#FFF' : '#374151',
+                                    }}>
+                                        {role === "Referee" ? "Umpire" : role}
+                                    </Text>
+                                </TouchableOpacity>
+                            );
+                        })}
                     </View>
                 </View>
             )}

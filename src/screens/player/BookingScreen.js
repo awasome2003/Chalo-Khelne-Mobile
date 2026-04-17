@@ -22,11 +22,12 @@ import axios from "axios";
 import apiConfig from "../../api/api";
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getSportPlayMode } from '../../utils/bookingFieldConfig';
 
 const { width } = Dimensions.get('window');
 
 const BookingScreen = ({ route }) => {
-  const { tournament, selectedCategory } = route.params;
+  const { tournament, selectedCategory, employeeId: passedEmployeeId } = route.params;
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { user, isAuthenticated } = useAuth();
@@ -52,11 +53,9 @@ const BookingScreen = ({ route }) => {
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [validationErrors, setValidationErrors] = useState({});
 
-  // Team Knockout specific states
-  const [teamName, setTeamName] = useState("");
-  // Fixed: Team consists of User + 1 Player
-  const [players, setPlayers] = useState([{ name: "" }, { name: "" }]);
-  const [substitutes, setSubstitutes] = useState([{ name: "" }, { name: "" }]);
+  // Sport-specific config
+  const sportName = tournament.rawData?.sportsType || tournament.sport || null;
+  const playMode = getSportPlayMode(sportName);
 
   const scrollViewRef = useRef(null);
 
@@ -64,10 +63,25 @@ const BookingScreen = ({ route }) => {
   const tournamentRawType = tournament.rawData?.type || tournament.rawData?.sportsType;
   const tournamentType = tournamentRawType || tournament.type || "Tournament";
 
-  const isTeamKnockouts =
+  // Sport-aware team detection
+  const isTeamSport = playMode.isTeam;
+  const isTeamKnockoutType =
     (tournamentType || "").toLowerCase().includes("team knock") ||
-    (tournamentType || "").toLowerCase().includes("knockout") ||
     (tournamentType || "").toLowerCase().includes("teams");
+
+  // Booking mode: team sports get a toggle between "solo" (individual entry) and "team" (full team entry)
+  // Individual sports always book as solo — no tabs shown
+  const [bookingMode, setBookingMode] = useState(isTeamSport ? "solo" : "solo");
+  const isTeamBooking = bookingMode === "team";
+  const isTeamKnockouts = isTeamBooking || (!isTeamSport && isTeamKnockoutType);
+
+  // Dynamic player slots based on sport's typical team size
+  const initialPlayerCount = isTeamSport ? playMode.typical : 2;
+  const [teamName, setTeamName] = useState("");
+  const [players, setPlayers] = useState(
+    Array.from({ length: initialPlayerCount }, () => ({ name: "" }))
+  );
+  const [substitutes, setSubstitutes] = useState([{ name: "" }, { name: "" }]);
 
   const baseFee = categoryFees.length > 0 ? totalCategoryFee : parseFloat(tournament.price?.replace(/[^\d.]/g, "") || 0);
   const totalFee = baseFee;
@@ -79,12 +93,20 @@ const BookingScreen = ({ route }) => {
       if (user.mobile || user.phoneNumber) {
         setPhone((user.mobile || user.phoneNumber).toString());
       }
-      if (isTeamKnockouts) {
-        // Set Player 1 as the current user
-        setPlayers([{ name: user.fullName || user.name || "" }, { name: "" }]);
-      }
     }
-  }, [user, isAuthenticated, isTeamKnockouts]);
+  }, [user, isAuthenticated]);
+
+  // Reset team fields when booking mode changes
+  useEffect(() => {
+    if (isTeamBooking && user) {
+      const slots = Array.from({ length: initialPlayerCount }, (_, i) =>
+        i === 0 ? { name: user.fullName || user.name || "" } : { name: "" }
+      );
+      setPlayers(slots);
+      setSubstitutes([{ name: "" }, { name: "" }]);
+      setTeamName("");
+    }
+  }, [isTeamBooking, initialPlayerCount]);
 
   const handlePhoneChange = (value) => {
     const numericValue = value.replace(/\D/g, '');
@@ -100,16 +122,79 @@ const BookingScreen = ({ route }) => {
     }
   };
 
+  // Player search state
+  const [searchResults, setSearchResults] = useState([]);
+  const [activeSearchIndex, setActiveSearchIndex] = useState(null); // which player field is searching
+  const [searchType, setSearchType] = useState(null); // "player" or "substitute"
+  const searchTimerRef = useRef(null);
+
+  const searchUsers = async (query) => {
+    if (!query || query.trim().length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    try {
+      const res = await axios.get(apiConfig.ENDPOINTS.USER.SEARCH(query.trim()));
+      if (res.data && Array.isArray(res.data)) {
+        setSearchResults(res.data.slice(0, 8)); // limit to 8 results
+      } else if (res.data?.users) {
+        setSearchResults(res.data.users.slice(0, 8));
+      } else {
+        setSearchResults([]);
+      }
+    } catch {
+      setSearchResults([]);
+    }
+  };
+
   const handlePlayerChange = (index, value) => {
     const updatedPlayers = [...players];
-    updatedPlayers[index] = { name: value };
+    updatedPlayers[index] = { name: value, verified: false };
     setPlayers(updatedPlayers);
+
+    // Debounced search
+    setActiveSearchIndex(index);
+    setSearchType("player");
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => searchUsers(value), 400);
+  };
+
+  const handleSelectPlayer = (index, selectedUser) => {
+    const updatedPlayers = [...players];
+    updatedPlayers[index] = {
+      name: selectedUser.name || selectedUser.fullName,
+      odId: selectedUser._id || selectedUser.id,
+      verified: true,
+    };
+    setPlayers(updatedPlayers);
+    setSearchResults([]);
+    setActiveSearchIndex(null);
+    setSearchType(null);
   };
 
   const handleSubstituteChange = (index, value) => {
     const updatedSubs = [...substitutes];
-    updatedSubs[index] = { name: value };
+    updatedSubs[index] = { name: value, verified: false };
     setSubstitutes(updatedSubs);
+
+    // Debounced search
+    setActiveSearchIndex(index);
+    setSearchType("substitute");
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => searchUsers(value), 400);
+  };
+
+  const handleSelectSubstitute = (index, selectedUser) => {
+    const updatedSubs = [...substitutes];
+    updatedSubs[index] = {
+      name: selectedUser.name || selectedUser.fullName,
+      odId: selectedUser._id || selectedUser.id,
+      verified: true,
+    };
+    setSubstitutes(updatedSubs);
+    setSearchResults([]);
+    setActiveSearchIndex(null);
+    setSearchType(null);
   };
 
   const validateForm = async () => {
@@ -120,10 +205,30 @@ const BookingScreen = ({ route }) => {
       errors.phone = "10-digit phone number is required";
     }
 
-    if (isTeamKnockouts) {
+    if (isTeamBooking) {
       if (!teamName.trim()) errors.teamName = "Team name is required";
-      if (!players[0].name.trim()) errors.players = "Player 1 (You) is required";
-      if (!players[1].name.trim()) errors.players = "Player 2 is required";
+
+      // Sport-aware minimum player validation
+      const filledPlayers = players.filter(p => p.name.trim());
+      const minRequired = isTeamSport ? playMode.minPlayers : 2;
+      if (filledPlayers.length < minRequired) {
+        errors.players = `At least ${minRequired} players required for ${sportName || "this sport"}`;
+      }
+
+      // Verify all filled players are registered (selected from search)
+      const unverifiedPlayers = filledPlayers
+        .filter((p, i) => i !== 0 && !p.verified) // skip Player 1 (current user)
+        .map(p => p.name);
+      if (unverifiedPlayers.length > 0) {
+        errors.unverified = `These players are not verified: ${unverifiedPlayers.join(", ")}. Select from search suggestions.`;
+      }
+
+      // Check substitutes too
+      const filledSubs = substitutes.filter(s => s.name.trim());
+      const unverifiedSubs = filledSubs.filter(s => !s.verified).map(s => s.name);
+      if (unverifiedSubs.length > 0) {
+        errors.unverifiedSubs = `These substitutes are not verified: ${unverifiedSubs.join(", ")}. Select from search suggestions.`;
+      }
 
       const validSubs = substitutes.filter(s => s.name.trim());
       const allNames = [...players.map(p => p.name), ...validSubs.map(s => s.name)]
@@ -143,8 +248,8 @@ const BookingScreen = ({ route }) => {
       return false;
     }
 
-    // Server-side validation for players
-    if (isTeamKnockouts) {
+    // Server-side validation for players (only in team booking mode)
+    if (isTeamBooking) {
       const namesToVal = [...players.map(p => p.name.trim()), ...substitutes.map(s => s.name.trim())].filter(Boolean);
       setLoading(true);
       try {
@@ -170,7 +275,7 @@ const BookingScreen = ({ route }) => {
       const bookingData = {
         userId: user?.id || user?._id,
         tournamentId: tournament.id || tournament._id,
-        managerId: tournament.managerId || tournament.rawData?.managerId,
+        managerId: Array.isArray(tournament.managerId) ? tournament.managerId[0] : (Array.isArray(tournament.rawData?.managerId) ? tournament.rawData.managerId[0] : (tournament.managerId || tournament.rawData?.managerId)),
         userName: name,
         userEmail: email,
         userPhone: phone,
@@ -179,15 +284,21 @@ const BookingScreen = ({ route }) => {
         selectedCategories: selectedCategory,
         paymentAmount: totalFee,
         paymentMethod: "cash",
+        employeeId: passedEmployeeId || null,
       };
 
-      if (isTeamKnockouts) {
+      // Include booking mode so backend knows how this player registered
+      bookingData.bookingMode = bookingMode;
+
+      if (isTeamBooking) {
         bookingData.team = {
           name: teamName,
           players: players.map(p => p.name),
           substitutes: substitutes.filter(s => s.name.trim()).map(s => s.name),
         };
       }
+
+      // Sport-specific custom fields removed from player booking (managed by tournament manager)
 
       navigation.navigate("Payment Method", {
         bookingData,
@@ -231,7 +342,7 @@ const BookingScreen = ({ route }) => {
         {/* <View style={{ width: 42 }} /> */}
       </View>
 
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <ScrollView
           style={styles.scrollContainer}
           ref={scrollViewRef}
@@ -266,6 +377,65 @@ const BookingScreen = ({ route }) => {
           </View>
 
           <View style={styles.contentPad}>
+
+            {/* Booking Mode Tabs — only for team sports */}
+            {isTeamSport && (
+              <View style={{
+                flexDirection: 'row', backgroundColor: '#F1F3F5', borderRadius: 14,
+                padding: 4, marginBottom: 18,
+              }}>
+                <TouchableOpacity
+                  onPress={() => setBookingMode("solo")}
+                  style={{
+                    flex: 1, paddingVertical: 12, borderRadius: 11, alignItems: 'center',
+                    backgroundColor: bookingMode === "solo" ? "#FFF" : "transparent",
+                    ...(bookingMode === "solo" ? {
+                      shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.08, shadowRadius: 4, elevation: 3,
+                    } : {}),
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <MaterialCommunityIcons
+                    name="account"
+                    size={20}
+                    color={bookingMode === "solo" ? "#FF6A00" : "#999"}
+                    style={{ marginBottom: 2 }}
+                  />
+                  <Text style={{
+                    fontSize: 13, fontWeight: '800',
+                    color: bookingMode === "solo" ? "#FF6A00" : "#999",
+                  }}>Solo Entry</Text>
+                  <Text style={{ fontSize: 10, color: '#AAA', marginTop: 1 }}>Join as individual</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => setBookingMode("team")}
+                  style={{
+                    flex: 1, paddingVertical: 12, borderRadius: 11, alignItems: 'center',
+                    backgroundColor: bookingMode === "team" ? "#FFF" : "transparent",
+                    ...(bookingMode === "team" ? {
+                      shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.08, shadowRadius: 4, elevation: 3,
+                    } : {}),
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <MaterialCommunityIcons
+                    name="account-group"
+                    size={20}
+                    color={bookingMode === "team" ? "#FF6A00" : "#999"}
+                    style={{ marginBottom: 2 }}
+                  />
+                  <Text style={{
+                    fontSize: 13, fontWeight: '800',
+                    color: bookingMode === "team" ? "#FF6A00" : "#999",
+                  }}>Team Entry</Text>
+                  <Text style={{ fontSize: 10, color: '#AAA', marginTop: 1 }}>Register full team</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
             {/* Contact Details Card */}
             <View style={styles.sectionHeader}>
               <MaterialCommunityIcons name="account-check" size={20} color="#FF6A00" />
@@ -277,53 +447,155 @@ const BookingScreen = ({ route }) => {
               {renderModernInput("Phone Number", phone, handlePhoneChange, "call-outline", "10-digit mobile number", { errorKey: 'phone', keyboardType: 'numeric', maxLength: 10 })}
             </View>
 
-            {/* Team Details if applicable */}
-            {isTeamKnockouts && (
+            {/* Team Details — shown only in "team" booking mode */}
+            {isTeamBooking && (
               <>
                 <View style={styles.sectionHeader}>
                   <MaterialCommunityIcons name="account-group" size={22} color="#FF6A00" />
-                  <Text style={styles.sectionTitle}>Squad Roster</Text>
+                  <Text style={styles.sectionTitle}>
+                    {isTeamSport ? `${playMode.label} Roster` : "Squad Roster"}
+                  </Text>
                 </View>
                 <View style={styles.modernCard}>
-                  {renderModernInput("Team Name", teamName, setTeamName, "shield-outline", "Enter squad name", { errorKey: 'teamName' })}
-                  {/* Captain Removed - User is P1 */}
+                  {renderModernInput("Team Name", teamName, setTeamName, "shield-outline", `Enter ${isTeamSport ? sportName?.toLowerCase() || '' : ''} team name`.trim(), { errorKey: 'teamName' })}
 
                   <View style={styles.rosterLine} />
-                  <Text style={styles.subLabel}>Active Players (2 Required)</Text>
+                  <Text style={styles.subLabel}>
+                    Players ({isTeamSport ? `${playMode.minPlayers}-${playMode.maxPlayers} required` : `${players.length} Required`})
+                  </Text>
                   {players.map((p, i) => (
-                    <View key={i} style={styles.playerRow}>
-                      <View style={styles.playerNum}>
-                        <Text style={styles.pNumText}>{i + 1}</Text>
+                    <View key={i} style={{ marginBottom: 6 }}>
+                      <View style={styles.playerRow}>
+                        <View style={styles.playerNum}>
+                          <Text style={styles.pNumText}>{i + 1}</Text>
+                        </View>
+                        <TextInput
+                          style={[
+                            styles.playerInput,
+                            validationErrors.players && !p.name.trim() && styles.pInputErr,
+                            p.verified && { borderColor: '#34C759', borderWidth: 1.5 },
+                          ]}
+                          placeholder={i === 0 ? "Player 1 (You — Captain)" : `Search player ${i + 1}...`}
+                          value={p.name}
+                          onChangeText={(v) => handlePlayerChange(i, v)}
+                          placeholderTextColor="#CFD8DC"
+                          editable={i !== 0}
+                          onFocus={() => { setActiveSearchIndex(i); setSearchType("player"); }}
+                          onBlur={() => setTimeout(() => { if (activeSearchIndex === i) { setSearchResults([]); setActiveSearchIndex(null); } }, 200)}
+                        />
+                        {p.verified && (
+                          <MaterialIcons name="verified" size={18} color="#34C759" style={{ position: 'absolute', right: 10, top: 12 }} />
+                        )}
                       </View>
-                      <TextInput
-                        style={[styles.playerInput, validationErrors.players && !p.name.trim() && styles.pInputErr]}
-                        placeholder={i === 0 ? "Player 1 (You)" : `Enter player ${i + 1} name`}
-                        value={p.name}
-                        onChangeText={(v) => handlePlayerChange(i, v)}
-                        placeholderTextColor="#CFD8DC"
-                        editable={i !== 0} // User is always Player 1
-                      />
+                      {/* Search dropdown for this player field */}
+                      {activeSearchIndex === i && searchType === "player" && searchResults.length > 0 && (
+                        <View style={{
+                          backgroundColor: '#FFF', borderRadius: 10, marginTop: 2, marginLeft: 36,
+                          borderWidth: 1, borderColor: '#E5E7EB', maxHeight: 160,
+                          shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 4,
+                        }}>
+                          <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                            {searchResults.map((u, idx) => (
+                              <TouchableOpacity
+                                key={u._id || idx}
+                                onPress={() => handleSelectPlayer(i, u)}
+                                style={{
+                                  flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 14,
+                                  borderBottomWidth: idx < searchResults.length - 1 ? 1 : 0, borderBottomColor: '#F3F4F6',
+                                }}
+                              >
+                                <MaterialCommunityIcons name="account-circle" size={24} color="#FF6A00" style={{ marginRight: 10 }} />
+                                <View style={{ flex: 1 }}>
+                                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#1F2937' }}>{u.name || u.fullName}</Text>
+                                  {u.mobile && <Text style={{ fontSize: 10, color: '#9CA3AF' }}>{u.mobile}</Text>}
+                                </View>
+                                <MaterialIcons name="add-circle-outline" size={20} color="#34C759" />
+                              </TouchableOpacity>
+                            ))}
+                          </ScrollView>
+                        </View>
+                      )}
                     </View>
                   ))}
 
+                  {/* Add/Remove player buttons for team sports */}
+                  {isTeamSport && (
+                    <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 12, marginTop: 10 }}>
+                      {players.length < playMode.maxPlayers && (
+                        <TouchableOpacity
+                          onPress={() => setPlayers([...players, { name: "" }])}
+                          style={{ paddingHorizontal: 16, paddingVertical: 8, backgroundColor: '#E8F5E9', borderRadius: 8 }}
+                        >
+                          <Text style={{ color: '#2E7D32', fontWeight: '700', fontSize: 13 }}>+ Add Player</Text>
+                        </TouchableOpacity>
+                      )}
+                      {players.length > playMode.minPlayers && (
+                        <TouchableOpacity
+                          onPress={() => setPlayers(players.slice(0, -1))}
+                          style={{ paddingHorizontal: 16, paddingVertical: 8, backgroundColor: '#FFEBEE', borderRadius: 8 }}
+                        >
+                          <Text style={{ color: '#C62828', fontWeight: '700', fontSize: 13 }}>- Remove</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  )}
+
                   <Text style={[styles.subLabel, { marginTop: 15 }]}>Substitutes (Optional)</Text>
                   {substitutes.map((s, i) => (
-                    <View key={i} style={styles.playerRow}>
-                      <View style={[styles.playerNum, { backgroundColor: '#F5F7F8' }]}>
-                        <Text style={[styles.pNumText, { color: '#90A4AE' }]}>S{i + 1}</Text>
+                    <View key={i} style={{ marginBottom: 6 }}>
+                      <View style={styles.playerRow}>
+                        <View style={[styles.playerNum, { backgroundColor: '#F5F7F8' }]}>
+                          <Text style={[styles.pNumText, { color: '#90A4AE' }]}>S{i + 1}</Text>
+                        </View>
+                        <TextInput
+                          style={[styles.playerInput, s.verified && { borderColor: '#34C759', borderWidth: 1.5 }]}
+                          placeholder={`Search substitute ${i + 1}...`}
+                          value={s.name}
+                          onChangeText={(v) => handleSubstituteChange(i, v)}
+                          placeholderTextColor="#CFD8DC"
+                          onFocus={() => { setActiveSearchIndex(i); setSearchType("substitute"); }}
+                          onBlur={() => setTimeout(() => { if (activeSearchIndex === i && searchType === "substitute") { setSearchResults([]); setActiveSearchIndex(null); } }, 200)}
+                        />
+                        {s.verified && (
+                          <MaterialIcons name="verified" size={18} color="#34C759" style={{ position: 'absolute', right: 10, top: 12 }} />
+                        )}
                       </View>
-                      <TextInput
-                        style={styles.playerInput}
-                        placeholder={`Enter substitute ${i + 1} name`}
-                        value={s.name}
-                        onChangeText={(v) => handleSubstituteChange(i, v)}
-                        placeholderTextColor="#CFD8DC"
-                      />
+                      {/* Search dropdown for this substitute field */}
+                      {activeSearchIndex === i && searchType === "substitute" && searchResults.length > 0 && (
+                        <View style={{
+                          backgroundColor: '#FFF', borderRadius: 10, marginTop: 2, marginLeft: 36,
+                          borderWidth: 1, borderColor: '#E5E7EB', maxHeight: 160,
+                          shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 4,
+                        }}>
+                          <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                            {searchResults.map((u, idx) => (
+                              <TouchableOpacity
+                                key={u._id || idx}
+                                onPress={() => handleSelectSubstitute(i, u)}
+                                style={{
+                                  flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 14,
+                                  borderBottomWidth: idx < searchResults.length - 1 ? 1 : 0, borderBottomColor: '#F3F4F6',
+                                }}
+                              >
+                                <MaterialCommunityIcons name="account-circle" size={24} color="#FF6A00" style={{ marginRight: 10 }} />
+                                <View style={{ flex: 1 }}>
+                                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#1F2937' }}>{u.name || u.fullName}</Text>
+                                  {u.mobile && <Text style={{ fontSize: 10, color: '#9CA3AF' }}>{u.mobile}</Text>}
+                                </View>
+                                <MaterialIcons name="add-circle-outline" size={20} color="#34C759" />
+                              </TouchableOpacity>
+                            ))}
+                          </ScrollView>
+                        </View>
+                      )}
                     </View>
                   ))}
                 </View>
               </>
             )}
+
+            {/* Sport-Specific Fields (match format, seeding, overs, etc.) removed from player booking.
+               These settings are managed by the tournament manager on the web side. */}
 
             {/* Summary Card */}
             <View style={styles.sectionHeader}>
@@ -458,6 +730,11 @@ const styles = StyleSheet.create({
   btnGrad: { height: 64, flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
   btnText: { color: '#FFF', fontSize: 18, fontWeight: '800' },
   disabledBtn: { opacity: 0.5 },
+  selectRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  selectChip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, backgroundColor: '#F1F3F5', borderWidth: 1.5, borderColor: '#ECEFF1' },
+  selectChipActive: { backgroundColor: '#FF6A0015', borderColor: '#FF6A00' },
+  selectChipText: { fontSize: 13, fontWeight: '700', color: '#78909C' },
+  selectChipTextActive: { color: '#FF6A00' },
 });
 
 export default BookingScreen;

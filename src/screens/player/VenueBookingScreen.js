@@ -10,16 +10,21 @@ import {
   Alert,
   ActivityIndicator,
   SafeAreaView,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { MaterialIcons, FontAwesome5 } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import axios from "axios";
 import API from "../../api/api";
 import { useAuth } from "../../context/AuthContext";
+import CouponInput from "../../components/CouponInput";
 
 const VenueBookingScreen = ({ route }) => {
   const { turfId } = route.params;
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const { user, isAuthenticated } = useAuth();
 
   // Form states
@@ -36,6 +41,7 @@ const VenueBookingScreen = ({ route }) => {
   const [availableSports, setAvailableSports] = useState([]);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [validationErrors, setValidationErrors] = useState({});
+  const [appliedCoupon, setAppliedCoupon] = useState(null); // { coupon_id, code, discount_amount, final_amount }
 
   // Initialize form with user data and fetch turf details
   useEffect(() => {
@@ -92,19 +98,13 @@ const VenueBookingScreen = ({ route }) => {
         )}?date=${date}${sportParam}`
       );
 
-      console.log("API Response:", response.data);
-
       if (
         response.data.success &&
         response.data.timeSlots &&
         response.data.timeSlots.length > 0
       ) {
-        // API returned valid time slots
-        console.log("Using time slots from API:", response.data.timeSlots);
         setAvailableTimeSlots(response.data.timeSlots);
       } else {
-        // API returned empty time slots or failed - use predefined ones
-        console.log("API returned empty slots. Using predefined time slots");
         setAvailableTimeSlots(predefinedTimeSlots);
       }
 
@@ -124,8 +124,6 @@ const VenueBookingScreen = ({ route }) => {
     } catch (error) {
       console.error("Error fetching availability:", error);
 
-      // API call failed - use predefined time slots
-      console.log("API call failed. Using predefined time slots");
       setAvailableTimeSlots(predefinedTimeSlots);
 
       if (
@@ -329,8 +327,6 @@ const VenueBookingScreen = ({ route }) => {
         paymentMethod: "cash",
       };
 
-      console.log("Creating booking with data:", bookingData);
-
       // Call API to create booking
       const response = await axios.post(
         API.ENDPOINTS.TURF_BOOKINGS.CREATE,
@@ -392,7 +388,7 @@ const VenueBookingScreen = ({ route }) => {
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#333" />
         </TouchableOpacity>
@@ -400,7 +396,11 @@ const VenueBookingScreen = ({ route }) => {
         <View style={{ width: 24 }} />
       </View>
 
-      <ScrollView style={styles.formContainer}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+      <ScrollView style={styles.formContainer} contentContainerStyle={{ paddingBottom: 40 }}>
         {/* Turf Info */}
         <View style={styles.turfInfoCard}>
           <Text style={styles.turfName}>{turfDetails?.name}</Text>
@@ -610,6 +610,27 @@ const VenueBookingScreen = ({ route }) => {
           </View>
         </View>
 
+        {/* Coupon Code */}
+        {selectedSport && (
+          <View style={styles.formSection}>
+            <CouponInput
+              totalAmount={selectedSport.pricePerHour || 0}
+              applicableType="facility"
+              applicableId={turfId}
+              userId={user?._id || user?.id}
+              onApply={(couponData) => setAppliedCoupon(couponData)}
+              onRemove={() => setAppliedCoupon(null)}
+            />
+            {appliedCoupon && (
+              <View style={{ backgroundColor: "#ECFDF5", borderRadius: 10, padding: 10, marginTop: 4 }}>
+                <Text style={{ fontSize: 13, color: "#065F46", fontWeight: "600" }}>
+                  Final Amount: ₹{appliedCoupon.final_amount} (saved ₹{appliedCoupon.discount_amount})
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+
         {/* Terms and Conditions */}
         <TouchableOpacity
           style={styles.termsRow}
@@ -644,6 +665,7 @@ const VenueBookingScreen = ({ route }) => {
           )}
         </TouchableOpacity>
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };
@@ -658,7 +680,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingBottom: 12,
     backgroundColor: "#fff",
     borderBottomWidth: 1,
     borderBottomColor: "#eee",

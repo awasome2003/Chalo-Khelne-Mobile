@@ -27,7 +27,7 @@ const LeaderboardScreen = () => {
   const fetchTournaments = async () => {
     try {
       setLoading(true);
-      const response = await fetch(API.ENDPOINTS.LEADERBOARD.ALL_TOURNAMENTS);
+      const response = await fetch(`${API.ENDPOINTS.LEADERBOARD.ALL_TOURNAMENTS}?limit=20`);
       const data = await response.json();
 
       if (data.success) {
@@ -60,7 +60,7 @@ const LeaderboardScreen = () => {
 
   // Simple Tournament Card
   const TournamentCard = ({ tournament }) => {
-    const isKnockout = tournament.type?.toLowerCase() === 'knockout';
+    const isKnockout = tournament.type?.toLowerCase().includes('knockout');
 
     return (
       <TouchableOpacity

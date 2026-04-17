@@ -28,10 +28,12 @@ import POSTS from "../../api/posts";
 import AUTH from "../../api/auth";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Website_SERVER_URL from "../../api/api";
+import { useNotifications } from "../../context/NotificationContext";
 
 const PlayerHomeScreen = () => {
   const navigation = useNavigation();
   const { user, logout, updateUser } = useAuth();
+  const { unreadCount: unreadNotifications } = useNotifications();
   // const AnimatedIcon = Animated.createAnimatedComponent(MaterialIcons);
   const [favorites, setFavorites] = useState({});
   const scaleAnim = useRef({}).current;
@@ -54,7 +56,6 @@ const PlayerHomeScreen = () => {
   const [tournaments, setTournaments] = useState([]);
   const [turfs, setTurfs] = useState([]);
   const [posts, setPosts] = useState([]);
-  const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [loading, setLoading] = useState({
     tournaments: true,
     turfs: true,
@@ -345,23 +346,8 @@ const PlayerHomeScreen = () => {
     return date.toLocaleDateString("en-US", options);
   };
 
-  // Fetch notification count
-  const fetchNotificationCount = async () => {
-    if (!user?.id) return;
-
-    try {
-      const response = await fetch(
-        TOURNAMENTS.ENDPOINTS.NOTIFICATIONS.COUNT(user.id)
-      );
-      const data = await response.json();
-
-      if (data.success) {
-        setUnreadNotifications(data.count || 0);
-      }
-    } catch (error) {
-      console.error("Error fetching notification count:", error);
-    }
-  };
+  // Notification count is now handled by NotificationContext (useNotifications hook)
+  const fetchNotificationCount = () => {};
 
   // Fetch tournaments
   const fetchTournaments = async () => {
@@ -802,13 +788,25 @@ const PlayerHomeScreen = () => {
                     <Text style={styles.greetingText}>Welcome back,</Text>
                     <Text style={styles.userNameText}>{user?.name || "Player"}</Text>
                   </View>
-                  {/* <TouchableOpacity
+                  <TouchableOpacity
                     style={styles.notificationBtn}
-                    onPress={toggleNotifications}
+                    onPress={() => {
+                      try {
+                        navigation.navigate("Notifications");
+                      } catch {
+                        navigation.getParent()?.navigate("Home", { screen: "Notifications" });
+                      }
+                    }}
                   >
                     <MaterialIcons name="notifications-none" size={28} color="#fff" />
-                    {unreadNotifications > 0 && <View style={styles.notificationBadge} />}
-                  </TouchableOpacity> */}
+                    {unreadNotifications > 0 && (
+                      <View style={styles.notificationBadge}>
+                        <Text style={{ color: "#fff", fontSize: 9, fontWeight: "800" }}>
+                          {unreadNotifications > 9 ? "9+" : unreadNotifications}
+                        </Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
                 </View>
               </LinearGradient>
             </View>
@@ -878,6 +876,57 @@ const PlayerHomeScreen = () => {
         ListFooterComponent={
           <>
             <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+              {/* Quick Actions */}
+              <View style={{ marginHorizontal: 16, marginHorizontal: 20 }}>
+                <Text style={{ fontSize: 18, fontWeight: "800", color: "#1a1a2e", marginBottom: 12 }}>Quick Actions</Text>
+                <View style={{ flexDirection: "row", gap: 12 }}>
+                  {/* Book a Turf */}
+                  <TouchableOpacity
+                    style={{
+                      flex: 1, backgroundColor: "#fff", borderRadius: 16, padding: 16,
+                      shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
+                      borderWidth: 1, borderColor: "#f0f0f0",
+                    }}
+                    activeOpacity={0.8}
+                    onPress={() => navigation.navigate("TurfList")}
+                  >
+                    <LinearGradient
+                      colors={["#34A4FA", "#3B4DFD"]}
+                      style={{
+                        width: 44, height: 44, borderRadius: 14,
+                        justifyContent: "center", alignItems: "center", marginBottom: 12,
+                      }}
+                    >
+                      <MaterialIcons name="sports-soccer" size={24} color="#fff" />
+                    </LinearGradient>
+                    <Text style={{ fontSize: 15, fontWeight: "700", color: "#1a1a2e" }}>Book a Turf</Text>
+                    <Text style={{ fontSize: 11, color: "#888", marginTop: 3 }}>Browse & book venues</Text>
+                  </TouchableOpacity>
+
+                  {/* My Bookings */}
+                  <TouchableOpacity
+                    style={{
+                      flex: 1, backgroundColor: "#fff", borderRadius: 16, padding: 16,
+                      shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
+                      borderWidth: 1, borderColor: "#f0f0f0",
+                    }}
+                    activeOpacity={0.8}
+                    onPress={() => navigation.navigate("MyBookings")}
+                  >
+                    <View style={{
+                      width: 44, height: 44, borderRadius: 14, backgroundColor: "#E3FF3B",
+                      justifyContent: "center", alignItems: "center", marginBottom: 12,
+                    }}>
+                      <MaterialIcons name="event-note" size={24} color="#252944" />
+                    </View>
+                    <Text style={{ fontSize: 15, fontWeight: "700", color: "#1a1a2e" }}>My Bookings</Text>
+                    <Text style={{ fontSize: 11, color: "#888", marginTop: 3 }}>View your reservations</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
               <View style={styles.Eventscontainer}>
                 <View style={styles.sectionHeader}>
                   <Text style={styles.heading}>Upcoming Events</Text>
@@ -1095,11 +1144,14 @@ const styles = StyleSheet.create({
   },
   notificationBadge: {
     position: 'absolute',
-    top: 12,
-    right: 14,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    top: 6,
+    right: 6,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
     backgroundColor: '#FF6A00',
     borderWidth: 1.5,
     borderColor: '#004E93',

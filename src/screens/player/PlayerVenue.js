@@ -13,9 +13,12 @@ import {
 import FilterModal from "./FilterModal";
 import SportsModal from "./SportsModal";
 import MaterialIcons from "react-native-vector-icons/MaterialIcons";
+import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import API from "../../api/api";
 
 const PlayerVenue = ({ navigation }) => {
+  const insets = useSafeAreaInsets();
   const [modalVisible, setModalVisible] = useState(false);
   const [sportsModalVisible, setSportsModalVisible] = useState(false);
   const [selectedSports, setSelectedSports] = useState([]);
@@ -180,6 +183,15 @@ const PlayerVenue = ({ navigation }) => {
 
   return (
     <ScrollView style={styles.container}>
+      {/* Header */}
+      <View style={[styles.headerBar, { paddingTop: insets.top + 10 }]}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <Ionicons name="arrow-back" size={22} color="#333" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Book a Turf</Text>
+        <View style={{ width: 40 }} />
+      </View>
+
       {/* Search Bar */}
       <View style={styles.searchBar}>
         <MaterialIcons
@@ -204,7 +216,17 @@ const PlayerVenue = ({ navigation }) => {
 
       <View style={styles.players}>
         {/* Header Section */}
-        <Text style={styles.headerText}>Available Venues ({totalTurfs})</Text>
+        <View style={styles.headerRow}>
+          <Text style={styles.headerText}>Available Venues ({totalTurfs})</Text>
+          <TouchableOpacity
+            style={styles.favHeaderBtn}
+            onPress={() => navigation.navigate("FavouriteVenue")}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="heart" size={18} color="#FF3040" />
+            <Text style={styles.favHeaderText}>Favorites</Text>
+          </TouchableOpacity>
+        </View>
 
         {/* Filters */}
         <View style={styles.filters}>
@@ -296,78 +318,91 @@ const PlayerVenue = ({ navigation }) => {
       </View>
 
       {/* Turf List */}
-      <View style={{ backgroundColor: "#f2f2f2", paddingBottom: 20 }}>
+      <View style={{ backgroundColor: "#f2f2f2", paddingBottom: 100 }}>
         {loading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#FF6B00" />
             <Text style={styles.loadingText}>Loading venues...</Text>
           </View>
         ) : filteredTurfs.length > 0 ? (
-          filteredTurfs.map((turf) => (
-            <TouchableOpacity
-              key={turf._id}
-              style={styles.card}
-              onPress={() =>
-                navigation.navigate("TurfDetails", { turfId: turf._id })
-              }
-            >
-              <View style={styles.imageContainer}>
-                <Image
-                  source={
-                    Array.isArray(turf.images) && turf.images.length > 0
-                      ? { uri: `${API.UPLOADS_URL}/${turf.images[0]}` }
-                      : require("../../../assets/turf.jpg")
-                  }
-                  style={styles.venueImage}
-                  resizeMode="cover"
-                />
-                {turf.discount && (
-                  <View style={styles.offerBadge}>
-                    <Text style={styles.offerText}>{turf.discount}</Text>
+          filteredTurfs.map((turf) => {
+            const hasImage = Array.isArray(turf.images) && turf.images.length > 0;
+            const imageUri = hasImage
+              ? { uri: `${API.UPLOADS_URL}/${turf.images[0]}` }
+              : require("../../../assets/turf.jpg");
+            const rating = typeof turf.ratings?.average === "number"
+              ? turf.ratings.average.toFixed(1)
+              : "0.0";
+            const distance = calculateDistance(turf);
+
+            return (
+              <TouchableOpacity
+                key={turf._id}
+                style={styles.card}
+                activeOpacity={0.85}
+                onPress={() => navigation.navigate("TurfDetails", { turfId: turf._id })}
+              >
+                {/* Image Section */}
+                <View style={styles.imageContainer}>
+                  <Image
+                    source={imageUri}
+                    style={styles.venueImage}
+                    resizeMode="cover"
+                    defaultSource={require("../../../assets/turf.jpg")}
+                  />
+                  {/* Gradient overlay */}
+                  <View style={styles.imageGradient} />
+
+                  {/* Rating badge top-left */}
+                  <View style={styles.ratingBadge}>
+                    <MaterialIcons name="star" size={13} color="#FFD700" />
+                    <Text style={styles.ratingBadgeText}>{rating}</Text>
                   </View>
-                )}
-                <View style={styles.titleOverlay}>
-                  <Text style={styles.venueTitle}>{turf.name}</Text>
-                  <View style={{ flexDirection: "row", alignItems: "center" }}>
-                    <MaterialIcons name="star" size={16} color="#FFD700" />
-                    <Text style={styles.ratingText}>
-                      {typeof turf.ratings?.average === "number"
-                        ? turf.ratings.average.toFixed(1)
-                        : "0.0"}
-                      /5
-                    </Text>
-                  </View>
+
+                  {/* Discount badge top-right */}
+                  {turf.discount && (
+                    <View style={styles.offerBadge}>
+                      <Text style={styles.offerText}>{turf.discount}% OFF</Text>
+                    </View>
+                  )}
+
+                  {/* Distance badge bottom-right */}
+                  {distance && (
+                    <View style={styles.distanceBadge}>
+                      <MaterialIcons name="near-me" size={12} color="#FF6A00" />
+                      <Text style={styles.distanceBadgeText}>{distance}</Text>
+                    </View>
+                  )}
                 </View>
-              </View>
-              <View style={styles.cardContent}>
-                <View style={styles.locations}>
-                  <View style={styles.locationTextWrapper}>
-                    <Text style={styles.locationText}>
+
+                {/* Content Section */}
+                <View style={styles.cardContent}>
+                  <Text style={styles.venueTitle} numberOfLines={1}>{turf.name}</Text>
+
+                  <View style={styles.locationRow}>
+                    <MaterialIcons name="location-on" size={14} color="#90A4AE" />
+                    <Text style={styles.locationText} numberOfLines={2}>
                       {getFormattedLocation(turf)}
                     </Text>
                   </View>
 
                   {turf.clubName && (
-                    <Text style={styles.clubText}>Club: {turf.clubName}</Text>
+                    <View style={styles.clubRow}>
+                      <MaterialIcons name="business" size={13} color="#FF6A00" />
+                      <Text style={styles.clubText}>{turf.clubName}</Text>
+                    </View>
                   )}
-                  <View style={styles.distanceRow}>
-                    <MaterialIcons
-                      name="directions"
-                      size={24}
-                      color="#007BFF"
-                    />
-                    <Text style={styles.distanceText}>
-                      {calculateDistance(turf)}
-                    </Text>
-                  </View>
+
+                  {/* Sport Tags */}
+                  {turf.sports && turf.sports.length > 0 && (
+                    <View style={styles.tagRow}>
+                      {turf.sports.map((sport) => renderSportTag(sport))}
+                    </View>
+                  )}
                 </View>
-                <View style={styles.tagRow}>
-                  {turf.sports &&
-                    turf.sports.map((sport) => renderSportTag(sport))}
-                </View>
-              </View>
-            </TouchableOpacity>
-          ))
+              </TouchableOpacity>
+            );
+          })
         ) : (
           <View style={styles.emptyContainer}>
             <MaterialIcons name="sports-soccer" size={60} color="#ccc" />
@@ -392,6 +427,24 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     fontStyle: "italic",
   },
+  headerBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    backgroundColor: "#F3F4F6",
+  },
+  backBtn: {
+    width: 40, height: 40, borderRadius: 14,
+    backgroundColor: "#fff",
+    justifyContent: "center", alignItems: "center",
+    shadowColor: "#000", shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1, shadowRadius: 3, elevation: 2,
+  },
+  headerTitle: {
+    fontSize: 18, fontWeight: "700", color: "#333",
+  },
   searchBar: {
     flexDirection: "row",
     backgroundColor: "#fff",
@@ -401,7 +454,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 16,
     marginHorizontal: 16,
-    marginTop: 40,
+    marginTop: 8,
   },
   players: {
     backgroundColor: "#fff",
@@ -413,10 +466,29 @@ const styles = StyleSheet.create({
     flex: 1,
     color: "#000",
   },
+  headerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
   headerText: {
     fontSize: 22,
     fontWeight: "700",
-    marginBottom: 16,
+  },
+  favHeaderBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "#FFF0F0",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  favHeaderText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#FF3040",
   },
   filters: {
     flexDirection: "row",
@@ -494,117 +566,143 @@ const styles = StyleSheet.create({
   },
   imageContainer: {
     position: "relative",
+    height: 180,
+    backgroundColor: "#E8EDF2",
   },
   card: {
     backgroundColor: "#fff",
-    borderRadius: 15,
+    borderRadius: 20,
     overflow: "hidden",
-    margin: 16,
-    borderWidth: 1,
-    borderColor: "#ddd",
+    marginHorizontal: 16,
+    marginBottom: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
   },
   venueImage: {
     width: "100%",
-    height: 200,
-    borderTopLeftRadius: 15,
-    borderTopRightRadius: 15,
+    height: "100%",
   },
-  titleOverlay: {
+  imageGradient: {
     position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
+    height: 60,
+    backgroundColor: "rgba(0,0,0,0.15)",
+  },
+  ratingBadge: {
+    position: "absolute",
+    top: 12,
+    left: 12,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "rgba(0, 0, 0, 0.45)", // Semi-transparent background
-    padding: 10,
-    borderBottomLeftRadius: 10,
-    borderBottomRightRadius: 10,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    gap: 3,
+  },
+  ratingBadgeText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "700",
   },
   offerBadge: {
     position: "absolute",
-    top: 10,
-    right: 10,
-    backgroundColor: "#FF6B00",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    top: 12,
+    right: 12,
+    backgroundColor: "#FF6A00",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
   },
   offerText: {
     color: "#fff",
-    fontSize: 12,
-    fontWeight: "bold",
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  distanceBadge: {
+    position: "absolute",
+    bottom: 12,
+    right: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    gap: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  distanceBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#333",
   },
   cardContent: {
-    padding: 10,
-  },
-  titleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 6,
+    padding: 14,
+    gap: 8,
   },
   venueTitle: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "bold",
-    flex: 1,
+    color: "#1A1A1A",
+    fontSize: 17,
+    fontWeight: "800",
+    letterSpacing: 0.2,
   },
-  ratingText: {
-    color: "#fff",
-    fontSize: 14,
-    marginLeft: 6,
-  },
-  locations: {
+  locationRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "flex-start",
-    gap: 24,
-  },
-  locationTextWrapper: {
-    flex: 1,
+    gap: 5,
   },
   locationText: {
-    color: "#333",
-    fontSize: 12,
-    marginBottom: 6,
+    color: "#78909C",
+    fontSize: 13,
+    fontWeight: "500",
+    flex: 1,
+    lineHeight: 18,
   },
-  distanceRow: {
-    flexDirection: "column",
+  clubRow: {
+    flexDirection: "row",
     alignItems: "center",
-    marginBottom: 10,
+    gap: 5,
   },
-  distanceText: {
-    marginLeft: 6,
-    color: "#666",
-    fontSize: 10,
+  clubText: {
+    color: "#FF6A00",
+    fontSize: 12,
+    fontWeight: "600",
   },
   tagRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 6,
+    marginTop: 2,
   },
   tagWithIcon: {
     flexDirection: "row",
     alignItems: "center",
-    borderWidth: 0.5,
-    borderColor: "#ddd",
-    borderRadius: 20,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    marginRight: 6,
-    marginBottom: 6,
+    backgroundColor: "#F5F7FA",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    gap: 5,
   },
   tagIcon: {
     width: 14,
     height: 14,
-    marginRight: 6,
     resizeMode: "contain",
   },
   tagText: {
     fontSize: 12,
-    color: "#666",
-    fontWeight: "400",
+    color: "#546E7A",
+    fontWeight: "600",
   },
   loadingContainer: {
     alignItems: "center",

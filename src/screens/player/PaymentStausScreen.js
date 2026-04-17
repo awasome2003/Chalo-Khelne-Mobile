@@ -13,6 +13,7 @@ import { showMessage } from "react-native-flash-message";
 import ManagerPaymentAPI from '../../api/managerPayment'
 import axios from "axios";
 import TournamentConfig from '../../api/tournaments'
+import CouponInput from "../../components/CouponInput"
 
 const PaymentStatusScreen = ({ navigation, route }) => {
     const {
@@ -104,6 +105,7 @@ const PaymentStatusScreen = ({ navigation, route }) => {
                 transactionId: "CASH_PAYMENT", // placeholder for cash bookings
                 team: bookingData?.team || {},
                 registrationId: bookingData?.registrationId || `reg_${Date.now()}`, // keep it for notifications
+                employeeId: bookingData?.employeeId || null,
             };
 
             // Create booking via backend
@@ -115,7 +117,9 @@ const PaymentStatusScreen = ({ navigation, route }) => {
             if (response.data?.success) {
                 // Notify manager after booking creation
                 try {
-                    const notifyRes = await ManagerPaymentAPI.notifyManager(managerId, tournamentId, {
+                    const mgrId = Array.isArray(managerId) ? managerId[0] : managerId;
+                    if (!mgrId) throw new Error("Manager ID not available");
+                    const notifyRes = await ManagerPaymentAPI.notifyManager(mgrId, tournamentId, {
                         userId,
                         amount: paymentAmount ?? tournament?.price ?? 0,  // ✅ must be `amount`
                         registrationId: bookingPayload?.registrationId || `reg_${Date.now()}`,
@@ -258,6 +262,18 @@ const PaymentStatusScreen = ({ navigation, route }) => {
                         ))}
                     </View>
                 )}
+
+                {/* Coupon Section */}
+                <View style={styles.card}>
+                    <CouponInput
+                        totalAmount={Number(paymentAmount) || 0}
+                        applicableType="tournament"
+                        applicableId={tournamentId}
+                        userId={userId}
+                        onApply={() => {}}
+                        onRemove={() => {}}
+                    />
+                </View>
 
                 {/* Payment Instructions Section */}
                 <View style={styles.paymentInstructionsCard}>

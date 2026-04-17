@@ -1,7 +1,8 @@
-import React, { createContext, useState, useEffect, useContext } from "react";
+import React, { createContext, useState, useEffect, useContext, useCallback } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import AUTH from "../api/auth";
 import NotificationService from "../services/NotificationService";
+import { setTokenExpiredHandler } from "../services/apiClient";
 
 // ... (Storage object remains same)
 const USER_KEY = "auth_user";
@@ -97,6 +98,23 @@ export const AuthProvider = ({ children }) => {
         const storedUser = await Storage.getUser();
 
         if (storedToken && storedUser) {
+          // Check if token is expired before using it
+          try {
+            const parts = storedToken.split(".");
+            if (parts.length === 3) {
+              const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+              if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+                console.log("[AUTH] Stored token expired, clearing...");
+                await Storage.clear();
+                setUser(null);
+                setToken(null);
+                setIsInitializing(false);
+                setLoading(false);
+                return;
+              }
+            }
+          } catch {}
+
           // Try to fetch fresh user data from server
           try {
             const response = await fetch(AUTH.ENDPOINTS.CURRENT_USER, {
@@ -107,12 +125,21 @@ export const AuthProvider = ({ children }) => {
               timeout: 10000,
             });
 
+            if (response.status === 401) {
+              // Token rejected by server — clear and logout
+              console.log("[AUTH] Token rejected by server (401), logging out...");
+              await Storage.clear();
+              setUser(null);
+              setToken(null);
+              setIsInitializing(false);
+              setLoading(false);
+              return;
+            }
+
             if (response.ok) {
               const freshUser = await response.json();
               await Storage.storeUser(freshUser);
               setUser(freshUser);
-
-              // Register for push notifications every time app loads if authenticated
               NotificationService.registerPushTokenForNewUser(freshUser.id || freshUser._id);
             } else {
               setUser(storedUser);
@@ -350,7 +377,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   // Log out
-  const logout = async () => {
+  const logout = useCallback(async () => {
     setLoading(true);
     try {
       await Storage.clear();
@@ -361,7 +388,15 @@ export const AuthProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  // Register global token expiry handler for apiClient
+  useEffect(() => {
+    setTokenExpiredHandler(() => {
+      console.log("[AUTH] Token expired — auto logout triggered");
+      logout();
+    });
+  }, [logout]);
 
   // Update profile (works for all user types)
   const updateProfile = async (userId, profileData, profileType = "user") => {
@@ -400,12 +435,10 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Forgot password
+  // Forgot password — send OTP (does NOT use global loading to avoid blocking reset form)
   const forgotPassword = async (email) => {
-    setLoading(true);
     setError(null);
     try {
-      // Use the proper OTP endpoint instead of the JWT link one
       const response = await apiRequest(`${AUTH.BASE_URL}/email/forgot-password/send-otp`, "POST", {
         email,
       });
@@ -413,14 +446,11 @@ export const AuthProvider = ({ children }) => {
     } catch (err) {
       setError(err.message || "Password reset request failed");
       throw err;
-    } finally {
-      setLoading(false);
     }
   };
 
-  // Reset password with OTP
+  // Reset password with OTP — verify then reset in sequence
   const resetPassword = async (data) => {
-    setLoading(true);
     setError(null);
     try {
       // 1. Verify OTP first
@@ -436,8 +466,6 @@ export const AuthProvider = ({ children }) => {
     } catch (err) {
       setError(err.message || "Password reset failed");
       throw err;
-    } finally {
-      setLoading(false);
     }
   };
 

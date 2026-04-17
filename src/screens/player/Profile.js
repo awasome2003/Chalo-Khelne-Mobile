@@ -15,7 +15,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import AUTH from "../../api/auth";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import API from '../../api/api';
@@ -53,6 +53,33 @@ const Profile = () => {
             onPress: () => navigation.navigate('My Profile'),
         },
         {
+            id: 7,
+            title: 'Messages',
+            subtitle: 'Chat with other players',
+            icon: 'chatbubble-ellipses',
+            color: '#007AFF',
+            bgColor: '#F0F7FF',
+            onPress: () => navigation.getParent()?.navigate('Chat', { screen: 'ChatList' }),
+        },
+        {
+            id: 8,
+            title: 'Book a Turf',
+            subtitle: 'Browse and book sports venues',
+            icon: 'football',
+            color: '#059669',
+            bgColor: '#ECFDF5',
+            onPress: () => navigation.getParent()?.navigate('Home', { screen: 'TurfList' }),
+        },
+        {
+            id: 11,
+            title: 'My Career & Rankings',
+            subtitle: 'Stats, history & achievements',
+            icon: 'stats-chart',
+            color: '#DC2626',
+            bgColor: '#FEF2F2',
+            onPress: () => navigation.navigate('TournamentHistory'),
+        },
+        {
             id: 2,
             title: 'Registered Events',
             subtitle: 'View your tournament history',
@@ -71,6 +98,33 @@ const Profile = () => {
             color: '#34C759',
             bgColor: '#F0FFF4',
             onPress: () => navigation.navigate('Payment History'),
+        },
+        {
+            id: 4,
+            title: 'Equipment Exchange',
+            subtitle: 'Buy, sell & manage sports gear',
+            icon: 'basketball-outline',
+            color: '#0079EE',
+            bgColor: '#EFF6FF',
+            onPress: () => navigation.navigate('EquipmentHub'),
+        },
+        {
+            id: 10,
+            title: 'My Services',
+            subtitle: 'Trainer, Referee, Staff profiles',
+            icon: 'briefcase',
+            color: '#FF6A00',
+            bgColor: '#FFF7ED',
+            onPress: () => navigation.navigate('RoleHub'),
+        },
+        {
+            id: 9,
+            title: 'Invitations',
+            subtitle: 'Tournament invites from players',
+            icon: 'mail',
+            color: '#4F46E5',
+            bgColor: '#EEF2FF',
+            onPress: () => navigation.navigate('Invitations'),
         },
     ];
 
@@ -101,9 +155,15 @@ const Profile = () => {
     });
 
     useEffect(() => {
-        fetchProfileData();
         fetchStats();
     }, []);
+
+    // Re-fetch profile every time screen comes into focus (e.g. after editing)
+    useFocusEffect(
+        React.useCallback(() => {
+            fetchProfileData();
+        }, [])
+    );
 
     const fetchStats = async () => {
         if (!user?._id && !user?.id) return;
@@ -215,7 +275,7 @@ const Profile = () => {
                                             ? {
                                                 uri: profileData.profileImage.trim().startsWith('http')
                                                     ? profileData.profileImage.trim()
-                                                    : `${SERVER_URL?.replace(/\/$/, '')}/${profileData.profileImage.trim()}`
+                                                    : `${SERVER_URL?.replace(/\/$/, '')}/uploads/${profileData.profileImage.trim().replace(/^\.?\/?uploads\//i, '')}`
                                             }
                                             : require("../../../assets/mainProfile.jpg")
                                     }

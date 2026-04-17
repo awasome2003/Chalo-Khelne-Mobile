@@ -4,15 +4,15 @@ const { BASE_URL, UPLOADS_URL, Wbsite_SERVER_URL } = API;
 
 const ENDPOINTS = {
     QR_CODES: (managerId, tournamentId) =>
-        `${BASE_URL}/manager/${managerId}/${tournamentId}/qr-codes`,
+        `${BASE_URL}/payments/${managerId}/${tournamentId}/qr-codes`,
     UPI_IDS: (managerId, tournamentId) =>
-        `${BASE_URL}/manager/${managerId}/${tournamentId}/upi-ids`,
+        `${BASE_URL}/payments/${managerId}/${tournamentId}/upi-ids`,
     OFFLINE_PAYMENTS: (managerId, tournamentId) =>
-        `${BASE_URL}/manager/${managerId}/${tournamentId}/offline`,
+        `${BASE_URL}/payments/${managerId}/${tournamentId}/offline`,
     NOTIFY: (managerId, tournamentId) =>
-        `${BASE_URL}/manager/${managerId}/${tournamentId}/notify`,
+        `${BASE_URL}/payments/${managerId}/${tournamentId}/notify`,
     NOTIFICATIONS: (managerId) =>
-        `${BASE_URL}/manager/${managerId}/notifications`, // ✅ new
+        `${BASE_URL}/payments/${managerId}/notifications`,
 };
 
 const managerPaymentAPI = {

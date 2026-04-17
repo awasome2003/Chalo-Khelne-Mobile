@@ -34,5 +34,8 @@ yarn-error.*
 # local env files
 .env*.local
 
+# signing credentials
+credentials.json
+
 # typescript
 *.tsbuildinfo

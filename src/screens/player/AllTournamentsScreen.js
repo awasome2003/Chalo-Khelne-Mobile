@@ -88,22 +88,18 @@ const AllTournamentsScreen = ({ navigation }) => {
   // Add this new function to navigate directly to specific tournament types
   // Update the handleDirectNavigation function
   const handleDirectNavigation = (tournament) => {
-    switch (tournament.type) {
-      case "Group Stage":
-        navigation.navigate("GroupStage", {
-          tournamentId: tournament._id,
-          tournamentName: tournament.title,
-        });
-        break;
-      case "knockout":
-        // Make sure we're using the exact parameter name expected by TeamKnockouts
-        navigation.navigate("TeamKnockouts", {
-          tournamentId: tournament._id, // This is the key parameter
-        });
-        break;
-      default:
-        navigation.navigate("Tournament Details", { tournament });
-        break;
+    const t = tournament.type?.toLowerCase() || "";
+    if (t.includes("group stage")) {
+      navigation.navigate("GroupStage", {
+        tournamentId: tournament._id,
+        tournamentName: tournament.title,
+      });
+    } else if (t.includes("knockout")) {
+      navigation.navigate("TeamKnockouts", {
+        tournamentId: tournament._id,
+      });
+    } else {
+      navigation.navigate("Tournament Details", { tournament });
     }
   };
 
@@ -246,7 +242,7 @@ const AllTournamentsScreen = ({ navigation }) => {
               onPress={() => handleDirectNavigation(item)}
             >
               <Text style={styles.directNavText}>
-                {item.type === "Group Stage" ? "View Groups" : "View Knockouts"}
+                {item.type?.toLowerCase().includes("group stage") ? "View Groups" : "View Knockouts"}
               </Text>
               <MaterialIcons name="launch" size={16} color="#4CAF50" />
             </TouchableOpacity>

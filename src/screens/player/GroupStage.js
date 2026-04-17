@@ -397,13 +397,16 @@ const Tournament = ({ route, navigation }) => {
                         </View>
                       </View>
 
-                      {match.result?.finalScore && (
-                        <View style={styles.scoreBoard}>
-                          <Text style={styles.scoreDigit}>{match.result.finalScore.player1Sets}</Text>
-                          <Text style={styles.scoreSeparator}>:</Text>
-                          <Text style={styles.scoreDigit}>{match.result.finalScore.player2Sets}</Text>
-                        </View>
-                      )}
+                      {match.status === "COMPLETED" && (() => {
+                        const r = require('../../utils/matchResultUtils').readMatchResult(match);
+                        return r ? (
+                          <View style={styles.scoreBoard}>
+                            <Text style={styles.scoreDigit}>{r.player1Score}</Text>
+                            <Text style={styles.scoreSeparator}>:</Text>
+                            <Text style={styles.scoreDigit}>{r.player2Score}</Text>
+                          </View>
+                        ) : null;
+                      })()}
                     </View>
                   ))
                 ) : renderEmptyState("Brackets are being finalized")}

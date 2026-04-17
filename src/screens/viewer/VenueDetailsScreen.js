@@ -13,8 +13,10 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import API from "../../api/api";
+import useBottomInset from "../../hooks/useBottomInset";
 
 const VenueDetailsScreen = ({ route, navigation }) => {
+  const bottom = useBottomInset();
   const { venueId } = route.params || {};
   const [activeTab, setActiveTab] = useState("About");
   const [venue, setVenue] = useState(null);
@@ -530,7 +532,7 @@ const VenueDetailsScreen = ({ route, navigation }) => {
       </ScrollView>
 
       {/* Book Now Button */}
-      <View style={styles.bookButtonContainer}>
+      <View style={[styles.bookButtonContainer, { paddingBottom: 15 + bottom }]}>
         <TouchableOpacity
           style={styles.bookButton}
           onPress={() =>

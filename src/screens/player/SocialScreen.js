@@ -75,11 +75,11 @@ const CommentModal = ({ visible, onClose, post, onAddComment }) => {
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent>
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
         <TouchableOpacity style={{ flex: 1 }} onPress={onClose} />
         <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={styles.modalContent}
         >
           <View style={styles.modalHeader}>
@@ -342,13 +342,17 @@ const Social = ({ navigation }) => {
       }
 
       // Process data
+      // If viewing saved posts, all posts are saved by definition
+      const isViewingSaved = activeTab === "My Account" && activeSubTab === "Save Post";
+
       const processed = data.map(post => ({
         ...post,
         likesCount: post.likes?.length || 0,
-        isLiked: post.likes?.some(like => like._id === currentUserId),
-        // Simplified check, ignoring local storage mismatch for now for clean logic
-        isSaved: post.saves?.some(save => save._id === currentUserId) ||
-          (user?.savedPosts && user.savedPosts.includes(post._id))
+        isLiked: post.likes?.some(like => like._id === currentUserId || like.toString() === currentUserId),
+        isSaved: isViewingSaved ? true : (
+          post.saves?.some(save => (save._id || save).toString() === currentUserId) ||
+          (user?.savedPosts && user.savedPosts.some(sp => (sp._id || sp).toString() === post._id?.toString()))
+        ),
       }));
 
       setPosts(processed);

@@ -11,6 +11,7 @@ import {
   Alert,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Bookingcoach from "./Bookingcoach";
 import { useAuth } from "../../context/AuthContext";
 import axios from "axios";
@@ -19,6 +20,7 @@ import TournamentConfig from "../../api/tournaments";
 
 const MyBooking = () => {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const { user, isAuthenticated } = useAuth();
   const [activeTab, setActiveTab] = useState("Turf");
   const [innerActiveTab, setInnerActiveTab] = useState("Upcoming");
@@ -97,7 +99,7 @@ const MyBooking = () => {
                         turfResponse.data.images &&
                           turfResponse.data.images.length > 0
                           ? {
-                            uri: `${API.UPLOADS_URL}/${turfResponse.data.images[0]}`,
+                            uri: `${API.UPLOADS_URL}/${turfResponse.data.images[0].replace(/\\/g, "/")}`,
                           }
                           : require("../../../assets/turf.jpg"),
                       sport: booking.sport?.name || "Sport",
@@ -413,6 +415,21 @@ const MyBooking = () => {
               <Text style={styles.cancelledText}>Cancelled</Text>
             </View>
           )}
+          {booking.status === "confirmed" && (
+            <View style={[styles.cancelledBadge, { backgroundColor: "#059669" }]}>
+              <Text style={styles.cancelledText}>Confirmed</Text>
+            </View>
+          )}
+          {booking.status === "pending" && (
+            <View style={[styles.cancelledBadge, { backgroundColor: "#D97706" }]}>
+              <Text style={styles.cancelledText}>Pending</Text>
+            </View>
+          )}
+          {booking.status === "completed" && (
+            <View style={[styles.cancelledBadge, { backgroundColor: "#2563EB" }]}>
+              <Text style={styles.cancelledText}>Completed</Text>
+            </View>
+          )}
         </View>
       </View>
       <View style={styles.cardContent}>
@@ -462,30 +479,74 @@ const MyBooking = () => {
           </View>
         </View>
 
-        {/* View Details button - now shown for all bookings regardless of status */}
-        <TouchableOpacity
-          style={styles.viewDetailsButton}
-          onPress={() =>
-            navigation.navigate("TurfConfirmation", {
-              bookingId: booking.id,
-              userId: user?.id || user?._id,
-              turfId:
-                typeof booking.turfId === "object"
-                  ? booking.turfId._id || booking.turfId.id || ""
-                  : booking.turfId,
-              turfName: booking.name,
-              date: formatDate(booking.bookingDate),
-              time: booking.timeSlot,
-              venue: booking.location,
-              amount: booking.amount,
-              status: booking.status,
-              paymentMethod: booking.paymentMethod || "cash",
-            })
-          }
-        >
-          <Text style={styles.viewDetailsText}>View Details</Text>
-          <MaterialIcons name="arrow-forward" size={16} color="#0047AB" />
-        </TouchableOpacity>
+        {/* Action Buttons */}
+        <View style={{ flexDirection: "row", gap: 10, marginTop: 5 }}>
+          <TouchableOpacity
+            style={[styles.viewDetailsButton, { flex: 1 }]}
+            onPress={() =>
+              navigation.navigate("TurfConfirmation", {
+                bookingId: booking.id,
+                userId: user?.id || user?._id,
+                turfId:
+                  typeof booking.turfId === "object"
+                    ? booking.turfId._id || booking.turfId.id || ""
+                    : booking.turfId,
+                turfName: booking.name,
+                date: formatDate(booking.bookingDate),
+                time: booking.timeSlot,
+                venue: booking.location,
+                amount: booking.amount,
+                status: booking.status,
+                paymentMethod: booking.paymentMethod || "cash",
+              })
+            }
+          >
+            <Text style={styles.viewDetailsText}>View Details</Text>
+            <MaterialIcons name="arrow-forward" size={16} color="#0047AB" />
+          </TouchableOpacity>
+
+          {booking.isUpcoming && booking.status !== "cancelled" && (
+            <TouchableOpacity
+              style={[styles.viewDetailsButton, { flex: 1, backgroundColor: "#FFF0F0" }]}
+              onPress={() => {
+                Alert.alert(
+                  "Cancel Booking",
+                  `Are you sure you want to cancel your booking at ${booking.name} on ${formatDate(booking.bookingDate)} (${booking.timeSlot})?`,
+                  [
+                    { text: "No", style: "cancel" },
+                    {
+                      text: "Yes, Cancel",
+                      style: "destructive",
+                      onPress: async () => {
+                        try {
+                          const res = await axios.post(API.ENDPOINTS.TURF_BOOKINGS.CANCEL, {
+                            bookingId: booking.id || booking._id,
+                            userId: user?.id || user?._id,
+                            reason: "Cancelled by user",
+                          });
+                          if (res.data.success) {
+                            Alert.alert("Success", "Booking cancelled successfully");
+                            fetchTurfBookings();
+                          } else {
+                            Alert.alert("Error", res.data.message || "Failed to cancel");
+                          }
+                        } catch (err) {
+                          Alert.alert(
+                            "Error",
+                            err.response?.data?.message || "Failed to cancel booking"
+                          );
+                        }
+                      },
+                    },
+                  ]
+                );
+              }}
+            >
+              <MaterialIcons name="cancel" size={16} color="#DC2626" />
+              <Text style={[styles.viewDetailsText, { color: "#DC2626" }]}>Cancel</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
     </View>
   );
@@ -689,8 +750,9 @@ const MyBooking = () => {
   );
 
   return (
-    <ScrollView style={styles.containers}>
-      <View style={styles.BookingContainer}>
+    <View style={{ flex: 1, backgroundColor: "#f2f4f6" }}>
+    <ScrollView style={styles.containers} contentContainerStyle={{ paddingBottom: 100 }}>
+      <View style={[styles.BookingContainer, { marginTop: insets.top + 10 }]}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#666" />
         </TouchableOpacity>
@@ -893,13 +955,14 @@ const MyBooking = () => {
 
       {activeTab === "Coaching" && <Bookingcoach />}
     </ScrollView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   containers: {
     marginHorizontal: 16,
-    marginTop: 40,
+    marginTop: 10,
     backgroundColor: "#f2f4f6",
   },
   BookingContainer: {

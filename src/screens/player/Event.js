@@ -867,11 +867,8 @@ const Event = ({ navigation }) => {
                       )
                     ) : (
                       <View style={styles.emptyView}>
-                        <MaterialIcons name="lock" size={60} color="#ddd" />
-                        <Text style={styles.emptyHeading}>Login Required</Text>
-                        <TouchableOpacity style={styles.modernActionButton} onPress={() => navigation.navigate("Login")}>
-                          <Text style={styles.modernActionText}>Sign In</Text>
-                        </TouchableOpacity>
+                        <MaterialIcons name="assignment-ind" size={60} color="#ddd" />
+                        <Text style={styles.emptyHeading}>No Registrations</Text>
                       </View>
                     )
                   )}

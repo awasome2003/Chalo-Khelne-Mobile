@@ -5,8 +5,6 @@ import {
   View,
   TouchableOpacity,
   Text,
-  BackHandler,
-  ToastAndroid,
 } from "react-native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -32,11 +30,11 @@ import AllTournamentsScreen from "../screens/player/AllTournamentsScreen";
 import SocialScreen from "../screens/player/SocialScreen";
 import EditProfileScreen from "../screens/player/EditPlayerProfileScreen";
 import FAQScreen from "../screens/player/FAQS";
-import HelpSupportScreen from "../screens/player/PrivacyPolicy";
-import HelpSupportTermsScreen from "../screens/player/TermsConditions";
+import PrivacyPolicyScreen from "../screens/player/PrivacyPolicy";
+import TermsCondition from "../screens/player/TermsConditions";
 import MyBooking from "../screens/player/MyBookings";
 import FavoriteVenue from "../screens/player/FavoriteVenue";
-import PaymentScreen from "../screens/player/PaymentHistory";
+import PaymentHistory from "../screens/player/PaymentHistory";
 import MyEventScreen from "../screens/player/MyEvents";
 import MyEventDetailsScreen from "../screens/player/MyEventDetails";
 import ComingSoonScreen from "../screens/player/ComingSoonScreen";
@@ -46,13 +44,25 @@ import PlayerPaymentScreen from "../screens/player/PlayerPaymentScreen";
 import TournamentFeeSummary from "../screens/player/TournamentFeeSummary";
 import PaymentStatusScreen from "../screens/player/PaymentStausScreen";
 import PlayersManager from "../screens/player/PlayersManager";
-import TournamentLeaderboardDetail from '../screens/player/TournamentLeaderboardDetail'
+import TournamentLeaderboardDetail from "../screens/player/TournamentLeaderboardDetail";
 import Profile from "../screens/player/Profile";
-import PaymentHistoryScreen from "../screens/player/PaymentHistory";
-import TermsCondition from "../screens/player/TermsConditions";
-import HelpSupport from "../screens/player/PrivacyPolicy";
-import PaymentHistory from "../screens/player/PaymentHistory";
-import PrivacyPolicyScreen from "../screens/player/PrivacyPolicy";
+import DonationListScreen from "../screens/player/DonationListScreen";
+import DonationDetailScreen from "../screens/player/DonationDetailScreen";
+import CreateListingScreen from "../screens/player/CreateListingScreen";
+import EquipmentHubScreen from "../screens/player/EquipmentHubScreen";
+import MyListingsScreen from "../screens/player/MyListingsScreen";
+import MyClaimsScreen from "../screens/player/MyClaimsScreen";
+import ChatListScreen from "../screens/player/ChatListScreen";
+import ChatConversationScreen from "../screens/player/ChatConversationScreen";
+import ChatSearchScreen from "../screens/player/ChatSearchScreen";
+import GroupChatListScreen from "../screens/player/GroupChatListScreen";
+import InvitePlayerScreen from "../screens/player/InvitePlayerScreen";
+import InvitationsScreen from "../screens/player/InvitationsScreen";
+import NotificationsScreen from "../screens/player/NotificationsScreen";
+import RoleHub from "../screens/player/RoleHub";
+import ServiceProfileSetup from "../screens/player/ServiceProfileSetup";
+import BrowseTournamentJobs from "../screens/player/BrowseTournamentJobs";
+import TournamentHistory from "../screens/player/TournamentHistory";
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -70,6 +80,16 @@ const HomeStack = () => {
         name="PlayerHome"
         component={PlayerHomeScreen}
         options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="Notifications"
+        component={NotificationsScreen}
+        options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
+      />
+      <Stack.Screen
+        name="InvitePlayer"
+        component={InvitePlayerScreen}
+        options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
       />
       <Stack.Screen
         name="PlayerProfile"
@@ -103,12 +123,12 @@ const HomeStack = () => {
       />
       <Stack.Screen
         name="HelpSupportScreen"
-        component={HelpSupportScreen}
+        component={PrivacyPolicyScreen}
         options={{ headerShown: false }}
       />
       <Stack.Screen
         name="TermsConditionsScreen"
-        component={HelpSupportTermsScreen}
+        component={TermsCondition}
         options={{ headerShown: false }}
       />
       <Stack.Screen
@@ -118,7 +138,7 @@ const HomeStack = () => {
       />
       <Stack.Screen
         name="PaymentHistoryScreen"
-        component={PaymentScreen}
+        component={PaymentHistory}
         options={{ headerShown: false }}
       />
       <Stack.Screen
@@ -131,6 +151,21 @@ const HomeStack = () => {
         component={VenueBookingConfirmation}
         options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
       />
+      <Stack.Screen
+        name="TurfList"
+        component={PlayerVenue}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="TurfBooking"
+        component={VenueBookingScreen}
+        options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
+      />
+
+      {/* Service Role screens (reachable from TournamentDetails → Apply as Staff) */}
+      <Stack.Screen name="BrowseTournamentJobsHome" component={BrowseTournamentJobs} options={{ headerShown: false }} />
+      <Stack.Screen name="RoleHubHome" component={RoleHub} options={{ headerShown: false }} />
+      <Stack.Screen name="ServiceProfileSetupHome" component={ServiceProfileSetup} options={{ headerShown: false }} />
 
       <Stack.Screen
         name="EditProfile"
@@ -190,7 +225,9 @@ const TournamentsStack = () => {
         component={TeamKnockouts}
         options={{ headerShown: false }}
       />
-      {/* Add other tournament-related screens here */}
+      <Stack.Screen name="BrowseTournamentJobsHome" component={BrowseTournamentJobs} options={{ headerShown: false }} />
+      <Stack.Screen name="ServiceProfileSetupHome" component={ServiceProfileSetup} options={{ headerShown: false }} />
+      <Stack.Screen name="RoleHubHome" component={RoleHub} options={{ headerShown: false }} />
     </Stack.Navigator>
   );
 };
@@ -233,6 +270,16 @@ const EventStack = () => {
         options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
       />
       <Stack.Screen
+        name="InvitePlayer"
+        component={InvitePlayerScreen}
+        options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
+      />
+      <Stack.Screen
+        name="Invitations"
+        component={InvitationsScreen}
+        options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
+      />
+      <Stack.Screen
         name="Booking Screen"
         component={BookingScreen}
         options={{ headerShown: true, tabBarStyle: { display: 'none' } }}
@@ -262,6 +309,9 @@ const EventStack = () => {
         component={TournamentLeaderboardDetail}
         options={{ headerShown: true, tabBarStyle: { display: 'none' } }}
       />
+      <Stack.Screen name="BrowseTournamentJobsHome" component={BrowseTournamentJobs} options={{ headerShown: false }} />
+      <Stack.Screen name="ServiceProfileSetupHome" component={ServiceProfileSetup} options={{ headerShown: false }} />
+      <Stack.Screen name="RoleHubHome" component={RoleHub} options={{ headerShown: false }} />
     </Stack.Navigator>
   );
 };
@@ -329,9 +379,9 @@ const PlayStack = () => {
 // Social stack navigator
 const SocialStack = () => {
   return (
-    <Stack.Navigator initialRouteName="Social">
+    <Stack.Navigator initialRouteName="SocialHome">
       <Stack.Screen
-        name="Social"
+        name="SocialHome"
         component={SocialScreen}
         options={{ headerShown: false }}
       />
@@ -340,7 +390,39 @@ const SocialStack = () => {
         component={ComingSoonScreen}
         options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
       />
-      {/* Add other social-related screens here if needed */}
+    </Stack.Navigator>
+  );
+};
+
+// Chat stack navigator
+const ChatStack = () => {
+  return (
+    <Stack.Navigator initialRouteName="ChatList">
+      <Stack.Screen
+        name="ChatList"
+        component={ChatListScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="ChatConversation"
+        component={ChatConversationScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="ChatSearch"
+        component={ChatSearchScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="GroupChatList"
+        component={GroupChatListScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="GroupChatConversation"
+        component={ChatConversationScreen}
+        options={{ headerShown: false }}
+      />
     </Stack.Navigator>
   );
 };
@@ -389,7 +471,70 @@ const ProfileStack = () => {
         component={Event}
         options={{ headerShown: true }}
       />
-      {/* Add other player profile-related screens here */}
+      {/* Equipment Exchange / Donation screens */}
+      <Stack.Screen
+        name="EquipmentHub"
+        component={EquipmentHubScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="DonationList"
+        component={DonationListScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="DonationDetail"
+        component={DonationDetailScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="CreateListing"
+        component={CreateListingScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="MyListings"
+        component={MyListingsScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="MyClaims"
+        component={MyClaimsScreen}
+        options={{ headerShown: false }}
+      />
+      {/* Career Stats */}
+      <Stack.Screen
+        name="TournamentHistory"
+        component={TournamentHistory}
+        options={{ headerShown: false }}
+      />
+      {/* Service Role screens */}
+      <Stack.Screen
+        name="RoleHub"
+        component={RoleHub}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="ServiceProfileSetup"
+        component={ServiceProfileSetup}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="BrowseTournamentJobs"
+        component={BrowseTournamentJobs}
+        options={{ headerShown: false }}
+      />
+      {/* Invitation screens */}
+      <Stack.Screen
+        name="Invitations"
+        component={InvitationsScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="InvitePlayer"
+        component={InvitePlayerScreen}
+        options={{ headerShown: false }}
+      />
     </Stack.Navigator>
   );
 };
@@ -399,7 +544,7 @@ const PaymentStack = () => {
     <Stack.Navigator initialRouteName="PlayerProfile">
       <Stack.Screen
         name="Payment History"
-        component={PaymentHistoryScreen}
+        component={PaymentHistory}
         options={{ headerShown: true }}
       />
       {/* Add other player profile-related screens here */}
@@ -416,7 +561,8 @@ const CustomTabBar = ({ state, navigation, insets }) => {
   const showOnScreens = [
     "PlayerHome",
     "EventScreen",
-    "Social",
+    "SocialHome",
+    "ChatList",
     "Player Profile",
     undefined // When it's the initial route of the stack
   ];
@@ -425,44 +571,13 @@ const CustomTabBar = ({ state, navigation, insets }) => {
     return null;
   }
 
-  const [backPressed, setBackPressed] = React.useState(0);
-
-  React.useEffect(() => {
-    const backAction = () => {
-      // If we are not on the first tab, go back to the first tab (default behavior)
-      if (state.index !== 0) {
-        navigation.navigate(state.routes[0].name);
-        return true;
-      }
-
-      // If we are on the first tab, handle double press to exit
-      if (backPressed > 0 && (new Date().getTime() - backPressed < 2000)) {
-        BackHandler.exitApp();
-        return true;
-      }
-
-      setBackPressed(new Date().getTime());
-      if (Platform.OS === 'android') {
-        ToastAndroid.show("Press back again to exit", ToastAndroid.SHORT);
-      }
-      return true;
-    };
-
-    const backHandler = BackHandler.addEventListener(
-      "hardwareBackPress",
-      backAction
-    );
-
-    return () => backHandler.remove();
-  }, [backPressed, state.index]);
-
   return (
     <View
       style={[
         styles.tabBar,
         {
           paddingBottom: insets?.bottom || 0,           // ⭐ SAFE AREA FIX
-          height: 60 + (insets?.bottom || 0),           // ⭐ PREVENT OVERLAP
+          height: 80 + (insets?.bottom || 0),           // ⭐ PREVENT OVERLAP
           marginBottom: insets?.bottom > 0 ? 0 : 10,     // ⭐ CLEAN LOOK
         },
       ]}
@@ -480,6 +595,8 @@ const CustomTabBar = ({ state, navigation, insets }) => {
           iconName = isFocused ? "trophy" : "trophy-outline";
         } else if (route.name === "Social") {
           iconName = isFocused ? "people" : "people-outline";
+        } else if (route.name === "Chat") {
+          iconName = isFocused ? "chatbubble-ellipses" : "chatbubble-ellipses-outline";
         } else if (route.name === "Tournaments") {
           iconName = isFocused ? "medal" : "medal-outline";
         } else if (route.name === "Trainer") {
@@ -509,7 +626,10 @@ const CustomTabBar = ({ state, navigation, insets }) => {
               navigation.navigate("Events", { screen: "EventScreen" });
               break;
             case "Social":
-              navigation.navigate("Social", { screen: "Social" });
+              navigation.navigate("Social", { screen: "SocialHome" });
+              break;
+            case "Chat":
+              navigation.navigate("Chat", { screen: "ChatList" });
               break;
             case "Profile":
               navigation.navigate("Profile", { screen: "Player Profile" });
@@ -583,6 +703,7 @@ const PlayerNavigator = () => {
       <Tab.Screen name="Home" component={HomeStack} />
       <Tab.Screen name="Events" component={EventStack} />
       <Tab.Screen name="Social" component={SocialStack} />
+      <Tab.Screen name="Chat" component={ChatStack} />
       <Tab.Screen name="Profile" component={ProfileStack} screenOptions={{ headerShown: true }} />
     </Tab.Navigator>
   );
@@ -592,14 +713,10 @@ const styles = StyleSheet.create({
   tabBar: {
     flexDirection: "row",
     justifyContent: "space-evenly",
-    // marginHorizontal: 8,
-    paddingVertical: 10,
     paddingBottom: Platform.OS === "ios" ? 25 : 15,
     borderRadius: 16,
     marginBottom: 10,
     backgroundColor: "#fff",
-    // height: 60 + insets.bottom, // add inset to prevent overlap
-    // Shadow for Android
   },
   tabItem: {
     alignItems: "center",
@@ -611,7 +728,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     display: "flex",
-    gap: 20,
+    gap: 15,
   },
   activeBackground: {
     position: "absolute",

@@ -141,6 +141,8 @@ const ENDPOINTS = {
       `${BASE_URL}/tournaments/matches/${matchId}/update-details`,
     TEAM_DETAILS: (tournamentId, teamId) =>
       `${BASE_URL}/tournaments/team-details/${tournamentId}/${teamId}`,
+    SELECT_PAIRING: (matchId) =>
+      `${BASE_URL}/tournaments/team-knockout/matches/${matchId}/select-pairing`,
   },
 
   NOTIFICATIONS: {

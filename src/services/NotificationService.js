@@ -73,11 +73,15 @@ class NotificationService {
       return null;
     }
 
-    // Push notifications are removed from Expo Go on Android since SDK 53
-    const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
-    if (Platform.OS === "android" && isExpoGo) {
-      console.warn("Push notifications are not supported in Expo Go on Android. Use a development build.");
-      return null;
+    // Push notifications are removed from Expo Go since SDK 53
+    try {
+      const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+      if (isExpoGo) {
+        console.log("[PUSH] Skipping push token registration in Expo Go");
+        return null;
+      }
+    } catch {
+      // ExecutionEnvironment may not exist in some SDK versions
     }
 
     try {

@@ -11,10 +11,12 @@ import {
 } from "react-native";
 import { MaterialIcons, FontAwesome5 } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import axios from "axios";
 import API from "../../api/api";
 
 const VenueBookingConfirmation = ({ route, navigation }) => {
+  const insets = useSafeAreaInsets();
   const {
     bookingId = null,
     turfName = null,
@@ -47,19 +49,22 @@ const VenueBookingConfirmation = ({ route, navigation }) => {
     // Create a date object for the booking date and time
     let bookingDateTime;
     try {
-      // Extract time part from the time slot (assumes format like "7:00 PM - 8:00 PM")
-      const timeMatch = bookingTimeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
-      if (!timeMatch) return false;
+      // Extract time part from the time slot (handles "7:00 PM - 8:00 PM" or "18:00 - 19:00")
+      let hours, minutes;
+      const ampmMatch = bookingTimeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
+      const h24Match = bookingTimeStr.match(/(\d+):(\d+)/);
 
-      let [_, hours, minutes, period] = timeMatch;
-      hours = parseInt(hours);
-      minutes = parseInt(minutes);
-
-      // Convert to 24-hour format
-      if (period.toUpperCase() === "PM" && hours < 12) {
-        hours += 12;
-      } else if (period.toUpperCase() === "AM" && hours === 12) {
-        hours = 0;
+      if (ampmMatch) {
+        hours = parseInt(ampmMatch[1]);
+        minutes = parseInt(ampmMatch[2]);
+        const period = ampmMatch[3];
+        if (period.toUpperCase() === "PM" && hours < 12) hours += 12;
+        else if (period.toUpperCase() === "AM" && hours === 12) hours = 0;
+      } else if (h24Match) {
+        hours = parseInt(h24Match[1]);
+        minutes = parseInt(h24Match[2]);
+      } else {
+        return false;
       }
 
       // Parse the date
@@ -79,8 +84,8 @@ const VenueBookingConfirmation = ({ route, navigation }) => {
   };
 
   // Generate a booking reference number
-  const bookingRef = bookingId
-    ? bookingId.substring(0, 8)
+  const bookingRef = bookingId && typeof bookingId === "string" && bookingId.length >= 8
+    ? bookingId.substring(0, 8).toUpperCase()
     : `TRF-${Math.floor(Math.random() * 10000)
         .toString()
         .padStart(4, "0")}`;
@@ -233,18 +238,18 @@ const VenueBookingConfirmation = ({ route, navigation }) => {
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
-      {/* <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <TouchableOpacity
           style={styles.backBtn}
-          onPress={() => navigation.navigate("MyBookings")}
+          onPress={() => navigation.goBack()}
         >
           <MaterialIcons name="arrow-back" size={24} color="#333" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Booking Confirmation</Text>
         <View style={{ width: 24 }} />
-      </View> */}
+      </View>
 
-      <ScrollView style={styles.scrollContainer}>
+      <ScrollView style={styles.scrollContainer} contentContainerStyle={{ paddingBottom: 100 }}>
         {error && (
           <View style={styles.errorBanner}>
             <MaterialIcons name="info" size={20} color="#fff" />
@@ -391,7 +396,7 @@ const VenueBookingConfirmation = ({ route, navigation }) => {
         </View>
 
         {/* Cancel Booking Button - Only show if booking is not cancelled */}
-        {/* {(booking?.status === "confirmed" ||
+        {(booking?.status === "confirmed" ||
           booking?.status === "Confirmed" ||
           booking?.status === "pending") && (
           <>
@@ -406,11 +411,11 @@ const VenueBookingConfirmation = ({ route, navigation }) => {
             ) : (
               <View style={styles.disabledCancelButton}>
                 <MaterialIcons name="cancel" size={20} color="#fff" />
-                <Text style={styles.buttonText}>Cancel Booking</Text>
+                <Text style={styles.buttonText}>Cannot Cancel (Too Late)</Text>
               </View>
             )}
           </>
-        )} */}
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -437,7 +442,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingBottom: 12,
     backgroundColor: "#fff",
     borderBottomWidth: 1,
     borderBottomColor: "#eee",

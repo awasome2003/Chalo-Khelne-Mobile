@@ -35,27 +35,14 @@ const FavoriteVenue = () => {
     try {
       setLoading(true);
 
-      if (!user || !user.id) {
+      const userId = user?.id || user?._id;
+      if (!userId) {
         setLoading(false);
-        Alert.alert(
-          "Login Required",
-          "Please log in to view your favorite venues.",
-          [
-            {
-              text: "Login",
-              onPress: () => navigation.navigate("Login"),
-            },
-            {
-              text: "Cancel",
-              style: "cancel",
-            },
-          ]
-        );
         return;
       }
 
       const response = await fetch(
-        `${API.ENDPOINTS.USER.FAVORITES}?userId=${user.id}`
+        `${API.ENDPOINTS.USER.FAVORITES}?userId=${userId}`
       );
 
       if (!response.ok) {
@@ -74,7 +61,8 @@ const FavoriteVenue = () => {
 
   const removeFavorite = async (turfId) => {
     try {
-      if (!user || !user.id) return;
+      const userId = user?.id || user?._id;
+      if (!userId) return;
 
       const response = await fetch(API.ENDPOINTS.USER.TOGGLE_FAVORITE, {
         method: "POST",
@@ -82,7 +70,7 @@ const FavoriteVenue = () => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          userId: user.id,
+          userId,
           turfId,
           action: "remove",
         }),
@@ -155,7 +143,7 @@ const FavoriteVenue = () => {
       <Text style={styles.emptyText}>No favorite venues yet</Text>
       <TouchableOpacity
         style={styles.exploreButton}
-        onPress={() => navigation.navigate("Play")}
+        onPress={() => navigation.goBack()}
       >
         <Text style={styles.exploreButtonText}>Explore Venues</Text>
       </TouchableOpacity>
@@ -185,10 +173,7 @@ const FavoriteVenue = () => {
               <TouchableOpacity
                 style={styles.cardTouchable}
                 onPress={() =>
-                  navigation.navigate("Play", {
-                    screen: "TurfDetails",
-                    params: { turfId: item.turfId },
-                  })
+                  navigation.navigate("TurfDetails", { turfId: item.turfId })
                 }
               >
                 <View style={styles.imageContainer}>

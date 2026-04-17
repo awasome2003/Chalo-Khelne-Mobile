@@ -738,7 +738,7 @@ const TrainerSessionsScreen = ({ route, navigation }) => {
         onRequestClose={() => setRequestModalVisible(false)}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={styles.modalContainer}
         >
           <View style={styles.requestModalContent}>
