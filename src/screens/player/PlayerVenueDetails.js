@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -10,50 +10,60 @@ import {
   ActivityIndicator,
   Alert,
   StatusBar,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
-import { Ionicons, MaterialIcons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAuth } from "../../context/AuthContext";
 import { useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import API from "../../api/api";
+import SportSelectionModal from "./SportSelectionModal";
 
 const { width } = Dimensions.get("window");
+
+// Curated 6-tile amenity set matching the Figma. Each tile maps to a key in
+// the Turf.facilities boolean dictionary; tiles whose facility flag is false
+// are hidden so the grid only shows what the turf actually provides.
+const AMENITY_DEFINITIONS = [
+  { key: "floodLights", label: "Floodlights", icon: "lightbulb-on-outline" },
+  { key: "restrooms", label: "Washroom", icon: "shower" },
+  { key: "parking", label: "Parking", icon: "car-outline" },
+  { key: "drinkingWater", label: "Water", icon: "water-outline" },
+  { key: "loungeArea", label: "Seating Area", icon: "chair-school" },
+  { key: "firstAidKit", label: "First Aid", icon: "plus-circle-outline" },
+];
+
+const getSportIconName = (sportName) => {
+  const n = String(sportName || "").toLowerCase();
+  if (n.includes("cricket")) return "cricket";
+  if (n.includes("tennis")) return "tennis";
+  if (n.includes("badminton")) return "badminton";
+  if (n.includes("basket")) return "basketball";
+  return "soccer";
+};
 
 export default function PlayerVenueDetails({ route, navigation }) {
   const { turfId } = route.params;
   const [turfDetails, setTurfDetails] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
-  const [isFavorite, setIsFavorite] = useState(false);
   const [error, setError] = useState(null);
-  const [showFullDesc, setShowFullDesc] = useState(false);
+  const [rulesExpanded, setRulesExpanded] = useState(true);
+  const [slots, setSlots] = useState(null);
+  const [selectedSportIndex, setSelectedSportIndex] = useState(null);
+  const [sportModalVisible, setSportModalVisible] = useState(false);
+
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
 
   useFocusEffect(
     React.useCallback(() => {
       fetchTurfDetails();
-      if (user && (user._id || user.id)) {
-        checkFavorite();
-      }
-    }, [turfId, user])
+      fetchAvailability();
+    }, [turfId])
   );
-
-  const checkFavorite = async () => {
-    try {
-      const userId = user._id || user.id;
-      const response = await fetch(
-        `${API.ENDPOINTS.USER.CHECK_FAVORITE}?userId=${userId}&turfId=${turfId}`
-      );
-      if (response.ok) {
-        const data = await response.json();
-        setIsFavorite(data.isFavorite);
-      }
-    } catch (err) {
-      // Silent fail
-    }
-  };
 
   const fetchTurfDetails = async () => {
     try {
@@ -70,37 +80,44 @@ export default function PlayerVenueDetails({ route, navigation }) {
     }
   };
 
-  const toggleFavorite = async () => {
-    if (!user || !(user._id || user.id)) {
-      Alert.alert("Login Required", "Please login to save favorites");
-      return;
-    }
-    const newState = !isFavorite;
-    setIsFavorite(newState);
+  const fetchAvailability = async () => {
     try {
-      const response = await fetch(API.ENDPOINTS.USER.TOGGLE_FAVORITE, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: user._id || user.id,
-          turfId,
-          action: newState ? "add" : "remove",
-        }),
-      });
-      if (!response.ok) {
-        setIsFavorite(!newState);
-        Alert.alert("Error", "Could not update favorites");
+      const res = await fetch(API.ENDPOINTS.TURFS.AVAILABILITY_TODAY);
+      const data = await res.json();
+      if (data?.success && data.availability) {
+        const entry = data.availability[String(turfId)];
+        setSlots(entry?.availableSlots ?? null);
       }
-    } catch {
-      setIsFavorite(!newState);
+    } catch (err) {
+      // Non-blocking
     }
   };
 
-  // --- Loading / Error states ---
+  const handleBookingPress = () => {
+    if (!user || !(user._id || user.id)) {
+      Alert.alert("Login Required", "Please login to make a booking");
+      return;
+    }
+    // Open the sport-selection popup before sending the user to the slot
+    // screen. The modal's onSelect handler does the actual navigation.
+    setSportModalVisible(true);
+  };
+
+  const handleSportSelected = (sport) => {
+    setSportModalVisible(false);
+    navigation.navigate("TurfBooking", {
+      turfId,
+      venueName: turfDetails?.name,
+      venueAddress: addressStr,
+      selectedSport: sport,
+    });
+  };
+
+  // ─── Loading / Error states ───────────────────────────────────────────
   if (loading) {
     return (
       <View style={s.center}>
-        <ActivityIndicator size="large" color="#3B4DFD" />
+        <ActivityIndicator size="large" color="#15A765" />
         <Text style={s.centerText}>Loading venue...</Text>
       </View>
     );
@@ -118,317 +135,527 @@ export default function PlayerVenueDetails({ route, navigation }) {
     );
   }
 
-  // --- Derive data from model ---
+  // ─── Derive data from model ───────────────────────────────────────────
   const images =
     turfDetails.images?.length > 0
-      ? turfDetails.images.map((img) => `${API.UPLOADS_URL}/${img.replace(/\\/g, "/")}`)
+      ? turfDetails.images.map(
+          (img) => `${API.UPLOADS_URL}/${img.replace(/\\/g, "/")}`
+        )
       : [];
 
-  const lowestPrice = turfDetails.sports?.length > 0
-    ? Math.min(...turfDetails.sports.map((s) => s.pricePerHour))
-    : null;
+  const lowestPrice =
+    turfDetails.sports?.length > 0
+      ? Math.min(
+          ...turfDetails.sports
+            .map((sp) => Number(sp.pricePerHour))
+            .filter((n) => !isNaN(n) && n > 0)
+        )
+      : null;
 
   const addressStr = turfDetails.address
-    ? [turfDetails.address.area, turfDetails.address.city, turfDetails.address.pincode].filter(Boolean).join(", ")
+    ? [turfDetails.address.area, turfDetails.address.city]
+        .filter(Boolean)
+        .join(", ")
     : "Address not available";
 
-  // Convert facilities object to array of active amenities
-  const amenityLabels = {
-    artificialTurf: "Artificial Turf", multipleFields: "Multiple Fields", floodLights: "Flood Lights",
-    ledLights: "LED Lights", lockerRooms: "Locker Rooms", shower: "Shower", restrooms: "Restrooms",
-    grandstands: "Grandstands", coveredAreas: "Covered Areas", parking: "Parking", foodCourt: "Food Court",
-    coldDrinks: "Cold Drinks", drinkingWater: "Drinking Water", wifi: "Wi-Fi", loungeArea: "Lounge",
-    surveillanceCameras: "CCTV", securityPersonnel: "Security", firstAidKit: "First Aid",
-  };
-  const amenityIcons = {
-    artificialTurf: "leaf", multipleFields: "grid", floodLights: "flashlight", ledLights: "bulb",
-    lockerRooms: "lock-closed", shower: "water", restrooms: "man", grandstands: "people",
-    coveredAreas: "umbrella", parking: "car", foodCourt: "restaurant", coldDrinks: "cafe",
-    drinkingWater: "water-outline", wifi: "wifi", loungeArea: "bed", surveillanceCameras: "videocam",
-    securityPersonnel: "shield-checkmark", firstAidKit: "medkit",
-  };
-  const activeAmenities = turfDetails.facilities
-    ? Object.entries(turfDetails.facilities).filter(([_, v]) => v === true).map(([k]) => k)
-    : [];
+  // Figma shows "Baner, Pune · 1.2 km away". Distance is a deterministic
+  // placeholder until we wire geolocation.
+  const distanceStr = (() => {
+    const id = String(turfId || "");
+    let h = 0;
+    for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 100000;
+    const km = 0.5 + (h % 50) / 10;
+    return `${km.toFixed(1)} km away`;
+  })();
 
-  const getSportIcon = (name) => {
-    const n = (name || "").toLowerCase();
-    const map = {
-      cricket: require("../../../assets/sports_cricket.png"),
-      football: require("../../../assets/sports_soccer.png"),
-      badminton: require("../../../assets/shuttlecock.png"),
-      "table tennis": require("../../../assets/ping-pong.png"),
-      tennis: require("../../../assets/ping-pong.png"),
-    };
-    return map[n] || require("../../../assets/ping-pong.png");
-  };
+  const enabledAmenities = AMENITY_DEFINITIONS.filter(
+    (a) => turfDetails.facilities?.[a.key]
+  );
+
+  // Rules — Turf model doesn't expose a rules array yet. Show whatever the
+  // turf has on `rules` (string or array), else fall back to the defaults
+  // shown in the Figma so the section isn't empty.
+  const rulesRaw = turfDetails.rules;
+  const rules = Array.isArray(rulesRaw)
+    ? rulesRaw.map((r) => String(r).trim()).filter(Boolean)
+    : typeof rulesRaw === "string"
+    ? rulesRaw
+        .split(/\r?\n/)
+        .map((r) => r.trim())
+        .filter(Boolean)
+    : [
+        "Play responsibly and avoid rough behavior",
+        "Any damage to turf/property will be chargeable",
+        "Management is not responsible for personal injuries or lost items",
+      ];
 
   return (
     <View style={s.container}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
-        {/* Hero Image */}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 120 }}
+      >
+        {/* Hero image */}
         <View style={s.heroContainer}>
           <Image
-            source={images.length > 0 ? { uri: images[activeImageIndex] || images[0] } : require("../../../assets/turf.jpg")}
+            source={
+              images.length > 0
+                ? { uri: images[activeImageIndex] }
+                : require("../../../assets/turf.jpg")
+            }
             style={s.heroImage}
             resizeMode="cover"
           />
-          <LinearGradient colors={["rgba(0,0,0,0.5)", "transparent", "rgba(0,0,0,0.6)"]} style={StyleSheet.absoluteFill} />
+          <LinearGradient
+            colors={["rgba(0,0,0,0.3)", "transparent"]}
+            style={[StyleSheet.absoluteFill, { height: 100 }]}
+          />
 
-          {/* Top Buttons */}
+          {/* Top bar — back button only */}
           <View style={[s.topBar, { top: insets.top + 8 }]}>
-            <TouchableOpacity style={s.circleBtn} onPress={() => navigation.goBack()}>
-              <Ionicons name="arrow-back" size={22} color="#fff" />
-            </TouchableOpacity>
-            <TouchableOpacity style={s.circleBtn} onPress={toggleFavorite}>
-              <Ionicons name={isFavorite ? "heart" : "heart-outline"} size={22} color={isFavorite ? "#FF3040" : "#fff"} />
+            <TouchableOpacity
+              style={s.circleBtn}
+              onPress={() => navigation.goBack()}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="chevron-back" size={22} color="#1A181B" />
             </TouchableOpacity>
           </View>
 
-          {/* Image dots */}
+          {/* Image carousel — paginated scroll over hero */}
+          {images.length > 1 && (
+            <ScrollView
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              style={StyleSheet.absoluteFill}
+              onScroll={(e) => {
+                const newIndex = Math.round(
+                  e.nativeEvent.contentOffset.x / width
+                );
+                setActiveImageIndex(newIndex);
+              }}
+              scrollEventThrottle={16}
+            >
+              {images.map((_, i) => (
+                <View key={i} style={{ width, height: 300 }} />
+              ))}
+            </ScrollView>
+          )}
+
+          {/* Image dots — placed just above the card overlap */}
           {images.length > 1 && (
             <View style={s.dotsRow}>
               {images.map((_, i) => (
-                <View key={i} style={[s.dot, activeImageIndex === i && s.dotActive]} />
+                <View
+                  key={i}
+                  style={[s.dot, activeImageIndex === i && s.dotActive]}
+                />
               ))}
             </View>
           )}
-
-          {/* Image scroll */}
-          <ScrollView
-            horizontal pagingEnabled showsHorizontalScrollIndicator={false}
-            style={StyleSheet.absoluteFill}
-            onScroll={(e) => setActiveImageIndex(Math.round(e.nativeEvent.contentOffset.x / width))}
-            scrollEventThrottle={16}
-          >
-            {(images.length > 0 ? images : [null]).map((uri, i) => (
-              <View key={i} style={{ width, height: 300 }} />
-            ))}
-          </ScrollView>
-
-          {/* Bottom info overlay */}
-          <View style={s.heroBottom}>
-            <Text style={s.heroTitle}>{turfDetails.name}</Text>
-            <View style={s.heroMeta}>
-              <Ionicons name="location-outline" size={14} color="rgba(255,255,255,0.8)" />
-              <Text style={s.heroAddress}>{addressStr}</Text>
-            </View>
-          </View>
         </View>
 
-        {/* Quick Stats */}
-        <View style={s.statsRow}>
-          <View style={s.statItem}>
-            <Text style={s.statValue}>
-              {turfDetails.ratings?.average ? turfDetails.ratings.average.toFixed(1) : "New"}
-            </Text>
-            <Text style={s.statLabel}>
-              {turfDetails.ratings?.count ? `${turfDetails.ratings.count} reviews` : "No reviews"}
-            </Text>
-          </View>
-          <View style={s.statDivider} />
-          <View style={s.statItem}>
-            <Text style={s.statValue}>
-              {lowestPrice ? `₹${lowestPrice}` : "N/A"}
-            </Text>
-            <Text style={s.statLabel}>per hour</Text>
-          </View>
-          <View style={s.statDivider} />
-          <View style={s.statItem}>
-            <Text style={s.statValue}>{turfDetails.sports?.length || 0}</Text>
-            <Text style={s.statLabel}>Sports</Text>
-          </View>
-        </View>
+        {/* Content card — full-width with rounded top, overlaps the image */}
+        <View style={s.contentCard}>
+          {/* Title section */}
+          <View style={s.titleSection}>
+            <Text style={s.title}>{turfDetails.name || "Sport Zone"}</Text>
 
-        {/* Sports & Pricing */}
-        {turfDetails.sports?.length > 0 && (
-          <View style={s.card}>
-            <Text style={s.cardTitle}>Sports & Pricing</Text>
-            <View style={s.sportsGrid}>
-              {turfDetails.sports.map((sport, i) => (
-                <View key={i} style={s.sportChip}>
-                  <Image source={getSportIcon(sport.name)} style={s.sportChipIcon} resizeMode="contain" />
-                  <View>
-                    <Text style={s.sportChipName}>{sport.name}</Text>
-                    <Text style={s.sportChipPrice}>₹{sport.pricePerHour}/hr</Text>
-                  </View>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
-
-        {/* About */}
-        {turfDetails.description && (
-          <View style={s.card}>
-            <Text style={s.cardTitle}>About</Text>
-            <Text style={s.descText}>
-              {showFullDesc
-                ? turfDetails.description
-                : turfDetails.description.length > 150
-                ? turfDetails.description.slice(0, 150) + "..."
-                : turfDetails.description}
-            </Text>
-            {turfDetails.description.length > 150 && (
-              <TouchableOpacity onPress={() => setShowFullDesc(!showFullDesc)}>
-                <Text style={s.readMore}>{showFullDesc ? "Show Less" : "Read More"}</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
-
-        {/* Amenities */}
-        {activeAmenities.length > 0 && (
-          <View style={s.card}>
-            <Text style={s.cardTitle}>Amenities</Text>
-            <View style={s.amenitiesGrid}>
-              {activeAmenities.map((key) => (
-                <View key={key} style={s.amenityChip}>
-                  <Ionicons name={amenityIcons[key] || "checkmark-circle"} size={16} color="#3B4DFD" />
-                  <Text style={s.amenityText}>{amenityLabels[key] || key}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
-
-        {/* Club Info */}
-        {turfDetails.clubName && (
-          <View style={s.card}>
-            <Text style={s.cardTitle}>Club</Text>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-              <Ionicons name="shield-checkmark" size={20} color="#059669" />
-              <Text style={{ fontSize: 15, fontWeight: "600", color: "#333" }}>{turfDetails.clubName}</Text>
-            </View>
-          </View>
-        )}
-
-        {/* Ratings */}
-        {turfDetails.ratings?.count > 0 && (
-          <View style={s.card}>
-            <Text style={s.cardTitle}>Ratings</Text>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Ionicons
-                  key={i}
-                  name={i < Math.floor(turfDetails.ratings.average) ? "star" : "star-outline"}
-                  size={22}
-                  color="#FFD700"
-                />
-              ))}
-              <Text style={{ fontSize: 16, fontWeight: "700", color: "#333", marginLeft: 4 }}>
-                {turfDetails.ratings.average.toFixed(1)}
+            <View style={s.locationRow}>
+              <Ionicons name="location-outline" size={16} color="#666" />
+              <Text style={s.locationText} numberOfLines={1}>
+                {addressStr} · {distanceStr}
               </Text>
-              <Text style={{ fontSize: 13, color: "#999" }}>({turfDetails.ratings.count} reviews)</Text>
             </View>
-          </View>
-        )}
-      </ScrollView>
 
-      {/* Fixed Bottom Book Button */}
-      <View style={[s.bottomBar, { paddingBottom: insets.bottom + 12 }]}>
-        <View>
-          <Text style={s.bottomPrice}>
-            {lowestPrice ? `₹${lowestPrice}` : "N/A"}
-            <Text style={s.bottomPriceUnit}> /hour</Text>
-          </Text>
-          <Text style={s.bottomPriceSub}>onwards</Text>
+            <View style={s.priceRow}>
+              <Text style={s.priceText}>
+                ₹{lowestPrice != null ? lowestPrice : 0}/-
+              </Text>
+              <Text style={s.priceUnit}> per hour</Text>
+            </View>
+            <Text style={s.slotsText}>
+              {slots != null
+                ? `${slots} slot${slots === 1 ? "" : "s"} available today`
+                : "Availability loading…"}
+            </Text>
+          </View>
+
+          {/* Available Sports */}
+          {turfDetails.sports?.length > 0 && (
+            <View style={s.section}>
+              <Text style={s.sectionTitle}>Available Sports</Text>
+              <View style={s.sportsContainer}>
+                {turfDetails.sports.map((sport, i) => {
+                  const isSelected = selectedSportIndex === i;
+                  return (
+                    <TouchableOpacity
+                      key={i}
+                      style={[s.sportBox, isSelected && s.sportBoxActive]}
+                      onPress={() =>
+                        setSelectedSportIndex((prev) => (prev === i ? null : i))
+                      }
+                      activeOpacity={0.85}
+                    >
+                      <MaterialCommunityIcons
+                        name={getSportIconName(sport.name)}
+                        size={24}
+                        color="#15A765"
+                      />
+                      <Text style={s.sportLabel}>{sport.name}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+
+          {/* About Turf */}
+          {turfDetails.description && (
+            <View style={s.section}>
+              <Text style={s.sectionTitle}>About Turf</Text>
+              <Text style={s.descriptionText}>{turfDetails.description}</Text>
+            </View>
+          )}
+
+          {/* Amenities */}
+          {enabledAmenities.length > 0 && (
+            <View style={s.section}>
+              <Text style={s.sectionTitle}>Amenities</Text>
+              <View style={s.amenitiesGrid}>
+                {enabledAmenities.map((amenity) => (
+                  <View key={amenity.key} style={s.amenityBox}>
+                    <MaterialCommunityIcons
+                      name={amenity.icon}
+                      size={28}
+                      color="#15A765"
+                    />
+                    <Text style={s.amenityLabel}>{amenity.label}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* Rules & info — chevron-down when expanded, matching Figma */}
+          {rules.length > 0 && (
+            <View style={s.section}>
+              <TouchableOpacity
+                style={s.rulesHeader}
+                onPress={() => setRulesExpanded(!rulesExpanded)}
+                activeOpacity={0.7}
+              >
+                <Text style={s.sectionTitle}>Rules & info</Text>
+                <Ionicons
+                  name={rulesExpanded ? "chevron-down" : "chevron-up"}
+                  size={20}
+                  color="#666"
+                />
+              </TouchableOpacity>
+
+              {rulesExpanded && (
+                <View style={s.rulesContent}>
+                  {rules.map((rule, idx) => (
+                    <Text key={idx} style={s.ruleText}>
+                      {rule}
+                    </Text>
+                  ))}
+                </View>
+              )}
+            </View>
+          )}
         </View>
+      </ScrollView>
+      </KeyboardAvoidingView>
+
+      {/* Bottom sticky button */}
+      <View style={[s.bottomBar, { paddingBottom: Math.max(insets.bottom, 16) }]}>
         <TouchableOpacity
-          style={s.bookBtn}
+          style={s.selectSlotButton}
           activeOpacity={0.85}
-          onPress={() => navigation.navigate("TurfBooking", { turfId })}
+          onPress={handleBookingPress}
         >
-          <Text style={s.bookBtnText}>Book Now</Text>
-          <Ionicons name="arrow-forward" size={18} color="#fff" />
+          <Text style={s.selectSlotText}>Select Slot</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Sport-selection popup — opens between the Select Slot button and
+          the slot-picker screen. The user's tile selection above (if any)
+          is forwarded as a hint to pre-select inside the modal. */}
+      <SportSelectionModal
+        visible={sportModalVisible}
+        onClose={() => setSportModalVisible(false)}
+        turf={turfDetails}
+        initialSport={
+          selectedSportIndex != null
+            ? turfDetails?.sports?.[selectedSportIndex]
+            : null
+        }
+        onSelect={handleSportSelected}
+      />
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F7F9FC" },
-  center: { flex: 1, justifyContent: "center", alignItems: "center", padding: 20 },
-  centerText: { fontSize: 16, color: "#999", marginTop: 12 },
-  retryBtn: { marginTop: 16, backgroundColor: "#3B4DFD", paddingHorizontal: 24, paddingVertical: 10, borderRadius: 12 },
-  retryBtnText: { color: "#fff", fontWeight: "700" },
+  container: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+  },
+  center: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  centerText: {
+    fontSize: 16,
+    color: "#999",
+    marginTop: 12,
+    fontFamily: "Montserrat_500Medium",
+  },
+  retryBtn: {
+    marginTop: 16,
+    backgroundColor: "#15A765",
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  retryBtnText: {
+    color: "#fff",
+    fontFamily: "Montserrat_700Bold",
+    fontWeight: "700",
+    fontSize: 14,
+  },
 
   // Hero
-  heroContainer: { width, height: 300, position: "relative" },
-  heroImage: { width: "100%", height: "100%", position: "absolute" },
-  topBar: { position: "absolute", left: 16, right: 16, flexDirection: "row", justifyContent: "space-between", zIndex: 10 },
+  heroContainer: {
+    width: "100%",
+    height: 300,
+    position: "relative",
+    overflow: "hidden",
+  },
+  heroImage: {
+    width: "100%",
+    height: "100%",
+    position: "absolute",
+  },
+  topBar: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    flexDirection: "row",
+    justifyContent: "flex-start",
+    zIndex: 10,
+  },
   circleBtn: {
-    width: 42, height: 42, borderRadius: 21,
-    backgroundColor: "rgba(0,0,0,0.35)", justifyContent: "center", alignItems: "center",
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#FFFFFF",
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   dotsRow: {
-    position: "absolute", bottom: 70, alignSelf: "center",
-    flexDirection: "row", gap: 6, zIndex: 5,
+    position: "absolute",
+    bottom: 28,
+    alignSelf: "center",
+    flexDirection: "row",
+    gap: 6,
+    zIndex: 5,
   },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "rgba(255,255,255,0.5)" },
-  dotActive: { width: 20, backgroundColor: "#fff" },
-  heroBottom: { position: "absolute", bottom: 0, left: 0, right: 0, padding: 20 },
-  heroTitle: { fontSize: 24, fontWeight: "800", color: "#fff", letterSpacing: -0.5 },
-  heroMeta: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6 },
-  heroAddress: { fontSize: 13, color: "rgba(255,255,255,0.85)", flex: 1 },
-
-  // Stats Row
-  statsRow: {
-    flexDirection: "row", backgroundColor: "#fff", marginHorizontal: 16, marginTop: -20,
-    borderRadius: 16, padding: 16, alignItems: "center",
-    shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 6,
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "rgba(255,255,255,0.5)",
   },
-  statItem: { flex: 1, alignItems: "center" },
-  statValue: { fontSize: 18, fontWeight: "800", color: "#1a1a2e" },
-  statLabel: { fontSize: 11, color: "#999", marginTop: 2 },
-  statDivider: { width: 1, height: 30, backgroundColor: "#ECEFF1" },
-
-  // Cards
-  card: { backgroundColor: "#fff", marginHorizontal: 16, marginTop: 16, padding: 18, borderRadius: 16 },
-  cardTitle: { fontSize: 17, fontWeight: "700", color: "#1a1a2e", marginBottom: 14 },
-
-  // Sports
-  sportsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  sportChip: {
-    flexDirection: "row", alignItems: "center", gap: 10,
-    backgroundColor: "#F5F7FF", borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10,
-    borderWidth: 1, borderColor: "#E8EDFF",
+  dotActive: {
+    width: 20,
+    backgroundColor: "#fff",
   },
-  sportChipIcon: { width: 28, height: 28 },
-  sportChipName: { fontSize: 14, fontWeight: "700", color: "#333" },
-  sportChipPrice: { fontSize: 12, color: "#3B4DFD", fontWeight: "600", marginTop: 1 },
 
-  // Description
-  descText: { fontSize: 14, lineHeight: 22, color: "#666" },
-  readMore: { fontSize: 14, color: "#3B4DFD", fontWeight: "600", marginTop: 6 },
+  // Content card — full-width, rounded top, attached to image
+  contentCard: {
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    marginTop: -20,
+  },
+
+  // Title
+  titleSection: {
+    marginBottom: 16,
+  },
+  title: {
+    fontSize: 22,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: "#1A181B",
+    marginBottom: 6,
+  },
+  locationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  locationText: {
+    flex: 1,
+    fontSize: 13,
+    color: "#2E2C2C",
+    fontFamily: "Poppins_400Regular",
+  },
+  priceRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    marginTop: 14,
+  },
+  priceText: {
+    fontSize: 16,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: "#258C3F",
+  },
+  priceUnit: {
+    fontSize: 13,
+    fontFamily: "Poppins_400Regular",
+    color: "#666666",
+  },
+  slotsText: {
+    fontSize: 12,
+    fontFamily: "Montserrat_500Medium",
+    color: "#666666",
+    marginTop: 2,
+  },
+
+  // Sections
+  section: {
+    marginBottom: 20,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: "#0A0A0A",
+    marginBottom: 12,
+  },
+
+  // Available Sports
+  sportsContainer: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  sportBox: {
+    flex: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#EEF1FA",
+    backgroundColor: "#FFFFFF",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 8,
+  },
+  sportBoxActive: {
+    backgroundColor: "#E8F7F0",
+    borderColor: "#15A76533",
+  },
+  sportLabel: {
+    fontSize: 13,
+    fontFamily: "Poppins_400Regular",
+    color: "#615763",
+    textAlign: "center",
+  },
+
+  // About
+  descriptionText: {
+    fontSize: 13,
+    color: "#453E4C",
+    fontFamily: "Montserrat_500Medium",
+    lineHeight: 20,
+  },
 
   // Amenities
-  amenitiesGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  amenityChip: {
-    flexDirection: "row", alignItems: "center", gap: 6,
-    backgroundColor: "#F5F7FF", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20,
+  amenitiesGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    rowGap: 10,
   },
-  amenityText: { fontSize: 12, fontWeight: "600", color: "#555" },
+  amenityBox: {
+    width: "31.5%",
+    aspectRatio: 1,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#EEF1FA",
+    backgroundColor: "#FFFFFF",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 6,
+  },
+  amenityLabel: {
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular",
+    color: "#615763",
+    textAlign: "center",
+  },
 
-  // Bottom Bar
+  // Rules
+  rulesHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  rulesContent: {
+    gap: 8,
+  },
+  ruleText: {
+    fontSize: 13,
+    color: "#717171",
+    fontFamily: "Poppins_400Regular",
+    lineHeight: 20,
+  },
+
+  // Bottom sticky bar
   bottomBar: {
-    position: "absolute", bottom: 0, left: 0, right: 0,
-    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
-    backgroundColor: "#fff", paddingHorizontal: 20, paddingTop: 14,
-    borderTopWidth: 1, borderTopColor: "#F0F0F0",
-    shadowColor: "#000", shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 10,
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#F0F0F0",
   },
-  bottomPrice: { fontSize: 22, fontWeight: "800", color: "#1a1a2e" },
-  bottomPriceUnit: { fontSize: 13, fontWeight: "500", color: "#999" },
-  bottomPriceSub: { fontSize: 11, color: "#999", marginTop: 1 },
-  bookBtn: {
-    flexDirection: "row", alignItems: "center", gap: 8,
-    backgroundColor: "#3B4DFD", paddingHorizontal: 28, paddingVertical: 14, borderRadius: 16,
+  selectSlotButton: {
+    backgroundColor: "#15A765",
+    height: 50,
+    borderRadius: 14,
+    justifyContent: "center",
+    alignItems: "center",
   },
-  bookBtnText: { fontSize: 16, fontWeight: "700", color: "#fff" },
+  selectSlotText: {
+    fontSize: 16,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
 });
 
 export { PlayerVenueDetails };

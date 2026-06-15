@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from "react";
 import * as WebBrowser from "expo-web-browser";
+import * as ScreenOrientation from "expo-screen-orientation";
 import { NavigationContainer, useNavigationContainerRef } from "@react-navigation/native";
 
 WebBrowser.maybeCompleteAuthSession();
@@ -47,6 +48,10 @@ export default function App() {
   const lastBackPressRef = useRef(0);
 
   useEffect(() => {
+    // Keep the whole app in portrait by default. Individual screens that need
+    // landscape (e.g., the umpire scorer) self-lock and relock portrait on blur.
+    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+
     // Register navigation ref for notifications
     NotificationService.setNavigationRef(navigationRef);
 

@@ -1,49 +1,151 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   View,
   Text,
   StyleSheet,
-  FlatList,
+  SectionList,
   TouchableOpacity,
   Image,
   ActivityIndicator,
   RefreshControl,
-  StatusBar,
-  Alert,
-  TextInput,
+  Modal,
+  ScrollView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
+import API from "../../api/api";
+import { assetUrl } from "../../utils/assetUrl";
 import DONATIONS from "../../api/donations";
 
-const PAYMENT_METHODS = ["UPI", "Bank Transfer", "Cash"];
+const GREEN = "#15A765";
+const TEXT_DARK = "#1A181B";
+const TEXT_MUTED = "#6B7280";
+const BORDER = "#EEF1FA";
 
-const STATUS_COLORS = {
-  Active: { bg: "#ECFDF5", text: "#059669" },
-  Reserved: { bg: "#FFFBEB", text: "#D97706" },
-  Sold: { bg: "#EFF6FF", text: "#2563EB" },
+const STATUS_STYLES = {
+  confirmed: { bg: "#FFF3E0", fg: "#B25E00", label: "Order Confirmed" },
+  packed: { bg: "#FFF3E0", fg: "#B25E00", label: "Packed" },
+  shipped: { bg: "#FFF3E0", fg: "#B25E00", label: "Shipped" },
+  out_for_delivery: { bg: "#FFF3E0", fg: "#B25E00", label: "Out for delivery" },
+  delivered: { bg: "#E8F7F0", fg: "#0F8A55", label: "Delivered" },
+  cancelled: { bg: "#FDECEC", fg: "#C8322A", label: "Cancelled" },
 };
 
-const PAYMENT_COLORS = {
-  Pending: { bg: "#FFFBEB", text: "#D97706" },
-  Uploaded: { bg: "#EFF6FF", text: "#2563EB" },
-  Verified: { bg: "#ECFDF5", text: "#059669" },
-  Rejected: { bg: "#FEF2F2", text: "#DC2626" },
+const STATUS_OPTIONS = [
+  { key: "confirmed", label: "Order confirmed" },
+  { key: "packed", label: "Packed" },
+  { key: "shipped", label: "Shipped" },
+  { key: "out_for_delivery", label: "Out for delivery" },
+  { key: "delivered", label: "Delivered" },
+  { key: "cancelled", label: "Cancelled" },
+];
+
+const DATE_OPTIONS = [
+  { key: "today", label: "Today" },
+  { key: "week", label: "This week" },
+  { key: "month", label: "This Month" },
+  { key: "30d", label: "Last 30 days" },
+  { key: "90d", label: "Last 90 days" },
+];
+
+// Returns the lower-bound Date (>=) for a given date filter key, or null for "all".
+const dateBoundFor = (key) => {
+  if (!key) return null;
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  switch (key) {
+    case "today":
+      return start;
+    case "week": {
+      const d = new Date(start);
+      d.setDate(d.getDate() - 6);
+      return d;
+    }
+    case "month":
+      return new Date(now.getFullYear(), now.getMonth(), 1);
+    case "30d": {
+      const d = new Date(start);
+      d.setDate(d.getDate() - 29);
+      return d;
+    }
+    case "90d": {
+      const d = new Date(start);
+      d.setDate(d.getDate() - 89);
+      return d;
+    }
+    default:
+      return null;
+  }
+};
+
+// Map backend (status + paymentStatus + deliveryStatus) → display key
+const resolveStatus = (item) => {
+  if (item.deliveryStatus) return item.deliveryStatus;
+  if (item.paymentStatus === "Rejected") return "cancelled";
+  if (item.status === "Sold") return "delivered";
+  if (item.status === "Reserved") return "confirmed";
+  return "confirmed";
+};
+
+const sectionTitleFor = (date) => {
+  const d = new Date(date);
+  const today = new Date();
+  if (
+    d.getDate() === today.getDate() &&
+    d.getMonth() === today.getMonth() &&
+    d.getFullYear() === today.getFullYear()
+  ) {
+    return "Today";
+  }
+  return d.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 };
 
 const MyClaimsScreen = () => {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
+
   const [claims, setClaims] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [payingId, setPayingId] = useState(null);
-  const [paymentForm, setPaymentForm] = useState({ method: "", transactionId: "" });
+  const [filterOpen, setFilterOpen] = useState(false);
+
+  // Applied filters (drive the list)
+  const [activeDate, setActiveDate] = useState(null);
+  const [activeStatus, setActiveStatus] = useState(null);
+
+  // Pending filters inside the sheet (not committed until Apply)
+  const [pendingDate, setPendingDate] = useState(null);
+  const [pendingStatus, setPendingStatus] = useState(null);
+
+  const openFilters = () => {
+    setPendingDate(activeDate);
+    setPendingStatus(activeStatus);
+    setFilterOpen(true);
+  };
+
+  const applyFilters = () => {
+    setActiveDate(pendingDate);
+    setActiveStatus(pendingStatus);
+    setFilterOpen(false);
+  };
+
+  const resetFilters = () => {
+    setPendingDate(null);
+    setPendingStatus(null);
+  };
 
   const fetchClaims = async () => {
     try {
-      setLoading(true);
       const token = await AsyncStorage.getItem("auth_token");
       const res = await axios.get(DONATIONS.ENDPOINTS.MY_CLAIMS, {
         headers: { Authorization: `Bearer ${token}` },
@@ -66,312 +168,515 @@ const MyClaimsScreen = () => {
     fetchClaims();
   }, []);
 
-  const handleUploadPayment = async (itemId) => {
-    if (!paymentForm.method) {
-      Alert.alert("Required", "Please select a payment method.");
-      return;
-    }
-    if (!paymentForm.transactionId.trim()) {
-      Alert.alert("Required", "Please enter the transaction ID.");
-      return;
-    }
+  // ─── Build sections grouped by claimedAt date ──────────────────────
+  const sections = useMemo(() => {
+    const dateBound = dateBoundFor(activeDate);
 
-    try {
-      const token = await AsyncStorage.getItem("auth_token");
-      await axios.post(
-        DONATIONS.ENDPOINTS.PAY(itemId),
+    const filtered = claims.filter((c) => {
+      if (activeStatus && resolveStatus(c) !== activeStatus) return false;
+      if (dateBound) {
+        const claimedAt = new Date(c.claimedAt || c.createdAt);
+        if (claimedAt < dateBound) return false;
+      }
+      return true;
+    });
+
+    const buckets = new Map();
+    filtered.forEach((item) => {
+      const dateKey = sectionTitleFor(item.claimedAt || item.createdAt);
+      if (!buckets.has(dateKey)) buckets.set(dateKey, []);
+      buckets.get(dateKey).push(item);
+    });
+
+    // Sort: Today first, then dated groups newest → oldest
+    return Array.from(buckets.entries())
+      .sort(([a], [b]) => {
+        if (a === "Today") return -1;
+        if (b === "Today") return 1;
+        return new Date(b) - new Date(a);
+      })
+      .map(([title, data]) => ({ title, data }));
+  }, [claims, activeDate, activeStatus]);
+
+  const hasActiveFilter = !!(activeDate || activeStatus);
+
+  const goToOrder = (item) => {
+    navigation.navigate("TrackOrder", {
+      orderId: `INX${String(item._id).slice(-6).toUpperCase()}`,
+      items: [
         {
-          paymentMethod: paymentForm.method,
-          transactionId: paymentForm.transactionId.trim(),
+          listingId: item._id,
+          itemName: item.itemName,
+          description: item.description,
+          askingPrice: item.askingPrice,
+          image: assetUrl(item.images?.[0]),
+          isDonation: item.isDonation,
+          qty: 1,
         },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      Alert.alert("Submitted", "Payment details submitted. Waiting for seller verification.");
-      setPayingId(null);
-      setPaymentForm({ method: "", transactionId: "" });
-      fetchClaims();
-    } catch (err) {
-      Alert.alert("Error", err.response?.data?.message || "Failed to submit payment.");
-    }
+      ],
+      amount: item.askingPrice,
+      orderDate: item.claimedAt || item.createdAt,
+    });
   };
 
+  // ─── Card ───────────────────────────────────────────────────────────
   const renderItem = ({ item }) => {
-    const paymentStyle = PAYMENT_COLORS[item.paymentStatus] || PAYMENT_COLORS.Pending;
-    const statusStyle = STATUS_COLORS[item.status] || STATUS_COLORS.Reserved;
+    const key = resolveStatus(item);
+    const st = STATUS_STYLES[key] || STATUS_STYLES.confirmed;
+    const imageUrl = assetUrl(item.images?.[0]);
 
     return (
       <TouchableOpacity
         style={styles.card}
-        onPress={() => navigation.navigate("DonationDetail", { listingId: item._id })}
-        activeOpacity={0.8}
+        activeOpacity={0.85}
+        onPress={() => goToOrder(item)}
       >
-        <View style={styles.cardRow}>
-          {/* Image */}
-          <View style={styles.cardImageWrap}>
-            {item.images && item.images.length > 0 ? (
-              <Image source={{ uri: item.images[0] }} style={styles.cardImage} resizeMode="cover" />
-            ) : (
-              <View style={styles.cardImagePlaceholder}>
-                <Ionicons name="basketball-outline" size={28} color="#D1D5DB" />
-              </View>
-            )}
+        {imageUrl ? (
+          <Image source={{ uri: imageUrl }} style={styles.cardImage} />
+        ) : (
+          <View style={[styles.cardImage, styles.cardImagePlaceholder]}>
+            <Ionicons name="basketball-outline" size={22} color="#D1D5DB" />
           </View>
+        )}
 
-          {/* Info */}
-          <View style={styles.cardInfo}>
-            <Text style={styles.sportTag}>{item.sport}</Text>
-            <Text style={styles.itemName} numberOfLines={1}>{item.itemName}</Text>
-
-            <View style={styles.badgeRow}>
-              <View style={[styles.badge, { backgroundColor: statusStyle.bg }]}>
-                <Text style={[styles.badgeText, { color: statusStyle.text }]}>{item.status}</Text>
-              </View>
-              {!item.isDonation && item.paymentStatus && (
-                <View style={[styles.badge, { backgroundColor: paymentStyle.bg }]}>
-                  <Text style={[styles.badgeText, { color: paymentStyle.text }]}>
-                    Payment: {item.paymentStatus}
-                  </Text>
-                </View>
-              )}
-            </View>
-
-            <Text style={styles.priceText}>
-              {item.isDonation ? "Free Donation" : `₹${item.askingPrice?.toLocaleString()}`}
+        <View style={styles.cardBody}>
+          <View style={styles.cardTopRow}>
+            <Text style={styles.cardName} numberOfLines={1}>
+              {item.itemName}
             </Text>
-
-            {/* Seller info */}
-            <View style={styles.sellerRow}>
-              <Ionicons name="person-circle" size={14} color="#9CA3AF" />
-              <Text style={styles.sellerName}>From: {item.sellerName}</Text>
+            <View style={[styles.statusPill, { backgroundColor: st.bg }]}>
+              <Text style={[styles.statusPillText, { color: st.fg }]}>
+                {st.label}
+              </Text>
             </View>
           </View>
+          {item.description ? (
+            <Text style={styles.cardDesc} numberOfLines={1}>
+              {item.description}
+            </Text>
+          ) : null}
+          <Text style={styles.priceText}>
+            {item.isDonation
+              ? "Free"
+              : `₹${item.askingPrice?.toLocaleString()}`}
+          </Text>
         </View>
-
-        {/* Sold banner */}
-        {item.status === "Sold" && (
-          <View style={styles.soldBanner}>
-            <Ionicons name="checkmark-circle" size={16} color="#2563EB" />
-            <Text style={styles.soldText}>
-              {item.isDonation ? "Received! Enjoy your legacy gear." : "Purchase complete!"}
-            </Text>
-          </View>
-        )}
-
-        {/* Payment upload section */}
-        {item.status === "Reserved" && !item.isDonation && item.paymentStatus === "Pending" && (
-          <View style={styles.paySection}>
-            {payingId === item._id ? (
-              <View>
-                <Text style={styles.payLabel}>Select Payment Method</Text>
-                <View style={styles.methodRow}>
-                  {PAYMENT_METHODS.map((m) => (
-                    <TouchableOpacity
-                      key={m}
-                      style={[styles.methodChip, paymentForm.method === m && styles.methodChipActive]}
-                      onPress={() => setPaymentForm((p) => ({ ...p, method: m }))}
-                    >
-                      <Text style={[styles.methodText, paymentForm.method === m && styles.methodTextActive]}>
-                        {m}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-                <TextInput
-                  style={styles.input}
-                  value={paymentForm.transactionId}
-                  onChangeText={(v) => setPaymentForm((p) => ({ ...p, transactionId: v }))}
-                  placeholder="Transaction ID / Reference"
-                  placeholderTextColor="#9CA3AF"
-                />
-                <View style={styles.payActions}>
-                  <TouchableOpacity
-                    style={styles.cancelBtn}
-                    onPress={() => { setPayingId(null); setPaymentForm({ method: "", transactionId: "" }); }}
-                  >
-                    <Text style={styles.cancelBtnText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.submitPayBtn}
-                    onPress={() => handleUploadPayment(item._id)}
-                  >
-                    <Text style={styles.submitPayText}>Submit Payment</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : (
-              <TouchableOpacity
-                style={styles.payBtn}
-                onPress={() => setPayingId(item._id)}
-              >
-                <Ionicons name="card" size={16} color="#fff" />
-                <Text style={styles.payBtnText}>Upload Payment</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
-
-        {/* Waiting for verification */}
-        {item.status === "Reserved" && !item.isDonation && item.paymentStatus === "Uploaded" && (
-          <View style={styles.waitingBanner}>
-            <Ionicons name="time" size={14} color="#2563EB" />
-            <Text style={styles.waitingText}>Payment submitted. Waiting for seller verification...</Text>
-          </View>
-        )}
-
-        {/* Payment rejected */}
-        {item.paymentStatus === "Rejected" && (
-          <View style={styles.rejectedBanner}>
-            <Ionicons name="alert-circle" size={14} color="#DC2626" />
-            <Text style={styles.rejectedText}>Payment was rejected. Please contact the seller.</Text>
-          </View>
-        )}
-
-        {/* Free donation waiting */}
-        {item.status === "Reserved" && item.isDonation && (
-          <View style={styles.waitingBanner}>
-            <Ionicons name="gift" size={14} color="#059669" />
-            <Text style={[styles.waitingText, { color: "#059669" }]}>
-              Claimed! Waiting for seller to confirm handover.
-            </Text>
-          </View>
-        )}
       </TouchableOpacity>
     );
   };
 
-  return (
-    <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+  const renderSectionHeader = ({ section: { title } }) => (
+    <Text style={styles.sectionHeader}>{title}</Text>
+  );
 
+  // ─── Render ────────────────────────────────────────────────────────
+  return (
+    <SafeAreaView style={styles.container} edges={["top"]}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color="#111" />
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backBtn}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="chevron-back" size={22} color={TEXT_DARK} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>My Claims</Text>
-        <View style={{ width: 40 }} />
+        <Text style={styles.headerTitle}>My Orders</Text>
+        <TouchableOpacity
+          onPress={openFilters}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="options-outline" size={22} color={TEXT_DARK} />
+        </TouchableOpacity>
       </View>
 
-      {/* Content */}
       {loading ? (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color="#0079EE" />
+          <ActivityIndicator size="large" color={GREEN} />
         </View>
-      ) : claims.length === 0 ? (
+      ) : sections.length === 0 ? (
         <View style={styles.center}>
           <Ionicons name="bag-outline" size={56} color="#E5E7EB" />
-          <Text style={styles.emptyTitle}>No claims yet</Text>
-          <Text style={styles.emptySubtitle}>Browse equipment and claim items you want!</Text>
-          <TouchableOpacity
-            style={styles.emptyBtn}
-            onPress={() => navigation.navigate("DonationList")}
-          >
-            <Text style={styles.emptyBtnText}>Browse Equipment</Text>
-          </TouchableOpacity>
+          <Text style={styles.emptyTitle}>
+            {hasActiveFilter ? "No orders match your filters" : "No orders yet"}
+          </Text>
+          <Text style={styles.emptySubtitle}>
+            {hasActiveFilter
+              ? "Try clearing some filters."
+              : "Browse equipment and place an order!"}
+          </Text>
+          {!hasActiveFilter && (
+            <TouchableOpacity
+              style={styles.emptyBtn}
+              onPress={() => navigation.navigate("EquipmentHub")}
+            >
+              <Text style={styles.emptyBtnText}>Browse Equipment</Text>
+            </TouchableOpacity>
+          )}
         </View>
       ) : (
-        <FlatList
-          data={claims}
+        <SectionList
+          sections={sections}
           keyExtractor={(item) => item._id}
           renderItem={renderItem}
-          contentContainerStyle={styles.list}
+          renderSectionHeader={renderSectionHeader}
+          stickySectionHeadersEnabled={false}
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingBottom: 40 + insets.bottom,
+          }}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#0079EE"]} />}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[GREEN]}
+              tintColor={GREEN}
+            />
+          }
         />
       )}
-    </View>
+
+      {/* Apply filter sheet */}
+      <Modal
+        visible={filterOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setFilterOpen(false)}
+      >
+        <TouchableOpacity
+          activeOpacity={1}
+          style={styles.modalBackdrop}
+          onPress={() => setFilterOpen(false)}
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}
+          >
+            <View style={styles.sheetHeader}>
+              <View style={{ flex: 1 }} />
+              <TouchableOpacity
+                onPress={() => setFilterOpen(false)}
+                style={styles.closeBtn}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              >
+                <Ionicons name="close" size={18} color={TEXT_DARK} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.sheetTitle}>Apply filter</Text>
+
+            <ScrollView
+              style={{ maxHeight: 480 }}
+              showsVerticalScrollIndicator={false}
+            >
+              <Text style={styles.groupLabel}>Select date</Text>
+              {DATE_OPTIONS.map((opt) => {
+                const selected = pendingDate === opt.key;
+                return (
+                  <TouchableOpacity
+                    key={opt.key}
+                    style={styles.filterRow}
+                    onPress={() =>
+                      setPendingDate(selected ? null : opt.key)
+                    }
+                    activeOpacity={0.7}
+                  >
+                    <View
+                      style={[styles.radio, selected && styles.radioOn]}
+                    >
+                      {selected ? <View style={styles.radioDot} /> : null}
+                    </View>
+                    <Text
+                      style={[
+                        styles.filterLabel,
+                        selected && styles.filterLabelOn,
+                      ]}
+                    >
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+
+              <Text style={[styles.groupLabel, { marginTop: 18 }]}>
+                Select Status
+              </Text>
+              {STATUS_OPTIONS.map((opt) => {
+                const selected = pendingStatus === opt.key;
+                return (
+                  <TouchableOpacity
+                    key={opt.key}
+                    style={styles.filterRow}
+                    onPress={() =>
+                      setPendingStatus(selected ? null : opt.key)
+                    }
+                    activeOpacity={0.7}
+                  >
+                    <View
+                      style={[styles.radio, selected && styles.radioOn]}
+                    >
+                      {selected ? <View style={styles.radioDot} /> : null}
+                    </View>
+                    <Text
+                      style={[
+                        styles.filterLabel,
+                        selected && styles.filterLabelOn,
+                      ]}
+                    >
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <View style={styles.sheetActions}>
+              <TouchableOpacity
+                style={styles.resetBtn}
+                onPress={resetFilters}
+              >
+                <Text style={styles.resetBtnText}>Reset</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.applyBtn}
+                onPress={applyFilters}
+              >
+                <Text style={styles.applyBtnText}>Apply</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F9FAFB" },
+  container: { flex: 1, backgroundColor: "#FFFFFF" },
+
+  // Header
   header: {
-    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
-    paddingHorizontal: 16, paddingTop: 50, paddingBottom: 12, backgroundColor: "#fff",
-    borderBottomWidth: 1, borderBottomColor: "#F3F4F6",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
   },
-  backBtn: { padding: 6 },
-  headerTitle: { fontSize: 18, fontWeight: "800", color: "#111", letterSpacing: -0.5 },
-  list: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 100 },
+  backBtn: { width: 28, height: 28, justifyContent: "center" },
+  headerTitle: {
+    fontSize: 16,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "600",
+    color: TEXT_DARK,
+    flex: 1,
+    marginLeft: 4,
+  },
+
+  // Section header
+  sectionHeader: {
+    fontSize: 15,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: TEXT_DARK,
+    marginTop: 14,
+    marginBottom: 8,
+  },
+
+  // Card
   card: {
-    backgroundColor: "#fff", borderRadius: 16, padding: 14, marginBottom: 12,
-    borderWidth: 1, borderColor: "#F3F4F6",
+    flexDirection: "row",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: BORDER,
+    padding: 10,
+    marginBottom: 10,
+    gap: 12,
   },
-  cardRow: { flexDirection: "row", gap: 12 },
-  cardImageWrap: { width: 80, height: 80, borderRadius: 12, overflow: "hidden" },
-  cardImage: { width: "100%", height: "100%" },
-  cardImagePlaceholder: {
-    width: "100%", height: "100%", backgroundColor: "#F9FAFB",
-    justifyContent: "center", alignItems: "center",
+  cardImage: {
+    width: 70,
+    height: 70,
+    borderRadius: 10,
+    backgroundColor: "#F4F4F5",
   },
-  cardInfo: { flex: 1 },
-  sportTag: {
-    fontSize: 9, fontWeight: "800", color: "#0079EE", letterSpacing: 1,
-    textTransform: "uppercase", marginBottom: 2,
+  cardImagePlaceholder: { justifyContent: "center", alignItems: "center" },
+  cardBody: { flex: 1, justifyContent: "center" },
+  cardTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
   },
-  itemName: { fontSize: 15, fontWeight: "800", color: "#111", letterSpacing: -0.3 },
-  badgeRow: { flexDirection: "row", gap: 6, marginTop: 4, flexWrap: "wrap" },
-  badge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-  badgeText: { fontSize: 9, fontWeight: "700" },
-  priceText: { fontSize: 14, fontWeight: "700", color: "#059669", marginTop: 4 },
-  sellerRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4 },
-  sellerName: { fontSize: 11, fontWeight: "600", color: "#6B7280" },
-  soldBanner: {
-    flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10,
-    backgroundColor: "#EFF6FF", padding: 10, borderRadius: 10,
+  cardName: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: TEXT_DARK,
   },
-  soldText: { fontSize: 12, fontWeight: "600", color: "#2563EB", flex: 1 },
-  paySection: {
-    marginTop: 10, borderTopWidth: 1, borderTopColor: "#F3F4F6", paddingTop: 10,
+  cardDesc: {
+    fontSize: 11,
+    fontFamily: "Poppins_400Regular",
+    color: TEXT_MUTED,
+    marginTop: 2,
   },
-  payBtn: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
-    backgroundColor: "#0079EE", paddingVertical: 10, borderRadius: 10,
+  priceText: {
+    fontSize: 13,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: TEXT_DARK,
+    marginTop: 4,
   },
-  payBtnText: { fontSize: 13, fontWeight: "700", color: "#fff" },
-  payLabel: { fontSize: 11, fontWeight: "700", color: "#6B7280", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 },
-  methodRow: { flexDirection: "row", gap: 6, marginBottom: 10 },
-  methodChip: {
-    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8,
-    backgroundColor: "#F3F4F6", borderWidth: 1, borderColor: "#E5E7EB",
+  statusPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 10,
   },
-  methodChipActive: { backgroundColor: "#111", borderColor: "#111" },
-  methodText: { fontSize: 11, fontWeight: "700", color: "#6B7280" },
-  methodTextActive: { color: "#fff" },
-  input: {
-    backgroundColor: "#F9FAFB", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
-    fontSize: 13, fontWeight: "600", color: "#111", borderWidth: 1, borderColor: "#E5E7EB",
+  statusPillText: {
+    fontSize: 10,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "600",
+  },
+
+  // Empty
+  center: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 30,
+    paddingBottom: 60,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "700",
+    color: TEXT_MUTED,
+    marginTop: 14,
+  },
+  emptySubtitle: {
+    fontSize: 13,
+    fontFamily: "Poppins_400Regular",
+    color: "#9CA3AF",
+    marginTop: 4,
+    textAlign: "center",
+  },
+  emptyBtn: {
+    marginTop: 16,
+    paddingHorizontal: 22,
+    paddingVertical: 10,
+    backgroundColor: GREEN,
+    borderRadius: 12,
+  },
+  emptyBtnText: {
+    fontSize: 14,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+
+  // Filter sheet
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "flex-end",
+  },
+  sheet: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+  },
+  sheetHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  closeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#F4F4F5",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  sheetTitle: {
+    fontSize: 22,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "800",
+    color: TEXT_DARK,
+    marginBottom: 18,
+  },
+  groupLabel: {
+    fontSize: 16,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: TEXT_DARK,
     marginBottom: 10,
   },
-  payActions: { flexDirection: "row", gap: 8 },
-  cancelBtn: {
-    flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: "center",
-    backgroundColor: "#F3F4F6",
+  filterRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    paddingVertical: 10,
   },
-  cancelBtnText: { fontSize: 12, fontWeight: "700", color: "#6B7280" },
-  submitPayBtn: {
-    flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: "center",
-    backgroundColor: "#0079EE",
+  radio: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.5,
+    borderColor: "#D1D5DB",
+    justifyContent: "center",
+    alignItems: "center",
   },
-  submitPayText: { fontSize: 12, fontWeight: "700", color: "#fff" },
-  waitingBanner: {
-    flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10,
-    backgroundColor: "#EFF6FF", padding: 10, borderRadius: 10,
+  radioOn: { borderColor: GREEN },
+  radioDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: GREEN,
   },
-  waitingText: { fontSize: 11, fontWeight: "600", color: "#2563EB", flex: 1 },
-  rejectedBanner: {
-    flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10,
-    backgroundColor: "#FEF2F2", padding: 10, borderRadius: 10,
+  filterLabel: {
+    fontSize: 15,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "500",
+    color: TEXT_MUTED,
   },
-  rejectedText: { fontSize: 11, fontWeight: "600", color: "#DC2626", flex: 1 },
-  center: { flex: 1, justifyContent: "center", alignItems: "center", paddingBottom: 60 },
-  emptyTitle: { fontSize: 18, fontWeight: "700", color: "#6B7280", marginTop: 16 },
-  emptySubtitle: { fontSize: 13, color: "#9CA3AF", marginTop: 4, textAlign: "center" },
-  emptyBtn: {
-    marginTop: 16, paddingHorizontal: 24, paddingVertical: 12,
-    backgroundColor: "#0079EE", borderRadius: 12,
+  filterLabelOn: {
+    color: TEXT_DARK,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
   },
-  emptyBtnText: { fontSize: 14, fontWeight: "700", color: "#fff" },
+  sheetActions: { flexDirection: "row", gap: 12, marginTop: 18 },
+  resetBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: GREEN,
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+  },
+  resetBtnText: {
+    fontSize: 14,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "700",
+    color: GREEN,
+  },
+  applyBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: GREEN,
+    alignItems: "center",
+  },
+  applyBtnText: {
+    fontSize: 14,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
 });
 
 export default MyClaimsScreen;

@@ -14,6 +14,7 @@ import {
 import { Ionicons, MaterialIcons, FontAwesome5, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { getTournamentType } from "../../utils/sportTrack";
 
 const { width } = Dimensions.get("window");
 
@@ -131,7 +132,7 @@ const RegistrationDetails = ({ route, navigation }) => {
             <LinearGradient colors={["#FFF", "#F0F4F8"]} style={styles.dashGradient}>
               <MaterialIcons name="sports" size={20} color="#FF6A00" />
               <Text style={styles.dashLabel}>Type</Text>
-              <Text style={styles.dashValue}>{tournamentData.type || "Standard"}</Text>
+              <Text style={styles.dashValue}>{getTournamentType(tournamentData) || "Standard"}</Text>
             </LinearGradient>
           </View>
         </View>

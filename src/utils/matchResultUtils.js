@@ -59,9 +59,12 @@ export function readMatchResult(match, opts = {}) {
     };
   }
 
-  // LEGACY PATH: extract from old schema fields
+  // LEGACY PATH: extract from old schema fields.
+  // STEP 13: prefer denormalized `match.sportName` (populated by
+  // MatchFactory._stamp on every match); legacy `sportsType`/`sport`
+  // retained for matches created before STEP 9a stamping landed.
   const scoringType = match.matchFormat?.scoringType
-    || getScoringType(match.sportsType || match.sport || opts.sportName)
+    || getScoringType(match.sportName || match.sportsType || match.sport || opts.sportName)
     || "sets";
 
   const completed = (match.status || "").toUpperCase() === "COMPLETED";

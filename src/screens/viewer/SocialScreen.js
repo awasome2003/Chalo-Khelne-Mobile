@@ -25,11 +25,23 @@ import {
 import { MaterialIcons, FontAwesome5, Ionicons, Feather } from "@expo/vector-icons";
 import axios from "axios";
 import { useAuth } from "../../context/AuthContext";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import POSTS from "../../api/posts";
 import API from "../../api/api";
-import { LinearGradient } from 'expo-linear-gradient';
+import { assetUrl } from "../../utils/assetUrl";
 
 const { width } = Dimensions.get("window");
+
+// ─── COLOR TOKENS ─────────────────────────────────────────────────────────
+const GREEN = "#15A765";        // primary brand — buttons, active states, accents
+const GREEN_DARK = "#0F8A55";   // gradients, emphasis text
+const GREEN_TINT = "#E8F7F0";   // active chip bg, soft fills
+const TEXT_DARK = "#1A181B";    // headings / primary text
+const TEXT_MUTED = "#6B7280";   // secondary text, labels, placeholders
+const BORDER = "#EEEEFF";       // card/search borders
+const FIELD_BG = "#F4F4F5";     // input/track/inactive-chip bg
+const SCREEN_BG = "#FFFFFF";    // screen background
+const HEART_RED = "#FF3040";    // liked heart stays red
 
 // --- UTILS ---
 const formatTimeAgo = (dateString) => {
@@ -97,7 +109,7 @@ const CommentModal = ({ visible, onClose, post, onAddComment, isAuthenticated, p
             renderItem={({ item }) => (
               <View style={styles.commentItem}>
                 <Image
-                  source={item.user?.profileImage ? { uri: `${API.SERVER_URL}/${item.user.profileImage}` } : require("../../../assets/profile.jpg")}
+                  source={item.user?.profileImage ? { uri: assetUrl(item.user.profileImage) } : require("../../../assets/profile.jpg")}
                   style={styles.commentAvatar}
                 />
                 <View style={styles.commentBody}>
@@ -128,7 +140,7 @@ const CommentModal = ({ visible, onClose, post, onAddComment, isAuthenticated, p
             />
             <TouchableOpacity onPress={handleSubmit} disabled={!commentText.trim() || loading}>
               {loading ? (
-                <ActivityIndicator size="small" color="#FF6A00" />
+                <ActivityIndicator size="small" color={GREEN} />
               ) : (
                 <Text style={[styles.postBtnText, !commentText.trim() && styles.disabledText]}>Post</Text>
               )}
@@ -197,7 +209,7 @@ const PostItem = React.memo(({ item, currentUserId, onLike, onSave, onComment, o
       <View style={styles.postHeader}>
         <View style={styles.headerLeft}>
           <Image
-            source={item.user?.profileImage ? { uri: `${API.SERVER_URL}/${item.user.profileImage}` } : require("../../../assets/default-pfp.jpg")}
+            source={item.user?.profileImage ? { uri: assetUrl(item.user.profileImage) } : require("../../../assets/default-pfp.jpg")}
             style={styles.postAvatar}
           />
           <View>
@@ -230,26 +242,26 @@ const PostItem = React.memo(({ item, currentUserId, onLike, onSave, onComment, o
               <MaterialIcons
                 name={item.isLiked ? "favorite" : "favorite-border"}
                 size={28}
-                color={item.isLiked ? "#FF3040" : "#333"}
+                color={item.isLiked ? HEART_RED : TEXT_DARK}
               />
             </Animated.View>
           </TouchableOpacity>
 
           <TouchableOpacity onPress={() => onComment(item)} style={styles.actionBtn}>
-            <Ionicons name="chatbubble-outline" size={26} color="#333" />
+            <Ionicons name="chatbubble-outline" size={26} color={TEXT_DARK} />
           </TouchableOpacity>
 
           <TouchableOpacity onPress={() => onShare(item)} style={styles.actionBtn}>
-            <Ionicons name="paper-plane-outline" size={26} color="#333" />
+            <Ionicons name="paper-plane-outline" size={26} color={TEXT_DARK} />
           </TouchableOpacity>
         </View>
 
         <TouchableOpacity onPress={() => onSave(item._id)}>
           <FontAwesome5
-            name={item.isSaved ? "bookmark" : "bookmark"}
+            name="bookmark"
             solid={item.isSaved}
             size={24}
-            color={item.isSaved ? "#FF6A00" : "#333"}
+            color={item.isSaved ? GREEN : TEXT_DARK}
           />
         </TouchableOpacity>
       </View>
@@ -285,6 +297,7 @@ const PostItem = React.memo(({ item, currentUserId, onLike, onSave, onComment, o
 // --- MAIN SCREEN ---
 const SocialScreen = ({ navigation }) => {
   const { token, user } = useAuth();
+  const insets = useSafeAreaInsets();
   const currentUserId = user?._id;
   const isAuthenticated = !!token;
 
@@ -504,7 +517,7 @@ const SocialScreen = ({ navigation }) => {
         />
       )}
 
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <View style={styles.tabContainer}>
           <TouchableOpacity onPress={() => setActiveTab("Home")} style={[styles.tabBtn, activeTab === "Home" && styles.activeTabBtn]}>
             <Text style={[styles.tabText, activeTab === "Home" && styles.activeTabText]}>For You</Text>
@@ -517,10 +530,8 @@ const SocialScreen = ({ navigation }) => {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity style={styles.addBtn} onPress={() => promptSignIn("create a post")}>
-          <LinearGradient colors={['#FF6A00', '#FF8C00']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.addBtnGradient}>
-            <MaterialIcons name="add" size={24} color="#fff" />
-          </LinearGradient>
+        <TouchableOpacity style={styles.addBtn} onPress={() => promptSignIn("create a post")} activeOpacity={0.85}>
+          <MaterialIcons name="add" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
 
@@ -528,10 +539,10 @@ const SocialScreen = ({ navigation }) => {
         isAuthenticated ? (
           <View style={styles.subTabContainer}>
             <TouchableOpacity onPress={() => setActiveSubTab("My Posts")} style={[styles.subTab, activeSubTab === "My Posts" && styles.activeSubTab]}>
-              <Ionicons name="grid-outline" size={20} color={activeSubTab === "My Posts" ? "#FF6A00" : "#999"} />
+              <Ionicons name="grid-outline" size={20} color={activeSubTab === "My Posts" ? GREEN : TEXT_MUTED} />
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setActiveSubTab("Save Post")} style={[styles.subTab, activeSubTab === "Save Post" && styles.activeSubTab]}>
-              <Ionicons name="bookmark-outline" size={20} color={activeSubTab === "Save Post" ? "#FF6A00" : "#999"} />
+              <Ionicons name="bookmark-outline" size={20} color={activeSubTab === "Save Post" ? GREEN : TEXT_MUTED} />
             </TouchableOpacity>
           </View>
         ) : (
@@ -562,10 +573,11 @@ const SocialScreen = ({ navigation }) => {
 
       {loading && !refreshing ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#FF6A00" />
+          <ActivityIndicator size="large" color={GREEN} />
         </View>
       ) : (
         <FlatList
+          style={styles.scroll}
           data={searchQuery.length > 0 ? filteredPosts : posts}
           keyExtractor={item => item._id}
           renderItem={({ item }) => (
@@ -582,12 +594,12 @@ const SocialScreen = ({ navigation }) => {
             />
           )}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchPosts(true)} colors={["#FF6A00"]} />}
-          contentContainerStyle={{ paddingBottom: 80 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchPosts(true)} colors={[GREEN]} tintColor={GREEN} />}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 110 }}
           ListEmptyComponent={
             activeTab === "Home" || (activeTab === "My Account" && isAuthenticated) ? (
               <View style={styles.emptyContainer}>
-                <Ionicons name="images-outline" size={60} color="#eee" />
+                <Ionicons name="images-outline" size={60} color="#D1D5DB" />
                 <Text style={styles.emptyText}>No posts found</Text>
               </View>
             ) : null
@@ -601,17 +613,18 @@ const SocialScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#fff",
-    paddingTop: StatusBar.currentHeight || 0,
+    backgroundColor: SCREEN_BG,
+  },
+  scroll: {
+    flex: 1,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingTop: Platform.OS === "ios" ? 60 : 20,
+    paddingHorizontal: 16,
     paddingBottom: 15,
-    backgroundColor: "#fff",
+    backgroundColor: SCREEN_BG,
   },
   tabContainer: {
     flexDirection: "row",
@@ -623,11 +636,12 @@ const styles = StyleSheet.create({
   },
   tabText: {
     fontSize: 20,
-    fontWeight: "bold",
+    fontFamily: "Montserrat_700Bold",
+    fontWeight: "800",
     color: "#BBB",
   },
   activeTabText: {
-    color: "#111",
+    color: TEXT_DARK,
   },
   activeIndicator: {
     position: "absolute",
@@ -635,17 +649,18 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 3,
-    backgroundColor: "#FF6A00",
+    backgroundColor: GREEN,
     borderRadius: 2,
   },
-  addBtnGradient: {
+  addBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
+    backgroundColor: GREEN,
     justifyContent: "center",
     alignItems: "center",
     elevation: 4,
-    shadowColor: '#FF6A00',
+    shadowColor: GREEN_DARK,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 5,
@@ -662,17 +677,17 @@ const styles = StyleSheet.create({
   },
   activeSubTab: {
     borderBottomWidth: 2,
-    borderBottomColor: "#FF6A00",
+    borderBottomColor: GREEN,
   },
   searchContainer: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingVertical: 10,
   },
   searchWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F5F6F8",
-    borderRadius: 12,
+    backgroundColor: FIELD_BG,
+    borderRadius: 16,
     paddingHorizontal: 15,
     height: 44,
   },
@@ -680,7 +695,8 @@ const styles = StyleSheet.create({
     flex: 1,
     marginLeft: 10,
     fontSize: 15,
-    color: "#333",
+    fontFamily: "Poppins_400Regular",
+    color: TEXT_DARK,
   },
   loadingContainer: {
     flex: 1,
@@ -693,20 +709,22 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   emptyText: {
-    color: "#999",
+    color: TEXT_MUTED,
     marginTop: 15,
     fontSize: 16,
+    fontFamily: "Poppins_400Regular",
     textAlign: 'center',
   },
   loginBtn: {
     marginTop: 20,
-    backgroundColor: '#FF6A00',
+    backgroundColor: GREEN,
     paddingHorizontal: 30,
-    paddingVertical: 10,
-    borderRadius: 20,
+    paddingVertical: 12,
+    borderRadius: 14,
   },
   loginBtnText: {
     color: '#fff',
+    fontFamily: "Montserrat_600SemiBold",
     fontWeight: 'bold',
   },
   postCard: {
@@ -900,7 +918,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   postBtnText: {
-    color: "#FF6A00",
+    color: GREEN,
     fontWeight: "bold",
     fontSize: 15,
   },

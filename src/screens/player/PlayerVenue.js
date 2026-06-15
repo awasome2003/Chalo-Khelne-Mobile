@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -9,701 +9,626 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  RefreshControl,
 } from "react-native";
-import FilterModal from "./FilterModal";
-import SportsModal from "./SportsModal";
 import MaterialIcons from "react-native-vector-icons/MaterialIcons";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useFocusEffect } from "@react-navigation/native";
 import API from "../../api/api";
+import TOURNAMENTS from "../../api/tournaments";
+import { useAuth } from "../../context/AuthContext";
+
+// ─── Helpers ────────────────────────────────────────────────────────────
+const getSportIcon = (sportName) => {
+  const sport = String(sportName || "").toLowerCase();
+  if (sport.includes("basket")) return require("../../../assets/Basketball.png");
+  if (sport.includes("cricket")) return require("../../../assets/Cricket.png");
+  if (sport.includes("football") || sport.includes("soccer"))
+    return require("../../../assets/Football.png");
+  if (sport.includes("badminton")) return require("../../../assets/shuttlecock.png");
+  if (sport.includes("tennis") || sport.includes("table"))
+    return require("../../../assets/ping-pong.png");
+  return require("../../../assets/sports_soccer.png");
+};
+
+// Min pricePerHour across a turf's sports[]. Returns null if no priced sport.
+const computeMinPrice = (turf) => {
+  if (!Array.isArray(turf?.sports) || turf.sports.length === 0) return null;
+  const prices = turf.sports
+    .map((s) => (typeof s === "object" ? Number(s.pricePerHour) : NaN))
+    .filter((n) => !isNaN(n) && n > 0);
+  if (prices.length === 0) return null;
+  return Math.min(...prices);
+};
+
+const getFormattedLocation = (turf) => {
+  if (turf?.address) {
+    const { area, city } = turf.address;
+    if (area && city) return `${area}, ${city}`;
+    if (area) return area;
+    if (city) return city;
+    if (turf.address.fullAddress) return turf.address.fullAddress;
+  }
+  if (turf?.location) {
+    if (typeof turf.location === "string") return turf.location;
+    if (typeof turf.location === "object")
+      return turf.location.address || turf.location.city || "";
+  }
+  return "Location not available";
+};
+
+const calculateDistance = (turf) => {
+  // Real distance computation isn't wired yet; return a stable placeholder
+  // derived from the turf id so the same turf always shows the same value.
+  if (typeof turf?.distance === "string" || typeof turf?.distance === "number") {
+    return `${turf.distance} km`;
+  }
+  // Deterministic pseudo-random: hash id → 0.5..5.5 km
+  const id = String(turf?._id || "");
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 100000;
+  const km = 0.5 + (h % 50) / 10;
+  return `${km.toFixed(1)} km`;
+};
 
 const PlayerVenue = ({ navigation }) => {
   const insets = useSafeAreaInsets();
-  const [modalVisible, setModalVisible] = useState(false);
-  const [sportsModalVisible, setSportsModalVisible] = useState(false);
-  const [selectedSports, setSelectedSports] = useState([]);
-  const [activeFilter, setActiveFilter] = useState("all");
+  const { user } = useAuth();
+  const userId = user?.id || user?._id;
+
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedSport, setSelectedSport] = useState(null); // single-select
+
   const [turfs, setTurfs] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [filteredTurfs, setFilteredTurfs] = useState([]);
-  const [totalTurfs, setTotalTurfs] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Fetch turfs from API
-  useEffect(() => {
-    fetchTurfs();
-  }, []);
+  const [availableSports, setAvailableSports] = useState([]); // from tournaments
+  const [availability, setAvailability] = useState({}); // { turfId: { availableSlots } }
+  const [favorites, setFavorites] = useState(new Set()); // Set<turfId>
 
-  // Apply filters whenever dependencies change
-  useEffect(() => {
-    applyFilters();
-  }, [turfs, activeFilter, selectedSports, searchQuery]);
-
+  // ─── Fetchers ─────────────────────────────────────────────────────────
   const fetchTurfs = async () => {
-    setLoading(true);
     try {
       const response = await fetch(API.ENDPOINTS.TURFS.BASE);
       const data = await response.json();
-
-      // Extract turfs from the response (handle both formats)
       const turfData = data.turfs || data || [];
-
-      if (Array.isArray(turfData)) {
-        setTurfs(turfData);
-        setTotalTurfs(turfData.length);
-      } else {
-        console.warn("Unexpected API response format:", data);
-        setTurfs([]);
-      }
+      if (Array.isArray(turfData)) setTurfs(turfData);
+      else setTurfs([]);
     } catch (error) {
       console.error("Error fetching turfs:", error);
       Alert.alert("Error", "Failed to load venues. Please try again later.");
       setTurfs([]);
-    } finally {
-      setLoading(false);
     }
   };
 
-  const applyFilters = () => {
+  // Pull the unique sport-name list out of all tournaments' `sports[]` arrays.
+  // No dedicated sports endpoint exists yet; tournaments are our source of truth.
+  const fetchAvailableSports = async () => {
+    try {
+      const res = await fetch(TOURNAMENTS.ENDPOINTS.BASE);
+      const data = await res.json();
+      const tournaments = Array.isArray(data) ? data : data?.tournaments || [];
+      const set = new Set();
+      for (const t of tournaments) {
+        if (Array.isArray(t?.sports)) {
+          for (const s of t.sports) {
+            const name = typeof s === "string" ? s : s?.sportName || s?.name;
+            if (name) set.add(name.trim());
+          }
+        }
+      }
+      setAvailableSports(Array.from(set));
+    } catch (e) {
+      console.error("Error fetching tournament sports:", e);
+      setAvailableSports([]);
+    }
+  };
+
+  const fetchAvailability = async () => {
+    try {
+      const res = await fetch(API.ENDPOINTS.TURFS.AVAILABILITY_TODAY);
+      const data = await res.json();
+      if (data?.success && data.availability) setAvailability(data.availability);
+    } catch (e) {
+      console.error("Error fetching availability:", e);
+    }
+  };
+
+  const fetchFavorites = async () => {
+    if (!userId) return;
+    try {
+      const token = await AsyncStorage.getItem("auth_token");
+      const res = await fetch(API.ENDPOINTS.USER.USER_FAVORITES(userId), {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const data = await res.json();
+      const list = data?.favorites || data?.data || data || [];
+      const ids = new Set();
+      for (const fav of Array.isArray(list) ? list : []) {
+        const id = fav?._id || fav?.turfId?._id || fav?.turfId || fav;
+        if (id) ids.add(String(id));
+      }
+      setFavorites(ids);
+    } catch (e) {
+      console.error("Error fetching favorites:", e);
+    }
+  };
+
+  const fetchAll = async () => {
+    setLoading(true);
+    await Promise.all([
+      fetchTurfs(),
+      fetchAvailableSports(),
+      fetchAvailability(),
+      fetchFavorites(),
+    ]);
+    setLoading(false);
+    setRefreshing(false);
+  };
+
+  useEffect(() => {
+    fetchAll();
+  }, []);
+
+  // Re-fetch favorites whenever the screen regains focus (e.g. after coming
+  // back from FavouriteVenue where the user may have unfavorited a turf).
+  useFocusEffect(
+    useCallback(() => {
+      if (userId) fetchFavorites();
+    }, [userId])
+  );
+
+  // ─── Filtering ────────────────────────────────────────────────────────
+  useEffect(() => {
     let filtered = [...turfs];
 
-    // Apply search filter
     if (searchQuery) {
-      const query = searchQuery.toLowerCase();
+      const q = searchQuery.toLowerCase();
       filtered = filtered.filter(
         (turf) =>
-          (turf.name && turf.name.toLowerCase().includes(query)) ||
-          (turf.address &&
-            turf.address.area &&
-            turf.address.area.toLowerCase().includes(query)) ||
-          (turf.address &&
-            turf.address.city &&
-            turf.address.city.toLowerCase().includes(query)) ||
-          (turf.sports &&
-            turf.sports.some((sport) =>
-              typeof sport === "string"
-                ? sport.toLowerCase().includes(query)
-                : sport.name && sport.name.toLowerCase().includes(query)
-            ))
+          (turf.name && turf.name.toLowerCase().includes(q)) ||
+          turf.address?.area?.toLowerCase().includes(q) ||
+          turf.address?.city?.toLowerCase().includes(q) ||
+          turf.sports?.some((sport) => {
+            const name = typeof sport === "string" ? sport : sport?.name || "";
+            return name.toLowerCase().includes(q);
+          })
       );
     }
 
-    // Apply category filter
-    if (activeFilter === "offers") {
-      filtered = filtered.filter((turf) => turf.discount);
-    }
-
-    // Apply sports filter
-    if (selectedSports.length > 0) {
-      filtered = filtered.filter((turf) => {
-        // Check if turf has any of the selected sports
-        return selectedSports.some((selectedSport) => {
-          return (
-            turf.sports &&
-            turf.sports.some((sport) => {
-              const sportName =
-                typeof sport === "string" ? sport : sport.name || "";
-              return sportName.toLowerCase() === selectedSport.toLowerCase();
-            })
-          );
-        });
-      });
+    if (selectedSport) {
+      filtered = filtered.filter((turf) =>
+        turf.sports?.some((sport) => {
+          const name = typeof sport === "string" ? sport : sport?.name || "";
+          return name.toLowerCase() === selectedSport.toLowerCase();
+        })
+      );
     }
 
     setFilteredTurfs(filtered);
+  }, [turfs, searchQuery, selectedSport]);
+
+  // ─── Actions ──────────────────────────────────────────────────────────
+  const handleVoiceInput = () => {
+    Alert.alert("Voice search", "Voice input integration coming soon");
   };
 
-  const calculateDistance = (turf) => {
-    // In a real app, calculate distance based on user's location
-    // For now, return a placeholder or the turf's distance if available
-    return turf.distance || `${(Math.random() * 5 + 1).toFixed(1)} km`;
-  };
-
-  const getFormattedLocation = (turf) => {
-    // Case 1: Turf has address directly (old schema)
-    if (turf.address) {
-      const { area, city, pincode, fullAddress } = turf.address;
-      return (
-        fullAddress ||
-        `${area || ""}, ${city || ""}, ${pincode || ""}`
-          .replace(/^,|,$/g, "")
-          .trim() ||
-        "Location not available"
-      );
+  const handleToggleFavorite = async (turfId) => {
+    if (!userId) {
+      Alert.alert("Sign in required", "Please sign in to save favorites.");
+      return;
     }
+    // Optimistic toggle
+    setFavorites((prev) => {
+      const next = new Set(prev);
+      if (next.has(turfId)) next.delete(turfId);
+      else next.add(turfId);
+      return next;
+    });
 
-    // Case 2: Turf has new location object
-    if (turf.location) {
-      if (typeof turf.location === "string") {
-        return turf.location || "Location not available";
-      }
-      if (typeof turf.location === "object") {
-        return (
-          turf.location.address ||
-          turf.location.city || // fallback if API changes later
-          "Location not available"
-        );
-      }
+    try {
+      const token = await AsyncStorage.getItem("auth_token");
+      const res = await fetch(API.ENDPOINTS.USER.TOGGLE_FAVORITE, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ userId, turfId }),
+      });
+      if (!res.ok) throw new Error(`Toggle failed (${res.status})`);
+    } catch (e) {
+      console.error("Favorite toggle failed:", e);
+      // Revert on failure
+      setFavorites((prev) => {
+        const next = new Set(prev);
+        if (next.has(turfId)) next.delete(turfId);
+        else next.add(turfId);
+        return next;
+      });
     }
-
-    return "Location not available";
   };
 
-
-
-  const getSportIcon = (sportName) => {
-    const sport = sportName.toLowerCase();
-
-    if (sport.includes("cricket")) {
-      return require("../../../assets/sports_cricket.png");
-    } else if (sport.includes("football") || sport.includes("soccer")) {
-      return require("../../../assets/sports_soccer.png");
-    } else if (sport.includes("badminton")) {
-      return require("../../../assets/shuttlecock.png");
-    } else if (sport.includes("tennis")) {
-      return require("../../../assets/ping-pong.png");
-    }
-
-    // Default icon if no match
-    return require("../../../assets/ping-pong.png");
+  const handleBookNow = (turf) => {
+    navigation.navigate("TurfDetails", { turfId: turf._id });
   };
 
-  const renderSportTag = (sport, index) => {
-    const sportName =
-      typeof sport === "string" ? sport : sport?.name || "Sport";
-
-    return (
-      <View key={`${sportName}-${index}`} style={styles.tagWithIcon}>
-        <Image source={getSportIcon(sportName)} style={styles.tagIcon} />
-        <Text style={styles.tagText}>{sportName}</Text>
-      </View>
-    );
-  };
-
-
+  // ─── Render ───────────────────────────────────────────────────────────
   return (
-    <ScrollView style={styles.container}>
-      {/* Header */}
-      <View style={[styles.headerBar, { paddingTop: insets.top + 10 }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color="#333" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Book a Turf</Text>
-        <View style={{ width: 40 }} />
-      </View>
-
-      {/* Search Bar */}
-      <View style={styles.searchBar}>
-        <MaterialIcons
-          name="search"
-          size={24}
-          color="#999"
-          style={{ marginRight: 8 }}
-        />
-        <TextInput
-          placeholder="Search venues by name, location, or sport"
-          placeholderTextColor="#999"
-          style={styles.searchInput}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
-        {searchQuery ? (
-          <TouchableOpacity onPress={() => setSearchQuery("")}>
-            <MaterialIcons name="close" size={24} color="#999" />
-          </TouchableOpacity>
-        ) : null}
-      </View>
-
-      <View style={styles.players}>
-        {/* Header Section */}
-        <View style={styles.headerRow}>
-          <Text style={styles.headerText}>Available Venues ({totalTurfs})</Text>
+    <View style={styles.container}>
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: 120 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              fetchAll();
+            }}
+            colors={["#15A765"]}
+            tintColor="#15A765"
+          />
+        }
+      >
+        {/* Header */}
+        <View style={[styles.headerRow, { paddingTop: insets.top + 12 }]}>
+          <Text style={styles.headerTitle}>Book Turf</Text>
           <TouchableOpacity
-            style={styles.favHeaderBtn}
+            style={styles.favLink}
             onPress={() => navigation.navigate("FavouriteVenue")}
-            activeOpacity={0.7}
+            activeOpacity={0.85}
           >
-            <Ionicons name="heart" size={18} color="#FF3040" />
-            <Text style={styles.favHeaderText}>Favorites</Text>
+            <Ionicons name="heart" size={14} color="#15A765" />
+            <Text style={styles.favLinkText}>View favorites</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Filters */}
-        <View style={styles.filters}>
-          {/* Filter Icon - fixed */}
-          <TouchableOpacity
-            style={styles.filterIcon}
-            onPress={() => setModalVisible(true)}
-          >
-            <MaterialIcons name="filter-list" size={24} color="#000" />
-          </TouchableOpacity>
-          <FilterModal
-            visible={modalVisible}
-            onClose={() => setModalVisible(false)}
+        {/* Search bar */}
+        <View style={styles.searchBar}>
+          <MaterialIcons name="search" size={22} color="#666" />
+          <TextInput
+            placeholder="Search sports, turfs or location"
+            placeholderTextColor="#999"
+            style={styles.searchInput}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
           />
+          {searchQuery ? (
+            <TouchableOpacity onPress={() => setSearchQuery("")}>
+              <MaterialIcons
+                name="close"
+                size={20}
+                color="#666"
+                style={{ marginRight: 8 }}
+              />
+            </TouchableOpacity>
+          ) : null}
+          <View style={styles.searchDivider} />
+          <TouchableOpacity onPress={handleVoiceInput} style={styles.micBtn}>
+            <MaterialIcons name="mic-none" size={22} color="#666" />
+          </TouchableOpacity>
+        </View>
 
-          {/* Scrollable filters */}
+        {/* Sport chips */}
+        {availableSports.length > 0 && (
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.scrollContainer}
+            contentContainerStyle={styles.chipRow}
+            style={styles.chipRowOuter}
           >
-            <TouchableOpacity
-              style={[
-                styles.inactiveFilter,
-                activeFilter === "sports" && styles.activeFilter,
-              ]}
-              onPress={() => {
-                setActiveFilter("sports");
-                setSportsModalVisible(true);
-              }}
-            >
-              <Text
-                style={[
-                  styles.inactiveFilterText,
-                  activeFilter === "sports" && styles.activeFilterText,
-                ]}
-              >
-                Sports
-              </Text>
-              <MaterialIcons
-                name="arrow-drop-down"
-                size={20}
-                color={activeFilter === "sports" ? "#fff" : "#000"}
-              />
-            </TouchableOpacity>
-
-            <SportsModal
-              visible={sportsModalVisible}
-              onClose={() => setSportsModalVisible(false)}
-              selectedSports={selectedSports}
-              setSelectedSports={setSelectedSports}
-            />
-
-            <TouchableOpacity
-              style={[
-                styles.inactiveFilter,
-                activeFilter === "events" && styles.activeFilter,
-              ]}
-              onPress={() => setActiveFilter("events")}
-            >
-              <Text
-                style={[
-                  styles.inactiveFilterText,
-                  activeFilter === "events" && styles.activeFilterText,
-                ]}
-              >
-                Events
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.inactiveFilter,
-                activeFilter === "offers" && styles.activeFilter,
-              ]}
-              onPress={() => setActiveFilter("offers")}
-            >
-              <Text
-                style={[
-                  styles.inactiveFilterText,
-                  activeFilter === "offers" && styles.activeFilterText,
-                ]}
-              >
-                Offers
-              </Text>
-            </TouchableOpacity>
+            {availableSports.map((sport) => {
+              const isActive =
+                selectedSport &&
+                sport.toLowerCase() === selectedSport.toLowerCase();
+              return (
+                <TouchableOpacity
+                  key={sport}
+                  style={[styles.sportChip, isActive && styles.sportChipActive]}
+                  activeOpacity={0.85}
+                  onPress={() =>
+                    setSelectedSport((prev) =>
+                      prev && prev.toLowerCase() === sport.toLowerCase()
+                        ? null
+                        : sport
+                    )
+                  }
+                >
+                  <Image source={getSportIcon(sport)} style={styles.chipIcon} />
+                  <Text
+                    style={[
+                      styles.chipText,
+                      isActive && styles.chipTextActive,
+                    ]}
+                  >
+                    {sport}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </ScrollView>
-        </View>
-      </View>
+        )}
 
-      {/* Turf List */}
-      <View style={{ backgroundColor: "#f2f2f2", paddingBottom: 100 }}>
+        {/* List */}
         {loading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#FF6B00" />
+            <ActivityIndicator size="large" color="#15A765" />
             <Text style={styles.loadingText}>Loading venues...</Text>
           </View>
         ) : filteredTurfs.length > 0 ? (
-          filteredTurfs.map((turf) => {
-            const hasImage = Array.isArray(turf.images) && turf.images.length > 0;
-            const imageUri = hasImage
-              ? { uri: `${API.UPLOADS_URL}/${turf.images[0]}` }
-              : require("../../../assets/turf.jpg");
-            const rating = typeof turf.ratings?.average === "number"
-              ? turf.ratings.average.toFixed(1)
-              : "0.0";
-            const distance = calculateDistance(turf);
+          <View style={styles.listWrap}>
+            {filteredTurfs.map((turf) => {
+              const hasImage =
+                Array.isArray(turf.images) && turf.images.length > 0;
+              const imageSrc = hasImage
+                ? { uri: `${API.UPLOADS_URL}/${turf.images[0]}` }
+                : require("../../../assets/turf.jpg");
+              const minPrice = computeMinPrice(turf);
+              const distance = calculateDistance(turf);
+              const location = getFormattedLocation(turf);
+              const isFav = favorites.has(String(turf._id));
+              const slots =
+                availability[String(turf._id)]?.availableSlots ?? null;
 
-            return (
-              <TouchableOpacity
-                key={turf._id}
-                style={styles.card}
-                activeOpacity={0.85}
-                onPress={() => navigation.navigate("TurfDetails", { turfId: turf._id })}
-              >
-                {/* Image Section */}
-                <View style={styles.imageContainer}>
-                  <Image
-                    source={imageUri}
-                    style={styles.venueImage}
-                    resizeMode="cover"
-                    defaultSource={require("../../../assets/turf.jpg")}
-                  />
-                  {/* Gradient overlay */}
-                  <View style={styles.imageGradient} />
+              return (
+                <View key={turf._id} style={styles.card}>
+                  <Image source={imageSrc} style={styles.cardImage} />
 
-                  {/* Rating badge top-left */}
-                  <View style={styles.ratingBadge}>
-                    <MaterialIcons name="star" size={13} color="#FFD700" />
-                    <Text style={styles.ratingBadgeText}>{rating}</Text>
-                  </View>
-
-                  {/* Discount badge top-right */}
-                  {turf.discount && (
-                    <View style={styles.offerBadge}>
-                      <Text style={styles.offerText}>{turf.discount}% OFF</Text>
+                  <View style={styles.cardBody}>
+                    <View style={styles.cardTitleRow}>
+                      <Text style={styles.cardTitle} numberOfLines={1}>
+                        {turf.name}
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() => handleToggleFavorite(String(turf._id))}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Ionicons
+                          name={isFav ? "heart" : "heart-outline"}
+                          size={20}
+                          color={isFav ? "#FF3040" : "#BBB"}
+                        />
+                      </TouchableOpacity>
                     </View>
-                  )}
 
-                  {/* Distance badge bottom-right */}
-                  {distance && (
-                    <View style={styles.distanceBadge}>
-                      <MaterialIcons name="near-me" size={12} color="#FF6A00" />
-                      <Text style={styles.distanceBadgeText}>{distance}</Text>
-                    </View>
-                  )}
-                </View>
-
-                {/* Content Section */}
-                <View style={styles.cardContent}>
-                  <Text style={styles.venueTitle} numberOfLines={1}>{turf.name}</Text>
-
-                  <View style={styles.locationRow}>
-                    <MaterialIcons name="location-on" size={14} color="#90A4AE" />
-                    <Text style={styles.locationText} numberOfLines={2}>
-                      {getFormattedLocation(turf)}
+                    <Text style={styles.cardLocation} numberOfLines={1}>
+                      {location} · {distance} away
                     </Text>
+
+                    <View style={styles.cardPriceRow}>
+                      <Text style={styles.cardPrice}>
+                        ₹{minPrice != null ? minPrice : 0}/-{" "}
+                        <Text style={styles.cardPriceUnit}>per hour</Text>
+                      </Text>
+                    </View>
+
+                    <View style={styles.cardFooterRow}>
+                      <Text style={styles.cardSlots}>
+                        {slots != null
+                          ? `${slots} slot${slots === 1 ? "" : "s"} available today`
+                          : "Check availability"}
+                      </Text>
+                      <TouchableOpacity
+                        style={styles.bookBtn}
+                        onPress={() => handleBookNow(turf)}
+                        activeOpacity={0.85}
+                      >
+                        <Text style={styles.bookBtnText}>Book now</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
-
-                  {turf.clubName && (
-                    <View style={styles.clubRow}>
-                      <MaterialIcons name="business" size={13} color="#FF6A00" />
-                      <Text style={styles.clubText}>{turf.clubName}</Text>
-                    </View>
-                  )}
-
-                  {/* Sport Tags */}
-                  {turf.sports && turf.sports.length > 0 && (
-                    <View style={styles.tagRow}>
-                      {turf.sports.map((sport) => renderSportTag(sport))}
-                    </View>
-                  )}
                 </View>
-              </TouchableOpacity>
-            );
-          })
+              );
+            })}
+          </View>
         ) : (
           <View style={styles.emptyContainer}>
-            <MaterialIcons name="sports-soccer" size={60} color="#ccc" />
+            <MaterialIcons name="sports-soccer" size={56} color="#D1D5DB" />
             <Text style={styles.emptyText}>No venues found</Text>
             <Text style={styles.emptySubtext}>
-              Try adjusting your search or filters
+              Try adjusting your search or sport filter
             </Text>
           </View>
         )}
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: "#F3F4F6",
-  },
-  clubText: {
-    color: "#666",
-    fontSize: 11,
-    marginBottom: 4,
-    fontStyle: "italic",
-  },
-  headerBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    backgroundColor: "#F3F4F6",
-  },
-  backBtn: {
-    width: 40, height: 40, borderRadius: 14,
-    backgroundColor: "#fff",
-    justifyContent: "center", alignItems: "center",
-    shadowColor: "#000", shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1, shadowRadius: 3, elevation: 2,
-  },
-  headerTitle: {
-    fontSize: 18, fontWeight: "700", color: "#333",
-  },
-  searchBar: {
-    flexDirection: "row",
-    backgroundColor: "#fff",
-    borderRadius: 30,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    alignItems: "center",
-    marginBottom: 16,
-    marginHorizontal: 16,
-    marginTop: 8,
-  },
-  players: {
-    backgroundColor: "#fff",
-    padding: 16,
-    borderRadius: 16,
-  },
-  searchInput: {
-    fontSize: 16,
     flex: 1,
-    color: "#000",
+    backgroundColor: "#FFFFFF",
   },
+
+  // Header
   headerRow: {
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  headerText: {
-    fontSize: 22,
-    fontWeight: "700",
-  },
-  favHeaderBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    backgroundColor: "#FFF0F0",
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 12,
-  },
-  favHeaderText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#FF3040",
-  },
-  filters: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 12,
-    display: "flex",
-    gap: 10,
-  },
-  scrollContainer: {
-    flexDirection: "row",
-    display: "flex",
-    gap: 10,
-    paddingRight: 16, // to give space at the end
-  },
-  filterIcon: {
-    backgroundColor: "#fff",
-    padding: 16,
-    borderRadius: 10,
-    marginRight: 10,
-    borderWidth: 0.5,
-    borderColor: "#ddd",
-  },
-  activeFilter: {
-    backgroundColor: "#0056B3",
-    flexDirection: "row",
-    alignItems: "center",
-    borderRadius: 30,
-    paddingLeft: 24,
-    paddingRight: 16,
-    paddingVertical: 8,
-    marginRight: 10,
-    maxWidth: 127,
-    maxHeight: 44,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  activeFilterText: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "400",
-    marginRight: 4,
-  },
-  inactiveFilter: {
-    backgroundColor: "#ECECEC",
-    borderRadius: 30,
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    marginRight: 10,
-    display: "flex",
-    flexDirection: "row",
-    alignItems: "center",
-    maxWidth: 127,
-    maxHeight: 44,
-    justifyContent: "center",
+    paddingBottom: 14,
   },
-  inactiveFilterText: {
-    color: "#000",
-    fontSize: 18,
-    fontWeight: "400",
-  },
-  tabSection: {
-    flexDirection: "row",
-    marginBottom: 16,
-    paddingBottom: 4,
-  },
-  tabText: {
-    marginRight: 16,
-    fontSize: 16,
-    color: "#555",
-  },
-  activeTab: {
-    color: "#FF6B00",
-    borderBottomWidth: 2,
-    borderBottomColor: "#FF6B00",
-  },
-  imageContainer: {
-    position: "relative",
-    height: 180,
-    backgroundColor: "#E8EDF2",
-  },
-  card: {
-    backgroundColor: "#fff",
-    borderRadius: 20,
-    overflow: "hidden",
-    marginHorizontal: 16,
-    marginBottom: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
-  },
-  venueImage: {
-    width: "100%",
-    height: "100%",
-  },
-  imageGradient: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 60,
-    backgroundColor: "rgba(0,0,0,0.15)",
-  },
-  ratingBadge: {
-    position: "absolute",
-    top: 12,
-    left: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.6)",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    gap: 3,
-  },
-  ratingBadgeText: {
-    color: "#fff",
-    fontSize: 12,
+  headerTitle: {
+    fontSize: 22,
+    fontFamily: "Montserrat_600SemiBold",
     fontWeight: "700",
+    color: "#1A181B",
   },
-  offerBadge: {
-    position: "absolute",
-    top: 12,
-    right: 12,
-    backgroundColor: "#FF6A00",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-  },
-  offerText: {
-    color: "#fff",
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 0.5,
-  },
-  distanceBadge: {
-    position: "absolute",
-    bottom: 12,
-    right: 12,
+  favLink: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fff",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
     gap: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: "#E8F7F0",
   },
-  distanceBadgeText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#333",
+  favLinkText: {
+    fontSize: 12,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "600",
+    color: "#15A765",
   },
-  cardContent: {
-    padding: 14,
+
+  // Search
+  searchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    marginHorizontal: 16,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    height: 50,
+    borderColor: "#EEEEFF",
+    borderRadius: 53,
+    marginBottom: 14,
     gap: 8,
   },
-  venueTitle: {
-    color: "#1A1A1A",
-    fontSize: 17,
-    fontWeight: "800",
-    letterSpacing: 0.2,
-  },
-  locationRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 5,
-  },
-  locationText: {
-    color: "#78909C",
-    fontSize: 13,
-    fontWeight: "500",
+  searchInput: {
     flex: 1,
-    lineHeight: 18,
+    fontSize: 14,
+    fontFamily: "Montserrat_500Medium",
+    color: "#1A181B",
+    paddingVertical: 0,
   },
-  clubRow: {
+  searchDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: "#E5E7EB",
+    marginHorizontal: 4,
+  },
+  micBtn: {
+    padding: 2,
+  },
+
+  // Sport chips
+  chipRowOuter: {
+    marginBottom: 14,
+  },
+  chipRow: {
+    paddingHorizontal: 16,
+    gap: 10,
+    paddingRight: 24,
+  },
+  sportChip: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#EEEEFF",
+    backgroundColor: "#FFFFFF",
+    marginRight: 10,
   },
-  clubText: {
-    color: "#FF6A00",
-    fontSize: 12,
-    fontWeight: "600",
+  sportChipActive: {
+    backgroundColor: "#E8F7F0",
+    borderColor: "#15A765",
   },
-  tagRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-    marginTop: 2,
-  },
-  tagWithIcon: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F5F7FA",
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    gap: 5,
-  },
-  tagIcon: {
-    width: 14,
-    height: 14,
+  chipIcon: {
+    width: 22,
+    height: 22,
     resizeMode: "contain",
   },
-  tagText: {
+  chipText: {
+    fontSize: 13,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "600",
+    color: "#1A181B",
+  },
+  chipTextActive: {
+    color: "#15A765",
+  },
+
+  // List
+  listWrap: {
+    paddingHorizontal: 16,
+    gap: 14,
+  },
+  card: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#EFEFEF",
+    overflow: "hidden",
+    marginBottom: 14,
+  },
+  cardImage: {
+    width: "100%",
+    height: 160,
+    backgroundColor: "#eee",
+  },
+  cardBody: {
+    padding: 14,
+    gap: 6,
+  },
+  cardTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  cardTitle: {
+    flex: 1,
+    fontSize: 16,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: "#1A181B",
+    marginRight: 10,
+  },
+  cardLocation: {
     fontSize: 12,
-    color: "#546E7A",
+    fontFamily: "Poppins_400Regular",
+    color: "#645E66",
+  },
+  cardPriceRow: {
+    marginTop: 4,
+  },
+  cardPrice: {
+    fontSize: 14,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: "#15A765",
+  },
+  cardPriceUnit: {
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular",
+    fontWeight: "400",
+    color: "#645E66",
+  },
+  cardFooterRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 8,
+  },
+  cardSlots: {
+    flex: 1,
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular",
+    color: "#645E66",
+    marginRight: 12,
+  },
+  bookBtn: {
+    backgroundColor: "#15A765",
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    borderRadius: 10,
+  },
+  bookBtnText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular",
     fontWeight: "600",
   },
+
+  // States
   loadingContainer: {
     alignItems: "center",
     justifyContent: "center",
@@ -711,7 +636,7 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginTop: 10,
-    fontSize: 16,
+    fontSize: 14,
     color: "#666",
   },
   emptyContainer: {
@@ -721,16 +646,16 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   emptyText: {
-    fontSize: 18,
-    fontWeight: "bold",
+    fontSize: 16,
+    fontWeight: "700",
     color: "#666",
-    marginTop: 10,
+    marginTop: 12,
   },
   emptySubtext: {
-    fontSize: 14,
+    fontSize: 13,
     color: "#999",
     textAlign: "center",
-    marginTop: 5,
+    marginTop: 4,
   },
 });
 

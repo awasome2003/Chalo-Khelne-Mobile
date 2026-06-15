@@ -8,20 +8,35 @@ import {
   ImageBackground,
   TextInput,
   ActivityIndicator,
-  Animated,
+  RefreshControl,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import MaterialIcons from "react-native-vector-icons/MaterialIcons";
 import { LinearGradient } from "expo-linear-gradient";
-import colors from "../../config/colors";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { getSportName } from "../../utils/sportTrack";
 import TOURNAMENTS from "../../api/tournaments";
-import API from "../../api/api";
+import { assetUrl } from "../../utils/assetUrl";
+
+// ─── Green design system ───────────────────────────────────────────────
+const GREEN = "#15A765";
+const GREEN_DARK = "#0F8A55";
+const GREEN_TINT = "#E8F7F0";
+const TEXT_DARK = "#1A181B";
+const TEXT_MUTED = "#6B7280";
+const BORDER = "#EEEEFF";
+const FIELD_BG = "#F4F4F5";
+const SCREEN_BG = "#FFFFFF";
 
 const EventsScreen = ({ navigation }) => {
+  const insets = useSafeAreaInsets();
+
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [tournaments, setTournaments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     fetchTournaments();
@@ -29,6 +44,7 @@ const EventsScreen = ({ navigation }) => {
 
   const fetchTournaments = async () => {
     setLoading(true);
+    setError(null);
     try {
       const response = await fetch(TOURNAMENTS.ENDPOINTS.BASE);
       const data = await response.json();
@@ -46,9 +62,16 @@ const EventsScreen = ({ navigation }) => {
       setTournaments(sortedTournaments);
     } catch (error) {
       console.error("Error fetching tournaments:", error);
+      setError("Failed to load events. Please try again.");
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchTournaments();
   };
 
   // Helper function to normalize location data for searching
@@ -102,7 +125,7 @@ const EventsScreen = ({ navigation }) => {
 
     // Check if tournament matches selected category
     // Try different possible fields that might contain the sport type
-    const tournamentSport = tournament.sportsType || tournament.sport || tournament.type || "";
+    const tournamentSport = getSportName(tournament) || tournament.sport || "";
     const matchesCategory = selectedCategory === "all" ||
       tournamentSport.toLowerCase().includes(selectedCategory.toLowerCase());
 
@@ -120,7 +143,8 @@ const EventsScreen = ({ navigation }) => {
 
   const renderEventItem = ({ item }) => (
     <TouchableOpacity
-      style={styles.modernEventCard}
+      style={styles.eventCard}
+      activeOpacity={0.9}
       onPress={() =>
         navigation.navigate("EventDetails", { tournamentId: item._id })
       }
@@ -129,23 +153,27 @@ const EventsScreen = ({ navigation }) => {
         source={
           imageErrors[item._id] || !item.logo
             ? require("../../../assets/tournament-banner.jpg")
-            : { uri: `${API.UPLOADS_URL}/${item.logo}` }
+            : { uri: assetUrl(item.logo) }
         }
         style={styles.cardImage}
-        imageStyle={{ borderRadius: 16 }}
+        imageStyle={styles.cardImageRadius}
         resizeMode="cover"
         onError={() => handleImageError(item._id)}
       >
         <LinearGradient
-          colors={['transparent', 'rgba(0,0,0,0.8)']}
+          colors={["transparent", "rgba(0,0,0,0.45)"]}
           style={styles.cardGradient}
         >
           <View style={styles.cardHeaderInfo}>
             <View style={styles.sportBadge}>
-              <Text style={styles.sportBadgeText}>{item.sportsType || item.type || "Sport"}</Text>
+              <Text style={styles.sportBadgeText}>
+                {item.sportsType || item.type || "Sport"}
+              </Text>
             </View>
             <View style={styles.priceBadge}>
-              <Text style={styles.priceBadgeText}>₹{item.tournamentFee || "Free"}</Text>
+              <Text style={styles.priceBadgeText}>
+                {item.tournamentFee ? `₹${item.tournamentFee}` : "Free"}
+              </Text>
             </View>
           </View>
         </LinearGradient>
@@ -155,23 +183,25 @@ const EventsScreen = ({ navigation }) => {
         <Text style={styles.cardTitle} numberOfLines={1}>{item.title}</Text>
         <View style={styles.cardMetaRow}>
           <View style={styles.metaItem}>
-            <MaterialIcons name="calendar-today" size={14} color="#666" />
-            <Text style={styles.metaText}>
+            <MaterialIcons name="calendar-today" size={14} color={TEXT_MUTED} />
+            <Text style={styles.metaText} numberOfLines={1}>
               {item.selectedDate
                 ? new Date(item.selectedDate).toLocaleDateString()
                 : "TBD"}
             </Text>
           </View>
           <View style={styles.metaItem}>
-            <MaterialIcons name="location-pin" size={14} color="#666" />
+            <MaterialIcons name="location-pin" size={14} color={TEXT_MUTED} />
             <Text style={styles.metaText} numberOfLines={1}>
               {item.eventLocation || "Venue TBD"}
             </Text>
           </View>
         </View>
         <View style={styles.cardOrganizerRow}>
-          <MaterialIcons name="business" size={14} color="#004E93" />
-          <Text style={styles.organizerText}>{item.organizerName || "Official Event"}</Text>
+          <MaterialIcons name="business" size={14} color={GREEN} />
+          <Text style={styles.organizerText} numberOfLines={1}>
+            {item.organizerName || "Official Event"}
+          </Text>
         </View>
       </View>
     </TouchableOpacity>
@@ -180,57 +210,79 @@ const EventsScreen = ({ navigation }) => {
   return (
     <View style={styles.container}>
       {/* Header Section */}
-      <View style={styles.modernHeader}>
-        <LinearGradient
-          colors={['#34A4FA', '#3B4DFD']}
-          start={{ x: 0.5, y: 0 }}
-          end={{ x: 0.5, y: 1 }}
-          style={styles.headerGradient}
-        >
-          <View style={styles.headerTop}>
-            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-              <MaterialIcons name="arrow-back" size={24} color="#fff" />
-            </TouchableOpacity>
-            <Text style={styles.headerTitle}>All Events</Text>
-            <View style={{ width: 40 }} />
-          </View>
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        <View style={styles.headerTop}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={styles.backBtn}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="chevron-back" size={24} color={TEXT_DARK} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>All Events</Text>
+          <View style={{ width: 40 }} />
+        </View>
 
-          <View style={styles.searchBarWrapper}>
-            <MaterialIcons name="search" size={20} color="#999" />
-            <TextInput
-              style={styles.searchBarInput}
-              placeholder="Search by name or location..."
-              placeholderTextColor="#999"
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
-            {searchQuery !== "" && (
-              <TouchableOpacity onPress={() => setSearchQuery("")}>
-                <MaterialIcons name="close" size={20} color="#999" />
-              </TouchableOpacity>
-            )}
-          </View>
-        </LinearGradient>
+        {/* Search bar */}
+        <View style={styles.searchBar}>
+          <MaterialIcons name="search" size={20} color={TEXT_MUTED} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search by name or location..."
+            placeholderTextColor={TEXT_MUTED}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+          {searchQuery !== "" && (
+            <TouchableOpacity onPress={() => setSearchQuery("")}>
+              <MaterialIcons name="close" size={20} color={TEXT_MUTED} />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {/* Content Section */}
       <View style={styles.contentSection}>
         {loading ? (
           <View style={styles.loaderContainer}>
-            <ActivityIndicator size="large" color="#0056d2" />
+            <ActivityIndicator size="large" color={GREEN} />
             <Text style={styles.loadingText}>Loading tournaments...</Text>
+          </View>
+        ) : error ? (
+          <View style={styles.noEventsContainer}>
+            <MaterialIcons name="error-outline" size={56} color="#D1D5DB" />
+            <Text style={styles.noEventsText}>Something went wrong</Text>
+            <Text style={styles.noEventsSubtext}>{error}</Text>
+            <TouchableOpacity
+              style={styles.retryBtn}
+              onPress={fetchTournaments}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.retryBtnText}>Try again</Text>
+            </TouchableOpacity>
           </View>
         ) : filteredTournaments.length > 0 ? (
           <FlatList
             data={filteredTournaments}
             renderItem={renderEventItem}
             keyExtractor={(item) => item._id}
-            contentContainerStyle={styles.eventsList}
+            contentContainerStyle={[
+              styles.eventsList,
+              { paddingBottom: insets.bottom + 110 },
+            ]}
             showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={[GREEN]}
+                tintColor={GREEN}
+              />
+            }
           />
         ) : (
           <View style={styles.noEventsContainer}>
-            <MaterialIcons name="event-busy" size={64} color="#ccc" />
+            <MaterialIcons name="event-busy" size={56} color="#D1D5DB" />
             <Text style={styles.noEventsText}>No Events Found</Text>
             <Text style={styles.noEventsSubtext}>
               We couldn't find any events matching your current search.
@@ -245,183 +297,211 @@ const EventsScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F8F9FB",
+    backgroundColor: SCREEN_BG,
   },
-  modernHeader: {
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    overflow: 'hidden',
-    elevation: 8,
-    shadowColor: '#004E93',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    zIndex: 10,
-  },
-  headerGradient: {
-    paddingTop: 50,
-    paddingBottom: 25,
-    paddingHorizontal: 20,
+
+  // Header
+  header: {
+    paddingHorizontal: 16,
+    paddingBottom: 14,
+    backgroundColor: SCREEN_BG,
   },
   headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 14,
   },
   backBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: GREEN_TINT,
+    justifyContent: "center",
+    alignItems: "center",
   },
   headerTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: TEXT_DARK,
   },
-  searchBarWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    paddingHorizontal: 15,
+
+  // Search bar
+  searchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: SCREEN_BG,
+    paddingHorizontal: 14,
     height: 50,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: BORDER,
+    gap: 10,
   },
-  searchBarInput: {
+  searchInput: {
     flex: 1,
-    marginLeft: 10,
-    fontSize: 16,
-    color: '#333',
+    fontSize: 14,
+    fontFamily: "Poppins_400Regular",
+    color: TEXT_DARK,
+    paddingVertical: 0,
   },
+
+  // Content
   contentSection: {
     flex: 1,
   },
   eventsList: {
-    padding: 20,
-    paddingTop: 20,
+    paddingHorizontal: 16,
+    paddingTop: 6,
   },
-  modernEventCard: {
-    backgroundColor: '#fff',
+
+  // Event card
+  eventCard: {
+    backgroundColor: "#FFFFFF",
     borderRadius: 16,
-    marginBottom: 20,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    overflow: 'hidden',
+    marginBottom: 16,
+    overflow: "hidden",
     borderWidth: 1,
-    borderColor: '#eee',
+    borderColor: BORDER,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
   },
   cardImage: {
     height: 160,
-    width: '100%',
+    width: "100%",
+    backgroundColor: FIELD_BG,
+  },
+  cardImageRadius: {
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
   },
   cardGradient: {
     flex: 1,
-    padding: 15,
-    justifyContent: 'flex-start',
+    padding: 12,
+    justifyContent: "flex-start",
   },
   cardHeaderInfo: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   sportBadge: {
-    backgroundColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: "rgba(255,255,255,0.95)",
     paddingHorizontal: 12,
     paddingVertical: 4,
-    borderRadius: 8,
+    borderRadius: 999,
   },
   sportBadgeText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#004E93',
-    textTransform: 'uppercase',
+    fontSize: 11,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: TEXT_DARK,
+    textTransform: "uppercase",
   },
   priceBadge: {
-    backgroundColor: '#FF6A00',
+    backgroundColor: GREEN_TINT,
     paddingHorizontal: 12,
     paddingVertical: 4,
-    borderRadius: 8,
+    borderRadius: 999,
   },
   priceBadgeText: {
-    fontSize: 13,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontSize: 12,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: GREEN_DARK,
   },
   cardBottomInfo: {
-    padding: 15,
+    padding: 14,
   },
   cardTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#111',
+    fontSize: 16,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: TEXT_DARK,
     marginBottom: 8,
   },
   cardMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
   },
   metaItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    marginRight: 16,
     flex: 1,
+    gap: 4,
   },
   metaText: {
-    fontSize: 13,
-    color: '#666',
-    marginLeft: 6,
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular",
+    color: TEXT_MUTED,
+    flexShrink: 1,
   },
   cardOrganizerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingTop: 5,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingTop: 4,
+    gap: 4,
   },
   organizerText: {
-    fontSize: 13,
-    color: '#004E93',
-    fontWeight: '600',
-    marginLeft: 6,
+    fontSize: 12,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "600",
+    color: GREEN,
+    flex: 1,
   },
+
+  // States
   loaderContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 40,
   },
   loadingText: {
-    marginTop: 15,
-    fontSize: 15,
-    color: '#666',
+    marginTop: 12,
+    fontSize: 14,
+    fontFamily: "Poppins_400Regular",
+    color: TEXT_MUTED,
   },
   noEventsContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     paddingHorizontal: 40,
   },
   noEventsText: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#252944',
-    marginTop: 20,
+    fontSize: 18,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: TEXT_MUTED,
+    marginTop: 16,
   },
   noEventsSubtext: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-    marginTop: 10,
+    fontSize: 13,
+    fontFamily: "Poppins_400Regular",
+    color: "#9CA3AF",
+    textAlign: "center",
+    marginTop: 8,
     lineHeight: 20,
+  },
+  retryBtn: {
+    marginTop: 18,
+    backgroundColor: GREEN,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 28,
+  },
+  retryBtnText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
   },
 });
 

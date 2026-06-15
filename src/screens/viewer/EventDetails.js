@@ -8,18 +8,30 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
-  SafeAreaView,
+  StatusBar,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import MaterialIcons from "react-native-vector-icons/MaterialIcons";
 import { LinearGradient } from "expo-linear-gradient";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { getSportName, getTournamentType, getCategories } from "../../utils/sportTrack";
 import { useFocusEffect } from "@react-navigation/native";
 import TOURNAMENTS from "../../api/tournaments";
-import API from "../../api/api";
-import colors from "../../config/colors";
+import { assetUrl } from "../../utils/assetUrl";
+
+// ─── Green design system tokens ──────────────────────────────────────────────
+const GREEN = "#15A765"; // primary brand — buttons, active states, accents
+const GREEN_DARK = "#0F8A55"; // gradients, emphasis text
+const GREEN_TINT = "#E8F7F0"; // active chip bg, soft fills
+const TEXT_DARK = "#1A181B"; // headings / primary text
+const TEXT_MUTED = "#6B7280"; // secondary text, labels, placeholders
+const BORDER = "#EEEEFF"; // card/search borders
+const FIELD_BG = "#F4F4F5"; // input/track/inactive-chip bg
+const SCREEN_BG = "#FFFFFF"; // screen background
 
 const EventDetails = ({ route, navigation }) => {
   const { tournamentId } = route.params;
+  const insets = useSafeAreaInsets();
   const [tournament, setTournament] = useState(null);
   const [loading, setLoading] = useState(true);
   const [registering, setRegistering] = useState(false);
@@ -180,9 +192,11 @@ const EventDetails = ({ route, navigation }) => {
   };
 
   // Helper to extract nested categories without [object Object] rendering
+  // STEP 17b.iii — read per-sport categories.
   const getDisplayCategories = () => {
-    if (!tournament?.category || !Array.isArray(tournament.category)) return "";
-    return tournament.category.map(c => {
+    const _cats = getCategories(tournament);
+    if (_cats.length === 0) return "";
+    return _cats.map(c => {
       if (typeof c === "string") return c;
       if (typeof c === "object" && c !== null) {
         return c.label || c.name || c.title || c.categoryName || c.type || JSON.stringify(c);
@@ -194,7 +208,7 @@ const EventDetails = ({ route, navigation }) => {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <ActivityIndicator size="large" color={GREEN} />
         <Text style={styles.loadingText}>Loading tournament details...</Text>
       </View>
     );
@@ -203,7 +217,7 @@ const EventDetails = ({ route, navigation }) => {
   if (!tournament) {
     return (
       <View style={styles.errorContainer}>
-        <Ionicons name="alert-circle-outline" size={60} color="#ccc" />
+        <Ionicons name="alert-circle-outline" size={56} color="#D1D5DB" />
         <Text style={styles.errorText}>Tournament not found</Text>
         <TouchableOpacity
           style={styles.backButton}
@@ -217,65 +231,76 @@ const EventDetails = ({ route, navigation }) => {
 
   return (
     <View style={styles.container}>
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+
+      <ScrollView
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 40 }}
+      >
         {/* Tournament Image Hero */}
         <View style={styles.imageContainer}>
           <Image
             source={
               tournament.logo
-                ? { uri: `${API.UPLOADS_URL}/${tournament.logo}` }
+                ? { uri: assetUrl(tournament.logo) }
                 : require("../../../assets/tournament-banner.jpg")
             }
             style={styles.tournamentImage}
             resizeMode="cover"
           />
           <LinearGradient
-            colors={['rgba(0,0,0,0.4)', 'rgba(0,0,0,0.01)']}
+            colors={['transparent', 'rgba(0,0,0,0.45)']}
             style={styles.imageOverlay}
           />
           <TouchableOpacity
-            style={styles.backIconButton}
+            style={[styles.backIconButton, { top: insets.top + 8 }]}
             onPress={() => navigation.goBack()}
+            activeOpacity={0.8}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <MaterialIcons name="arrow-back" size={24} color="#fff" />
+            <Ionicons name="chevron-back" size={22} color={TEXT_DARK} />
           </TouchableOpacity>
         </View>
 
-        {/* Tournament Details */}
+        {/* Tournament Details — content sheet overlapping the hero */}
         <View style={styles.detailsContainer}>
           <View style={styles.headerContainer}>
             <View style={styles.tournamentTypeContainer}>
               <Text style={styles.tournamentType}>
-                {tournament.type || "Tournament"}
+                {getTournamentType(tournament) || "Tournament"}
               </Text>
             </View>
 
-            {tournament.sportsType && (
-              <View style={styles.sportTypeContainer}>
-                <Ionicons
-                  name={getSportIcon(tournament.sportsType)}
-                  size={16}
-                  color="#FF6A00"
-                />
-                <Text style={styles.sportTypeText}>
-                  {tournament.sportsType}
-                </Text>
-              </View>
-            )}
+            {(() => {
+              const _sportName = getSportName(tournament);
+              return _sportName && (
+                <View style={styles.sportTypeContainer}>
+                  <Ionicons
+                    name={getSportIcon(_sportName)}
+                    size={16}
+                    color={GREEN_DARK}
+                  />
+                  <Text style={styles.sportTypeText}>
+                    {_sportName}
+                  </Text>
+                </View>
+              );
+            })()}
           </View>
 
           <Text style={styles.tournamentTitle}>{tournament.title}</Text>
 
           <View style={styles.infoRow}>
             <View style={styles.infoItem}>
-              <Ionicons name="calendar-outline" size={20} color="#666" />
+              <Ionicons name="calendar-outline" size={20} color={GREEN} />
               <Text style={styles.infoText}>
                 {getDisplayDate()}
               </Text>
             </View>
 
             <View style={styles.infoItem}>
-              <Ionicons name="time-outline" size={20} color="#666" />
+              <Ionicons name="time-outline" size={20} color={GREEN} />
               <Text style={styles.infoText}>
                 {tournament.isAllDay
                   ? "All Day"
@@ -286,14 +311,14 @@ const EventDetails = ({ route, navigation }) => {
 
           <View style={styles.infoRow}>
             <View style={styles.infoItem}>
-              <Ionicons name="location-outline" size={20} color="#666" />
+              <Ionicons name="location-outline" size={20} color={GREEN} />
               <Text style={styles.infoText} numberOfLines={1}>
                 {normalizeLocation(tournament.eventLocation || tournament.location || tournament.address)}
               </Text>
             </View>
 
             <View style={styles.infoItem}>
-              <Ionicons name="people-outline" size={20} color="#666" />
+              <Ionicons name="people-outline" size={20} color={GREEN} />
               <Text style={styles.infoText}>
                 {tournament.numTeams || 0} Teams
               </Text>
@@ -302,7 +327,7 @@ const EventDetails = ({ route, navigation }) => {
 
           {tournament.tournamentFee > 0 && (
             <View style={styles.feeContainer}>
-              <Ionicons name="cash-outline" size={20} color="#4CAF50" />
+              <Ionicons name="cash-outline" size={20} color={GREEN_DARK} />
               <Text style={styles.feeText}>
                 Registration Fee: ₹{tournament.tournamentFee}
               </Text>
@@ -312,108 +337,108 @@ const EventDetails = ({ route, navigation }) => {
           {/* Description */}
           <View style={styles.sectionContainer}>
             <Text style={styles.sectionTitle}>Description</Text>
-            <Text style={styles.descriptionText}>
-              {tournament.description || "No description available."}
-            </Text>
+            <View style={styles.descriptionCard}>
+              <Text style={styles.descriptionText}>
+                {tournament.description || "No description available."}
+              </Text>
+            </View>
           </View>
 
           {/* Tournament Details */}
           <View style={styles.sectionContainer}>
             <Text style={styles.sectionTitle}>Tournament Details</Text>
 
-            <View style={styles.detailItem}>
-              <Text style={styles.detailLabel}>Format:</Text>
-              <Text style={styles.detailValue}>
-                {tournament.type || "Standard"}
-              </Text>
+            <View style={styles.detailsCard}>
+              <View style={styles.detailItem}>
+                <Text style={styles.detailLabel}>Format:</Text>
+                <Text style={styles.detailValue}>
+                  {getTournamentType(tournament) || "Standard"}
+                </Text>
+              </View>
+
+              {tournament.selectedCourt && (
+                <View style={styles.detailItem}>
+                  <Text style={styles.detailLabel}>Court:</Text>
+                  <Text style={styles.detailValue}>
+                    {tournament.selectedCourt}
+                  </Text>
+                </View>
+              )}
+
+              {tournament.playerNoValue && (
+                <View style={styles.detailItem}>
+                  <Text style={styles.detailLabel}>Player Format:</Text>
+                  <Text style={styles.detailValue}>
+                    {tournament.playerNoValue === "Single player"
+                      ? "Single player"
+                      : `${tournament.playerNoValue} players per team`}
+                  </Text>
+                </View>
+              )}
+
+              {tournament.setNo && (
+                <View style={styles.detailItem}>
+                  <Text style={styles.detailLabel}>Sets:</Text>
+                  <Text style={styles.detailValue}>
+                    {String(tournament.setNo).includes("sets")
+                      ? tournament.setNo
+                      : `${tournament.setNo} sets`}
+                  </Text>
+                </View>
+              )}
+
+              <View style={styles.detailItem}>
+                <Text style={styles.detailLabel}>Organizer:</Text>
+                <Text style={styles.detailValue}>
+                  {tournament.organizerName || "TBD"}
+                </Text>
+              </View>
+
+              <View style={styles.detailItem}>
+                <Text style={styles.detailLabel}>Cancellation Policy:</Text>
+                <Text style={styles.detailValue}>
+                  {tournament.cancellationPolicy || "None"}
+                </Text>
+              </View>
+
+              {getCategories(tournament).length > 0 && (
+                <View style={styles.detailItem}>
+                  <Text style={styles.detailLabel}>Categories:</Text>
+                  <Text style={styles.detailValue}>
+                    {getDisplayCategories()}
+                  </Text>
+                </View>
+              )}
+
+              {tournament.createdAt && (
+                <View style={[styles.detailItem, styles.detailItemLast]}>
+                  <Text style={styles.detailLabel}>Created:</Text>
+                  <Text style={styles.detailValue}>
+                    {new Date(tournament.createdAt).toLocaleDateString()}
+                  </Text>
+                </View>
+              )}
             </View>
-
-            {tournament.selectedCourt && (
-              <View style={styles.detailItem}>
-                <Text style={styles.detailLabel}>Court:</Text>
-                <Text style={styles.detailValue}>
-                  {tournament.selectedCourt}
-                </Text>
-              </View>
-            )}
-
-            {tournament.playerNoValue && (
-              <View style={styles.detailItem}>
-                <Text style={styles.detailLabel}>Player Format:</Text>
-                <Text style={styles.detailValue}>
-                  {tournament.playerNoValue === "Single player"
-                    ? "Single player"
-                    : `${tournament.playerNoValue} players per team`}
-                </Text>
-              </View>
-            )}
-
-            {tournament.setNo && (
-              <View style={styles.detailItem}>
-                <Text style={styles.detailLabel}>Sets:</Text>
-                <Text style={styles.detailValue}>
-                  {String(tournament.setNo).includes("sets")
-                    ? tournament.setNo
-                    : `${tournament.setNo} sets`}
-                </Text>
-              </View>
-            )}
-
-            <View style={styles.detailItem}>
-              <Text style={styles.detailLabel}>Organizer:</Text>
-              <Text style={styles.detailValue}>
-                {tournament.organizerName || "TBD"}
-              </Text>
-            </View>
-
-            <View style={styles.detailItem}>
-              <Text style={styles.detailLabel}>Cancellation Policy:</Text>
-              <Text style={styles.detailValue}>
-                {tournament.cancellationPolicy || "None"}
-              </Text>
-            </View>
-
-            {tournament.category && tournament.category.length > 0 && (
-              <View style={styles.detailItem}>
-                <Text style={styles.detailLabel}>Categories:</Text>
-                <Text style={styles.detailValue}>
-                  {getDisplayCategories()}
-                </Text>
-              </View>
-            )}
-
-            {tournament.createdAt && (
-              <View style={styles.detailItem}>
-                <Text style={styles.detailLabel}>Created:</Text>
-                <Text style={styles.detailValue}>
-                  {new Date(tournament.createdAt).toLocaleDateString()}
-                </Text>
-              </View>
-            )}
           </View>
         </View>
       </ScrollView>
 
-      {/* Registration Button Floor */}
-      <View style={styles.registrationContainer}>
+      {/* Sticky Register Now bar — sign-in stub, GREEN button */}
+      <View style={[styles.registrationContainer, { paddingBottom: insets.bottom + 12 }]}>
         <TouchableOpacity
           style={styles.registerButton}
           onPress={handleRegister}
           disabled={registering}
+          activeOpacity={0.85}
         >
-          <LinearGradient
-            colors={['#FF6A00', '#FF4E00']}
-            style={styles.gradientBtn}
-          >
-            {registering ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <>
-                <Text style={styles.registerButtonText}>Register Now</Text>
-                <MaterialIcons name="chevron-right" size={22} color="#fff" />
-              </>
-            )}
-          </LinearGradient>
+          {registering ? (
+            <ActivityIndicator color="#fff" size="small" />
+          ) : (
+            <>
+              <Text style={styles.registerButtonText}>Register Now</Text>
+              <MaterialIcons name="chevron-right" size={22} color="#fff" />
+            </>
+          )}
         </TouchableOpacity>
       </View>
     </View>
@@ -423,7 +448,7 @@ const EventDetails = ({ route, navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F8F9FB",
+    backgroundColor: SCREEN_BG,
   },
   scrollView: {
     flex: 1,
@@ -432,39 +457,45 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#fff",
+    backgroundColor: SCREEN_BG,
   },
   loadingText: {
     marginTop: 15,
-    fontSize: 15,
-    color: "#666",
+    fontSize: 14,
+    color: TEXT_MUTED,
+    fontFamily: "Poppins_400Regular",
   },
   errorContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     padding: 30,
+    backgroundColor: SCREEN_BG,
   },
   errorText: {
     fontSize: 18,
-    color: "#252944",
+    color: TEXT_MUTED,
     marginVertical: 20,
     textAlign: "center",
-    fontWeight: 'bold',
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
   },
   backButton: {
-    paddingVertical: 12,
+    paddingVertical: 14,
     paddingHorizontal: 30,
-    backgroundColor: '#3B4DFD',
-    borderRadius: 12,
+    backgroundColor: GREEN,
+    borderRadius: 14,
   },
   backButtonText: {
     color: "#fff",
-    fontWeight: "bold",
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    fontSize: 14,
   },
   imageContainer: {
     position: "relative",
     height: 300,
+    overflow: "hidden",
   },
   tournamentImage: {
     width: "100%",
@@ -472,73 +503,81 @@ const styles = StyleSheet.create({
   },
   imageOverlay: {
     position: 'absolute',
-    top: 0,
+    bottom: 0,
     left: 0,
     right: 0,
-    height: 100,
+    height: 120,
   },
   backIconButton: {
     position: "absolute",
-    top: 50,
-    left: 20,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "rgba(0,0,0,0.4)",
+    left: 16,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#FFFFFF",
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   detailsContainer: {
-    padding: 20,
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    marginTop: -30,
+    paddingHorizontal: 16,
+    paddingTop: 20,
+    backgroundColor: SCREEN_BG,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    marginTop: -20,
     paddingBottom: 40,
   },
   headerContainer: {
     flexDirection: "row",
-    marginBottom: 15,
+    marginBottom: 14,
   },
   tournamentTypeContainer: {
-    backgroundColor: 'rgba(59, 77, 253, 0.1)',
+    backgroundColor: GREEN_TINT,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 10,
+    borderRadius: 999,
     marginRight: 10,
   },
   tournamentType: {
-    color: '#3B4DFD',
-    fontWeight: "bold",
+    color: GREEN_DARK,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
     fontSize: 12,
     textTransform: 'uppercase',
   },
   sportTypeContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(255, 106, 0, 0.1)",
+    backgroundColor: GREEN_TINT,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 10,
+    borderRadius: 999,
   },
   sportTypeText: {
-    color: "#FF6A00",
-    fontWeight: "bold",
+    color: GREEN_DARK,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
     fontSize: 12,
     marginLeft: 6,
     textTransform: 'uppercase',
   },
   tournamentTitle: {
-    fontSize: 26,
-    fontWeight: "bold",
-    color: "#111",
+    fontSize: 22,
+    fontFamily: "Montserrat_700Bold",
+    fontWeight: "800",
+    color: TEXT_DARK,
     marginBottom: 20,
   },
   infoRow: {
     flexDirection: "row",
-    marginBottom: 15,
-    backgroundColor: '#F8F9FA',
+    marginBottom: 12,
+    backgroundColor: FIELD_BG,
     padding: 15,
     borderRadius: 16,
   },
@@ -548,84 +587,109 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   infoText: {
-    fontSize: 14,
-    color: "#444",
+    fontSize: 13,
+    color: TEXT_DARK,
     marginLeft: 8,
-    fontWeight: '500',
+    fontFamily: "Poppins_400Regular",
+    flexShrink: 1,
   },
   feeContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(76, 175, 80, 0.1)",
+    backgroundColor: GREEN_TINT,
     paddingVertical: 12,
     paddingHorizontal: 15,
     borderRadius: 12,
-    marginBottom: 25,
+    marginTop: 4,
+    marginBottom: 24,
   },
   feeText: {
-    fontSize: 16,
-    color: "#2E7D32",
-    fontWeight: "bold",
+    fontSize: 15,
+    color: GREEN_DARK,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
     marginLeft: 10,
   },
   sectionContainer: {
-    marginBottom: 30,
+    marginBottom: 24,
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: "bold",
-    color: "#252944",
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: TEXT_DARK,
     marginBottom: 12,
   },
+  descriptionCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: BORDER,
+    padding: 14,
+  },
   descriptionText: {
-    fontSize: 15,
-    color: "#666",
-    lineHeight: 24,
+    fontSize: 14,
+    color: TEXT_MUTED,
+    fontFamily: "Poppins_400Regular",
+    lineHeight: 22,
+  },
+  detailsCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: BORDER,
+    paddingHorizontal: 14,
+    paddingVertical: 4,
   },
   detailItem: {
     flexDirection: "row",
-    marginBottom: 12,
+    paddingVertical: 12,
     alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: "#F2F2F7",
+  },
+  detailItemLast: {
+    borderBottomWidth: 0,
   },
   detailLabel: {
-    fontSize: 14,
-    color: "#888",
+    fontSize: 13,
+    color: TEXT_MUTED,
     width: 130,
-    fontWeight: '500',
+    fontFamily: "Poppins_400Regular",
   },
   detailValue: {
-    fontSize: 14,
-    color: "#333",
+    fontSize: 13,
+    color: TEXT_DARK,
     flex: 1,
-    fontWeight: '600',
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "600",
   },
   registrationContainer: {
-    padding: 20,
-    backgroundColor: "#fff",
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    backgroundColor: SCREEN_BG,
     borderTopWidth: 1,
     borderTopColor: "#F0F0F0",
     elevation: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.08,
     shadowRadius: 10,
   },
   registerButton: {
-    borderRadius: 16,
-    overflow: 'hidden',
-    height: 56,
-  },
-  gradientBtn: {
-    flex: 1,
+    backgroundColor: GREEN,
+    borderRadius: 14,
+    height: 52,
     flexDirection: 'row',
     justifyContent: "center",
     alignItems: "center",
   },
   registerButtonText: {
     color: "#fff",
-    fontSize: 18,
-    fontWeight: "bold",
-    marginRight: 8,
+    fontSize: 16,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    marginRight: 6,
   },
 });
 

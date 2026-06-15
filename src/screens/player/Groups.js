@@ -18,10 +18,11 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, MaterialIcons, FontAwesome5, MaterialCommunityIcons } from "@expo/vector-icons";
 import tournamentConfig from "../../api/tournaments";
 import axios from "axios";
+import { withSport } from "../../utils/sportQuery";
 
 const { width } = Dimensions.get("window");
 
-const Groups = ({ tournamentId }) => {
+const Groups = ({ tournamentId, sportId }) => {
   const navigation = useNavigation();
 
   const [groupSubTab, setGroupSubTab] = useState("League");
@@ -44,7 +45,10 @@ const Groups = ({ tournamentId }) => {
   const fetchTopPlayers = async (groupId) => {
     try {
       const response = await axios.get(
-        tournamentConfig.ENDPOINTS.TOP_PLAYERS.BY_GROUP(tournamentId, groupId)
+        withSport(
+          tournamentConfig.ENDPOINTS.TOP_PLAYERS.BY_GROUP(tournamentId, groupId),
+          sportId
+        )
       );
       if (response.data.success && response.data.data) {
         return response.data.data.players || response.data.data.topPlayers || [];
@@ -58,7 +62,10 @@ const Groups = ({ tournamentId }) => {
   const fetchTournamentProgression = async () => {
     try {
       const response = await axios.get(
-        tournamentConfig.ENDPOINTS.PROGRESSION.ROUND2_STATUS(tournamentId)
+        withSport(
+          tournamentConfig.ENDPOINTS.PROGRESSION.ROUND2_STATUS(tournamentId),
+          sportId
+        )
       );
       if (response.data.success) setTournamentProgression(response.data.status);
     } catch (err) { }
@@ -67,7 +74,10 @@ const Groups = ({ tournamentId }) => {
   const fetchSuperPlayers = async () => {
     try {
       const response = await axios.get(
-        tournamentConfig.ENDPOINTS.PROGRESSION.SUPER_PLAYERS(tournamentId)
+        withSport(
+          tournamentConfig.ENDPOINTS.PROGRESSION.SUPER_PLAYERS(tournamentId),
+          sportId
+        )
       );
       if (response.data.success) setSuperPlayers(response.data.data || response.data.superPlayers || []);
     } catch (err) {
@@ -78,7 +88,10 @@ const Groups = ({ tournamentId }) => {
   const fetchDirectKnockoutMatches = async () => {
     try {
       const response = await axios.get(
-        tournamentConfig.ENDPOINTS.PROGRESSION.DIRECT_KNOCKOUT_MATCHES(tournamentId)
+        withSport(
+          tournamentConfig.ENDPOINTS.PROGRESSION.DIRECT_KNOCKOUT_MATCHES(tournamentId),
+          sportId
+        )
       );
       if (response.data.success) setDirectKnockoutMatches(response.data.matches || []);
     } catch (err) {
@@ -88,7 +101,12 @@ const Groups = ({ tournamentId }) => {
 
   const fetchGroupMatches = async (groupId) => {
     try {
-      const response = await axios.get(`${tournamentConfig.ENDPOINTS.MATCHES.BY_GROUP(tournamentId, groupId)}?mobile=true`);
+      const response = await axios.get(
+        withSport(
+          `${tournamentConfig.ENDPOINTS.MATCHES.BY_GROUP(tournamentId, groupId)}?mobile=true`,
+          sportId
+        )
+      );
       return response.data.success ? response.data.matches || [] : [];
     } catch (err) {
       return [];
@@ -99,7 +117,12 @@ const Groups = ({ tournamentId }) => {
     try {
       setIsLoading(true);
       setError(null);
-      const response = await axios.get(`${tournamentConfig.ENDPOINTS.BOOKING_GROUPS.BY_TOURNAMENT(tournamentId)}?mobile=true`);
+      const response = await axios.get(
+        withSport(
+          `${tournamentConfig.ENDPOINTS.BOOKING_GROUPS.BY_TOURNAMENT(tournamentId)}?mobile=true`,
+          sportId
+        )
+      );
       const groups = Array.isArray(response.data) ? response.data : response.data.groups || response.data.data || [];
 
       if (groups.length > 0) {
@@ -143,7 +166,23 @@ const Groups = ({ tournamentId }) => {
     }
   };
 
-  useEffect(() => { initializeData(); }, [tournamentId]);
+  useEffect(() => {
+    // Sport switch: wipe every per-sport cache *before* refetching.
+    // Especially clear selectedLeagueGroup — a stale group id from
+    // sport A would otherwise be used as the active selection on
+    // sport B and silently load the wrong group's matches/players.
+    setGroupsData([]);
+    setPlayersData({});
+    setMatchesData({});
+    setTopPlayersData({});
+    setSelectedLeagueGroup(null);
+    setRound2Groups([]);
+    setSuperPlayers([]);
+    setDirectKnockoutMatches([]);
+    setTournamentProgression(null);
+    initializeData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tournamentId, sportId]);
   const initializeData = async () => {
     if (tournamentId) {
       await fetchGroups();

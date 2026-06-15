@@ -19,6 +19,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Groups from "./Groups";
 import tournamentConfig from "../../api/tournaments";
 import axios from "axios";
+import useTournamentSports from "../../hooks/useTournamentSports";
+import SportTabStrip from "../../components/SportTabStrip";
+import { withSport } from "../../utils/sportQuery";
 
 const { width } = Dimensions.get("window");
 
@@ -26,6 +29,17 @@ const Tournament = ({ route, navigation }) => {
   const insets = useSafeAreaInsets();
   const { tournament, tournamentId: paramId } = route.params || {};
   const tournamentId = paramId || tournament?._id || tournament?.id;
+
+  // Multi-sport: load sports[] and track the active one. activeSportId
+  // is null until sports load (and stays null on legacy single-sport
+  // tournaments) so per-sport fetches below skip the sportId param
+  // until we know what to filter by.
+  const {
+    sports,
+    activeSportId,
+    setActiveSportId,
+    loading: sportsLoading,
+  } = useTournamentSports(tournamentId, tournament);
 
   const [topTab, setTopTab] = useState("RegisteredPlayers");
   const [subTab, setSubTab] = useState("RegisteredPlayers");
@@ -52,10 +66,14 @@ const Tournament = ({ route, navigation }) => {
 
   // Fetch regular players
   useEffect(() => {
+    if (sportsLoading) return;
     const fetchPlayers = async () => {
       try {
         const response = await axios.get(
-          tournamentConfig.ENDPOINTS.BOOKINGS.BY_TOURNAMENT(tournamentId)
+          withSport(
+            tournamentConfig.ENDPOINTS.BOOKINGS.BY_TOURNAMENT(tournamentId),
+            activeSportId
+          )
         );
         const bookings = response.data?.bookings || [];
         const playerList = bookings.map((booking) => ({
@@ -73,13 +91,16 @@ const Tournament = ({ route, navigation }) => {
     };
 
     if (tournamentId) fetchPlayers();
-  }, [tournamentId]);
+  }, [tournamentId, activeSportId, sportsLoading]);
 
   // Enhanced Tournament Progression API calls
   const fetchTournamentProgression = async () => {
     try {
       const response = await axios.get(
-        tournamentConfig.ENDPOINTS.PROGRESSION.ROUND2_STATUS(tournamentId)
+        withSport(
+          tournamentConfig.ENDPOINTS.PROGRESSION.ROUND2_STATUS(tournamentId),
+          activeSportId
+        )
       );
       if (response.data?.success) {
         setRound2Status(response.data.data);
@@ -100,7 +121,10 @@ const Tournament = ({ route, navigation }) => {
   const fetchSuperPlayers = async () => {
     try {
       const response = await axios.get(
-        tournamentConfig.ENDPOINTS.PROGRESSION.SUPER_PLAYERS(tournamentId)
+        withSport(
+          tournamentConfig.ENDPOINTS.PROGRESSION.SUPER_PLAYERS(tournamentId),
+          activeSportId
+        )
       );
       if (response.data?.success) setSuperPlayers(response.data.data || []);
       setLoading(prev => ({ ...prev, superPlayers: false }));
@@ -112,7 +136,10 @@ const Tournament = ({ route, navigation }) => {
   const fetchDirectKnockoutMatches = async () => {
     try {
       const response = await axios.get(
-        tournamentConfig.ENDPOINTS.PROGRESSION.DIRECT_KNOCKOUT_MATCHES(tournamentId)
+        withSport(
+          tournamentConfig.ENDPOINTS.PROGRESSION.DIRECT_KNOCKOUT_MATCHES(tournamentId),
+          activeSportId
+        )
       );
       if (response.data?.success) setDirectKnockoutMatches(response.data.matches || []);
       setLoading(prev => ({ ...prev, directKnockout: false }));
@@ -123,10 +150,16 @@ const Tournament = ({ route, navigation }) => {
 
   useEffect(() => {
     if (subTab !== "TopPlayers") return;
+    if (sportsLoading) return;
     const fetchTopPlayers = async () => {
       try {
         const topPlayersData = {};
-        const response = await axios.get(`${tournamentConfig.ENDPOINTS.TOP_PLAYERS.BY_TOURNAMENT(tournamentId)}?mobile=true`);
+        const response = await axios.get(
+          withSport(
+            `${tournamentConfig.ENDPOINTS.TOP_PLAYERS.BY_TOURNAMENT(tournamentId)}?mobile=true`,
+            activeSportId
+          )
+        );
         if (response.data?.success && Array.isArray(response.data.data)) {
           response.data.data.forEach((groupData) => {
             const groupKey = groupData.groupName.replace(/Group|Top Players Group/g, "").trim();
@@ -148,7 +181,7 @@ const Tournament = ({ route, navigation }) => {
       }
     };
     fetchTopPlayers();
-  }, [subTab, tournamentId]);
+  }, [subTab, tournamentId, activeSportId, sportsLoading]);
 
   const refreshAllData = async () => {
     setRefreshing(true);
@@ -162,12 +195,24 @@ const Tournament = ({ route, navigation }) => {
   };
 
   useEffect(() => {
+    if (sportsLoading) return;
     if (tournamentId) {
+      // Reset per-sport state when activeSportId changes so a stale
+      // sport's data does not flash before the new fetches resolve.
+      setSuperPlayers([]);
+      setDirectKnockoutMatches([]);
+      setRound2Status(null);
+      setLoading((prev) => ({
+        ...prev,
+        superPlayers: true,
+        round2Status: true,
+        directKnockout: true,
+      }));
       fetchTournamentProgression();
       fetchSuperPlayers();
       fetchDirectKnockoutMatches();
     }
-  }, [tournamentId]);
+  }, [tournamentId, activeSportId, sportsLoading]);
 
   const renderPlayerItem = (player, index) => (
     <View key={player.id || index} style={styles.modernPlayerCard}>
@@ -229,6 +274,12 @@ const Tournament = ({ route, navigation }) => {
           </TouchableOpacity>
         </View>
       </LinearGradient>
+
+      <SportTabStrip
+        sports={sports}
+        activeSportId={activeSportId}
+        onChange={setActiveSportId}
+      />
 
       {topTab === "RegisteredPlayers" ? (
         <View style={{ flex: 1 }}>
@@ -416,7 +467,7 @@ const Tournament = ({ route, navigation }) => {
           </ScrollView>
         </View>
       ) : (
-        <Groups tournamentId={tournamentId} />
+        <Groups tournamentId={tournamentId} sportId={activeSportId} />
       )}
     </View>
   );

@@ -14,12 +14,25 @@ import Icon from "react-native-vector-icons/FontAwesome";
 import tournamentConfig from "../../api/tournaments";
 import axios from "axios";
 import { readMatchResult, getLiveLabel } from "../../utils/matchResultUtils";
+import useTournamentSports from "../../hooks/useTournamentSports";
+import SportTabStrip from "../../components/SportTabStrip";
+import { withSport } from "../../utils/sportQuery";
 
 const TournamentViewer = ({ tournamentId: rawTournamentId }) => {
   // Normalize tournamentId to be a string
   const tournamentId = (rawTournamentId && typeof rawTournamentId === 'object')
     ? (rawTournamentId._id || rawTournamentId.id || rawTournamentId).toString()
     : rawTournamentId;
+
+  // Multi-sport state — null until BY_ID returns; per-sport fetches
+  // below skip the sportId param while loading or on legacy single-
+  // sport tournaments.
+  const {
+    sports,
+    activeSportId,
+    setActiveSportId,
+    loading: sportsLoading,
+  } = useTournamentSports(tournamentId);
 
   const [activeSubGroupTab, setActiveSubGroupTab] = useState("League");
   const [activeGroup, setActiveGroup] = useState(null);
@@ -51,7 +64,10 @@ const TournamentViewer = ({ tournamentId: rawTournamentId }) => {
       setLoading(true);
 
       const response = await axios.get(
-        tournamentConfig.ENDPOINTS.BOOKING_GROUPS.BY_TOURNAMENT(tournamentId)
+        withSport(
+          tournamentConfig.ENDPOINTS.BOOKING_GROUPS.BY_TOURNAMENT(tournamentId),
+          activeSportId
+        )
       );
 
       const groupsArray = response?.data?.groups;
@@ -96,7 +112,10 @@ const TournamentViewer = ({ tournamentId: rawTournamentId }) => {
   const fetchRound2Groups = async () => {
     try {
       const response = await axios.get(
-        tournamentConfig.ENDPOINTS.BOOKING_GROUPS.BY_TOURNAMENT(tournamentId)
+        withSport(
+          tournamentConfig.ENDPOINTS.BOOKING_GROUPS.BY_TOURNAMENT(tournamentId),
+          activeSportId
+        )
       );
 
       const groupsArray = response?.data?.groups;
@@ -127,11 +146,11 @@ const TournamentViewer = ({ tournamentId: rawTournamentId }) => {
       // Fetch both SuperMatch knockout matches AND Direct Knockout matches
       const [superMatchResponse, directKnockoutResponse] = await Promise.all([
         // SuperMatch knockout matches (traditional flow)
-        axios.get(tournamentConfig.ENDPOINTS.GROUP_STAGE.KNOCKOUT_MATCHES(tournamentId))
+        axios.get(withSport(tournamentConfig.ENDPOINTS.GROUP_STAGE.KNOCKOUT_MATCHES(tournamentId), activeSportId))
           .catch(err => ({ data: { success: false, matches: [] } })),
 
         // Direct Knockout matches (new beast system!)
-        axios.get(tournamentConfig.ENDPOINTS.PROGRESSION.DIRECT_KNOCKOUT_MATCHES(tournamentId))
+        axios.get(withSport(tournamentConfig.ENDPOINTS.PROGRESSION.DIRECT_KNOCKOUT_MATCHES(tournamentId), activeSportId))
           .catch(err => ({ data: { success: false, matches: [] } }))
       ]);
 
@@ -201,7 +220,10 @@ const TournamentViewer = ({ tournamentId: rawTournamentId }) => {
     for (const group of groups) {
       try {
         const response = await axios.get(
-          tournamentConfig.ENDPOINTS.GROUP_STAGE.MATCHES_BY_GROUP(tournamentId, group._id)
+          withSport(
+            tournamentConfig.ENDPOINTS.GROUP_STAGE.MATCHES_BY_GROUP(tournamentId, group._id),
+            activeSportId
+          )
         );
 
         if (response.data.success) {
@@ -224,7 +246,10 @@ const TournamentViewer = ({ tournamentId: rawTournamentId }) => {
       if (!groupId) return;
 
       const response = await axios.get(
-        tournamentConfig.ENDPOINTS.GROUP_STAGE.MATCHES_BY_GROUP(tournamentId, groupId)
+        withSport(
+          tournamentConfig.ENDPOINTS.GROUP_STAGE.MATCHES_BY_GROUP(tournamentId, groupId),
+          activeSportId
+        )
       );
 
       if (response.data.success) {
@@ -240,6 +265,19 @@ const TournamentViewer = ({ tournamentId: rawTournamentId }) => {
 
   // INITIALIZATION - Load all data
   useEffect(() => {
+    if (sportsLoading) return;
+    // Sport switch: clear all per-sport caches (including the active
+    // group/round2 group selections) so a stale group id from sport A
+    // doesn't trigger a wrong fetch under sport B.
+    setGroups([]);
+    setRound2Groups([]);
+    setKnockoutMatches([]);
+    setKnockoutMatchesByRound({});
+    setMatchesData({});
+    setRound2MatchesData({});
+    setActiveGroup(null);
+    setActiveRound2Group(null);
+
     const initializeData = async () => {
       if (tournamentId) {
         await Promise.all([
@@ -252,7 +290,8 @@ const TournamentViewer = ({ tournamentId: rawTournamentId }) => {
     };
 
     initializeData();
-  }, [tournamentId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tournamentId, activeSportId, sportsLoading]);
 
   // Fetch matches when active group changes
   useEffect(() => {
@@ -263,6 +302,7 @@ const TournamentViewer = ({ tournamentId: rawTournamentId }) => {
 
   // REFRESH FUNCTION
   const refreshAllData = async () => {
+    if (sportsLoading) return;
     setRefreshing(true);
     setError(null);
     try {
@@ -294,27 +334,47 @@ const TournamentViewer = ({ tournamentId: rawTournamentId }) => {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#1D6A8B" />
-        <Text style={styles.loadingText}>Loading tournament data...</Text>
+      <View style={{ flex: 1 }}>
+        <SportTabStrip
+          sports={sports}
+          activeSportId={activeSportId}
+          onChange={setActiveSportId}
+        />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#1D6A8B" />
+          <Text style={styles.loadingText}>Loading tournament data...</Text>
+        </View>
       </View>
     );
   }
 
   if (error) {
     return (
-      <View style={styles.errorContainer}>
-        <Icon name="exclamation-triangle" size={48} color="#FF6B6B" />
-        <Text style={styles.errorTitle}>Error Loading Data</Text>
-        <Text style={styles.errorMessage}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={refreshAllData}>
-          <Text style={styles.retryButtonText}>Retry</Text>
-        </TouchableOpacity>
+      <View style={{ flex: 1 }}>
+        <SportTabStrip
+          sports={sports}
+          activeSportId={activeSportId}
+          onChange={setActiveSportId}
+        />
+        <View style={styles.errorContainer}>
+          <Icon name="exclamation-triangle" size={48} color="#FF6B6B" />
+          <Text style={styles.errorTitle}>Error Loading Data</Text>
+          <Text style={styles.errorMessage}>{error}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={refreshAllData}>
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
 
   return (
+    <View style={{ flex: 1 }}>
+      <SportTabStrip
+        sports={sports}
+        activeSportId={activeSportId}
+        onChange={setActiveSportId}
+      />
     <ScrollView
       style={styles.container}
       refreshControl={
@@ -1474,6 +1534,7 @@ const TournamentViewer = ({ tournamentId: rawTournamentId }) => {
         </View>
       </Modal>
     </ScrollView>
+    </View>
   );
 };
 

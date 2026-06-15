@@ -11,6 +11,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { showMessage } from "react-native-flash-message";
 import ManagerPaymentAPI from '../../api/managerPayment'
+import { getTournamentType } from "../../utils/sportTrack";
 import axios from "axios";
 import TournamentConfig from '../../api/tournaments'
 import CouponInput from "../../components/CouponInput"
@@ -45,7 +46,7 @@ const PaymentStatusScreen = ({ navigation, route }) => {
         "Tournament";
 
     const finalTournamentType =
-        tournament?.type ||
+        getTournamentType(tournament) ||
         bookingTournamentType ||
         "N/A";
 
@@ -97,10 +98,16 @@ const PaymentStatusScreen = ({ navigation, route }) => {
                 userPhone: bookingData?.userPhone || "N/A",
                 tournamentId,
                 tournamentName: tournament?.name || "Tournament",
-                tournamentType: tournament?.type || "N/A", // consistent naming
+                tournamentType: getTournamentType(tournament) || "N/A", // consistent naming
                 paymentAmount: tournament.price || 0,
                 paymentMethod: "cash",
-                selectedCategories: bookingData?.selectedCategories || [], // Include selected categories
+                selectedCategories: bookingData?.selectedCategories || [], // Include selected categories (legacy)
+                // STEP 14 — Multi-sport: forward both shapes to backend so the
+                // dual-write contract holds for cash bookings created here.
+                sportSelections: bookingData?.sportSelections || [],
+                totalFee: (bookingData?.totalFee != null
+                  ? bookingData.totalFee
+                  : Number(bookingData?.paymentAmount ?? tournament?.price ?? 0)),
                 status: "pending", // required for all payments
                 transactionId: "CASH_PAYMENT", // placeholder for cash bookings
                 team: bookingData?.team || {},
@@ -124,7 +131,10 @@ const PaymentStatusScreen = ({ navigation, route }) => {
                         amount: paymentAmount ?? tournament?.price ?? 0,  // ✅ must be `amount`
                         registrationId: bookingPayload?.registrationId || `reg_${Date.now()}`,
                         paymentMethod: "cash", // ✅ add this
-                        selectedCategories: bookingPayload.selectedCategories // ✅ ADD THIS
+                        selectedCategories: bookingPayload.selectedCategories, // ✅ ADD THIS
+                        // STEP 14 — also forward the new sportSelections shape
+                        // so manager-side consumers can prefer it.
+                        sportSelections: bookingPayload.sportSelections,
                     });
 
                     if (notifyRes.notificationId) {
@@ -164,6 +174,12 @@ const PaymentStatusScreen = ({ navigation, route }) => {
                         tournamentName: tournament?.name,
                         amount: paymentAmount,
                         selectedCategories: bookingData?.selectedCategories || [],
+                        // STEP 14 — forward sportSelections + totalFee so
+                        // downstream Events screen can render per-sport view.
+                        sportSelections: bookingData?.sportSelections || [],
+                        totalFee: bookingData?.totalFee != null
+                          ? bookingData.totalFee
+                          : Number(paymentAmount ?? 0),
                         paymentMethod: "cash",
                     }
                 });

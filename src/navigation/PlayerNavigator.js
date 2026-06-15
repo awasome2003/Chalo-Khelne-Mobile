@@ -24,6 +24,7 @@ import RegistrationDetails from "../screens/player/RegistrationDetails";
 import Event from "../screens/player/Event";
 import GroupStage from "../screens/player/GroupStage";
 import TeamKnockouts from "../screens/player/TeamKnockouts";
+import TournamentBookingWizard from "../screens/player/TournamentBookingWizard";
 import BookingScreen from "../screens/player/BookingScreen";
 import BookingConfirmation from "../screens/player/BookingConfirmation";
 import AllTournamentsScreen from "../screens/player/AllTournamentsScreen";
@@ -45,7 +46,6 @@ import TournamentFeeSummary from "../screens/player/TournamentFeeSummary";
 import PaymentStatusScreen from "../screens/player/PaymentStausScreen";
 import PlayersManager from "../screens/player/PlayersManager";
 import TournamentLeaderboardDetail from "../screens/player/TournamentLeaderboardDetail";
-import Profile from "../screens/player/Profile";
 import DonationListScreen from "../screens/player/DonationListScreen";
 import DonationDetailScreen from "../screens/player/DonationDetailScreen";
 import CreateListingScreen from "../screens/player/CreateListingScreen";
@@ -62,7 +62,42 @@ import NotificationsScreen from "../screens/player/NotificationsScreen";
 import RoleHub from "../screens/player/RoleHub";
 import ServiceProfileSetup from "../screens/player/ServiceProfileSetup";
 import BrowseTournamentJobs from "../screens/player/BrowseTournamentJobs";
+import BrowseJobs from "../screens/player/BrowseJobs";
+import JobDetails from "../screens/player/JobDetails";
+import HireProfessional from "../screens/player/HireProfessional";
+import CreateProfessionalProfileScreen from "../screens/player/CreateProfessionalProfileScreen";
+import TrainerDashboard from "../screens/player/TrainerDashboard";
+import TrainerCreateSession from "../screens/player/TrainerCreateSession";
+import TrainerMySessions from "../screens/player/TrainerMySessions";
+import TrainerFindClubs from "../screens/player/TrainerFindClubs";
+import TrainerRequests from "../screens/player/TrainerRequests";
+import TrainerBatches from "../screens/player/TrainerBatches";
+import TrainerEarnings from "../screens/player/TrainerEarnings";
+import TrainerCreateBatch from "../screens/player/TrainerCreateBatch";
+import RefereeAssignmentsScreen from "../screens/referee/RefereeAssignmentsScreen";
+import RefereeMatchScorer from "../screens/referee/RefereeMatchScorer";
 import TournamentHistory from "../screens/player/TournamentHistory";
+import Planner from "../screens/player/Planner";
+import AddNote from "../screens/player/AddNote";
+import DaySchedule from "../screens/player/DaySchedule";
+import SocialProfile from "../screens/player/SocialProfile";
+import TurfBookingPreview from "../screens/player/TurfBookingPreview";
+import TurfPaymentMethod from "../screens/player/TurfPaymentMethod";
+import CartScreen from "../screens/player/CartScreen";
+import EquipmentPaymentMethod from "../screens/player/EquipmentPaymentMethod";
+import EquipmentOrderConfirmation from "../screens/player/EquipmentOrderConfirmation";
+import TrackOrder from "../screens/player/TrackOrder";
+import SellGearIntro from "../screens/player/SellGearIntro";
+import SellAddProduct from "../screens/player/SellAddProduct";
+import SellUploadImages from "../screens/player/SellUploadImages";
+import SellSellerDetails from "../screens/player/SellSellerDetails";
+import SellReview from "../screens/player/SellReview";
+import SellListingSuccess from "../screens/player/SellListingSuccess";
+import SellProductStatus from "../screens/player/SellProductStatus";
+import NewsListScreen from "../screens/player/NewsListScreen";
+import NewsDetailScreen from "../screens/player/NewsDetailScreen";
+import SportsLibrary from "../screens/player/SportsLibrary";
+import SportDetails from "../screens/player/SportDetails";
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -97,6 +132,21 @@ const HomeStack = () => {
         options={{ headerShown: false }}
       />
       <Stack.Screen
+        name="Planner"
+        component={Planner}
+        options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
+      />
+      <Stack.Screen
+        name="DaySchedule"
+        component={DaySchedule}
+        options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
+      />
+      <Stack.Screen
+        name="AddNote"
+        component={AddNote}
+        options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
+      />
+      <Stack.Screen
         name="FAQScreen"
         component={FAQScreen}
         options={{ headerShown: false }}
@@ -120,6 +170,16 @@ const HomeStack = () => {
         name="MyBookings"
         component={MyBooking}
         options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="SportsLibrary"
+        component={SportsLibrary}
+        options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
+      />
+      <Stack.Screen
+        name="SportDetails"
+        component={SportDetails}
+        options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
       />
       <Stack.Screen
         name="HelpSupportScreen"
@@ -161,11 +221,37 @@ const HomeStack = () => {
         component={VenueBookingScreen}
         options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
       />
+      <Stack.Screen
+        name="TurfBookingPreview"
+        component={TurfBookingPreview}
+        options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
+      />
+      <Stack.Screen
+        name="TurfPaymentMethod"
+        component={TurfPaymentMethod}
+        options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
+      />
 
       {/* Service Role screens (reachable from TournamentDetails → Apply as Staff) */}
       <Stack.Screen name="BrowseTournamentJobsHome" component={BrowseTournamentJobs} options={{ headerShown: false }} />
       <Stack.Screen name="RoleHubHome" component={RoleHub} options={{ headerShown: false }} />
       <Stack.Screen name="ServiceProfileSetupHome" component={ServiceProfileSetup} options={{ headerShown: false }} />
+
+      {/* Sports Jobs & Opportunities (Browse Jobs module) */}
+      <Stack.Screen name="BrowseJobs" component={BrowseJobs} options={{ headerShown: false, tabBarStyle: { display: "none" } }} />
+      <Stack.Screen name="JobDetails" component={JobDetails} options={{ headerShown: false, tabBarStyle: { display: "none" } }} />
+      <Stack.Screen name="HireProfessional" component={HireProfessional} options={{ headerShown: false, tabBarStyle: { display: "none" } }} />
+      <Stack.Screen name="CreateProfessionalProfile" component={CreateProfessionalProfileScreen} options={{ headerShown: false, tabBarStyle: { display: "none" } }} />
+
+      {/* Trainer Console */}
+      <Stack.Screen name="TrainerDashboard" component={TrainerDashboard} options={{ headerShown: false, tabBarStyle: { display: "none" } }} />
+      <Stack.Screen name="TrainerCreateSession" component={TrainerCreateSession} options={{ headerShown: false, tabBarStyle: { display: "none" } }} />
+      <Stack.Screen name="TrainerMySessions" component={TrainerMySessions} options={{ headerShown: false, tabBarStyle: { display: "none" } }} />
+      <Stack.Screen name="TrainerFindClubs" component={TrainerFindClubs} options={{ headerShown: false, tabBarStyle: { display: "none" } }} />
+      <Stack.Screen name="TrainerRequests" component={TrainerRequests} options={{ headerShown: false, tabBarStyle: { display: "none" } }} />
+      <Stack.Screen name="TrainerBatches" component={TrainerBatches} options={{ headerShown: false, tabBarStyle: { display: "none" } }} />
+      <Stack.Screen name="TrainerEarnings" component={TrainerEarnings} options={{ headerShown: false, tabBarStyle: { display: "none" } }} />
+      <Stack.Screen name="TrainerCreateBatch" component={TrainerCreateBatch} options={{ headerShown: false, tabBarStyle: { display: "none" } }} />
 
       <Stack.Screen
         name="EditProfile"
@@ -179,8 +265,18 @@ const HomeStack = () => {
         options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
       />
       <Stack.Screen
+        name="RefereeMatchScorer"
+        component={RefereeMatchScorer}
+        options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
+      />
+      <Stack.Screen
         name="RegistrationDetails"
         component={RegistrationDetails}
+        options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
+      />
+      <Stack.Screen
+        name="TournamentBookingWizard"
+        component={TournamentBookingWizard}
         options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
       />
       <Stack.Screen
@@ -280,6 +376,11 @@ const EventStack = () => {
         options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
       />
       <Stack.Screen
+        name="TournamentBookingWizard"
+        component={TournamentBookingWizard}
+        options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
+      />
+      <Stack.Screen
         name="Booking Screen"
         component={BookingScreen}
         options={{ headerShown: true, tabBarStyle: { display: 'none' } }}
@@ -308,6 +409,11 @@ const EventStack = () => {
         name="Tournament Leaderboard"
         component={TournamentLeaderboardDetail}
         options={{ headerShown: true, tabBarStyle: { display: 'none' } }}
+      />
+      <Stack.Screen
+        name="RefereeMatchScorer"
+        component={RefereeMatchScorer}
+        options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
       />
       <Stack.Screen name="BrowseTournamentJobsHome" component={BrowseTournamentJobs} options={{ headerShown: false }} />
       <Stack.Screen name="ServiceProfileSetupHome" component={ServiceProfileSetup} options={{ headerShown: false }} />
@@ -339,42 +445,20 @@ const PlayStack = () => {
         component={VenueBookingConfirmation}
         options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
       />
+      <Stack.Screen
+        name="TurfBookingPreview"
+        component={TurfBookingPreview}
+        options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
+      />
+      <Stack.Screen
+        name="TurfPaymentMethod"
+        component={TurfPaymentMethod}
+        options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
+      />
       {/* Add other player home-related screens here */}
     </Stack.Navigator>
   );
 };
-
-// const TrainerStack = () => {
-//   return (
-//     <Stack.Navigator initialRouteName="FindTrainers">
-//       <Stack.Screen
-//         name="FindTrainers"
-//         component={FindTrainersScreen}
-//         options={{ headerShown: false }}
-//       />
-//       <Stack.Screen
-//         name="TrainerProfile"
-//         component={TrainerProfileScreen}
-//         options={{ headerShown: false }}
-//       />
-//       <Stack.Screen
-//         name="TrainerSessions"
-//         component={TrainerSessionsScreen}
-//         options={{ headerShown: false }}
-//       />
-//       <Stack.Screen
-//         name="BookTraining"
-//         component={BookTrainingScreen}
-//         options={{ headerShown: false }}
-//       />
-//       <Stack.Screen
-//         name="SessionDetails"
-//         component={SessionDetailsScreen}
-//         options={{ headerShown: false }}
-//       />
-//     </Stack.Navigator>
-//   );
-// };
 
 // Social stack navigator
 const SocialStack = () => {
@@ -388,6 +472,21 @@ const SocialStack = () => {
       <Stack.Screen
         name="ComingSoon"
         component={ComingSoonScreen}
+        options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
+      />
+      <Stack.Screen
+        name="SocialProfile"
+        component={SocialProfile}
+        options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
+      />
+      <Stack.Screen
+        name="NewsList"
+        component={NewsListScreen}
+        options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
+      />
+      <Stack.Screen
+        name="NewsDetail"
+        component={NewsDetailScreen}
         options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
       />
     </Stack.Navigator>
@@ -433,13 +532,13 @@ const ProfileStack = () => {
     <Stack.Navigator initialRouteName="Player Profile">
       <Stack.Screen
         name="Player Profile"
-        component={Profile}
+        component={PlayerProfileScreen}
         options={{ headerShown: false }}
       />
       <Stack.Screen
         name="My Profile"
         component={PlayerProfileScreen}
-        options={{ headerShown: true, tabBarStyle: { display: 'none' } }}
+        options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
       />
       <Stack.Screen
         name="FAQ'S"
@@ -524,6 +623,16 @@ const ProfileStack = () => {
         component={BrowseTournamentJobs}
         options={{ headerShown: false }}
       />
+      <Stack.Screen
+        name="RefereeAssignments"
+        component={RefereeAssignmentsScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="RefereeMatchScorer"
+        component={RefereeMatchScorer}
+        options={{ headerShown: false }}
+      />
       {/* Invitation screens */}
       <Stack.Screen
         name="Invitations"
@@ -552,159 +661,262 @@ const PaymentStack = () => {
   );
 };
 
-// Custom Tab Bar component
-const CustomTabBar = ({ state, navigation, insets }) => {
+// Store stack navigator (Equipment Hub + donation/listing flow)
+const StoreStack = () => {
+  return (
+    <Stack.Navigator initialRouteName="EquipmentHub">
+      <Stack.Screen
+        name="EquipmentHub"
+        component={EquipmentHubScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="DonationList"
+        component={DonationListScreen}
+        options={{ headerShown: false, tabBarStyle: { display: "none" } }}
+      />
+      <Stack.Screen
+        name="DonationDetail"
+        component={DonationDetailScreen}
+        options={{
+          headerShown: false,
+          tabBarStyle: { display: "none" },
+          presentation: "transparentModal",
+          cardOverlayEnabled: true,
+          cardStyle: { backgroundColor: "transparent" },
+        }}
+      />
+      <Stack.Screen
+        name="CreateListing"
+        component={CreateListingScreen}
+        options={{ headerShown: false, tabBarStyle: { display: "none" } }}
+      />
+      <Stack.Screen
+        name="MyListings"
+        component={MyListingsScreen}
+        options={{ headerShown: false, tabBarStyle: { display: "none" } }}
+      />
+      <Stack.Screen
+        name="MyClaims"
+        component={MyClaimsScreen}
+        options={{ headerShown: false, tabBarStyle: { display: "none" } }}
+      />
+      <Stack.Screen
+        name="Cart"
+        component={CartScreen}
+        options={{ headerShown: false, tabBarStyle: { display: "none" } }}
+      />
+      <Stack.Screen
+        name="EquipmentPaymentMethod"
+        component={EquipmentPaymentMethod}
+        options={{ headerShown: false, tabBarStyle: { display: "none" } }}
+      />
+      <Stack.Screen
+        name="EquipmentOrderConfirmation"
+        component={EquipmentOrderConfirmation}
+        options={{ headerShown: false, tabBarStyle: { display: "none" } }}
+      />
+      <Stack.Screen
+        name="TrackOrder"
+        component={TrackOrder}
+        options={{ headerShown: false, tabBarStyle: { display: "none" } }}
+      />
+      <Stack.Screen
+        name="SellGearIntro"
+        component={SellGearIntro}
+        options={{ headerShown: false, tabBarStyle: { display: "none" } }}
+      />
+      <Stack.Screen
+        name="SellAddProduct"
+        component={SellAddProduct}
+        options={{ headerShown: false, tabBarStyle: { display: "none" } }}
+      />
+      <Stack.Screen
+        name="SellUploadImages"
+        component={SellUploadImages}
+        options={{ headerShown: false, tabBarStyle: { display: "none" } }}
+      />
+      <Stack.Screen
+        name="SellSellerDetails"
+        component={SellSellerDetails}
+        options={{ headerShown: false, tabBarStyle: { display: "none" } }}
+      />
+      <Stack.Screen
+        name="SellReview"
+        component={SellReview}
+        options={{ headerShown: false, tabBarStyle: { display: "none" } }}
+      />
+      <Stack.Screen
+        name="SellListingSuccess"
+        component={SellListingSuccess}
+        options={{ headerShown: false, tabBarStyle: { display: "none" } }}
+      />
+      <Stack.Screen
+        name="SellProductStatus"
+        component={SellProductStatus}
+        options={{ headerShown: false, tabBarStyle: { display: "none" } }}
+      />
+    </Stack.Navigator>
+  );
+};
+
+// Custom Tab Bar component (friend's redesign — green pill style with descriptor-based hide)
+const CustomTabBar = ({ state, descriptors, navigation, insets }) => {
   const route = state.routes[state.index];
   const focusedRoute = getFocusedRouteNameFromRoute(route);
+  const focusedOptions = descriptors[route.key].options;
 
-  // Define screens where tab bar SHOULD be visible (all others will hide it)
+  // Hide tab bar when the focused screen explicitly opts out via tabBarStyle.display === "none"
+  if (focusedOptions?.tabBarStyle?.display === "none") {
+    return null;
+  }
+
+  // Backup whitelist of root screens where the tab bar is allowed.
   const showOnScreens = [
     "PlayerHome",
     "EventScreen",
     "SocialHome",
-    "ChatList",
+    "Play",
+    "EquipmentHub",
     "Player Profile",
-    undefined // When it's the initial route of the stack
+    undefined, // initial route of a stack
   ];
 
   if (focusedRoute && !showOnScreens.includes(focusedRoute)) {
     return null;
   }
 
+  // Chat and Profile stay registered (so navigation.navigate("Chat" | "Profile", { screen: ... })
+  // keeps working from other screens) but they don't render as visible pills.
+  const visibleRoutes = state.routes.filter(
+    (r) => r.name !== "Chat" && r.name !== "Profile"
+  );
+
   return (
     <View
-      style={[
-        styles.tabBar,
-        {
-          paddingBottom: insets?.bottom || 0,           // ⭐ SAFE AREA FIX
-          height: 80 + (insets?.bottom || 0),           // ⭐ PREVENT OVERLAP
-          marginBottom: insets?.bottom > 0 ? 0 : 10,     // ⭐ CLEAN LOOK
-        },
-      ]}
+      style={{
+        position: "absolute",
+        bottom: 0,
+        left: 0,
+        right: 0,
+        backgroundColor: "#fff",
+        paddingBottom: insets?.bottom || 0,
+        paddingTop: 8,
+      }}
     >
-      {state.routes.map((route, index) => {
-        const isFocused = state.index === index;
-        // console.log("route", route.key);
+      <View style={styles.tabBar}>
+        {visibleRoutes.map((route) => {
+          const realIndex = state.routes.findIndex((r) => r.key === route.key);
+          const isFocused = state.index === realIndex;
 
-        let iconName;
-        if (route.name === "Home") {
-          iconName = isFocused ? "home" : "home-outline";
-        } else if (route.name === "Play") {
-          iconName = isFocused ? "football" : "football-outline";
-        } else if (route.name === "Events") {
-          iconName = isFocused ? "trophy" : "trophy-outline";
-        } else if (route.name === "Social") {
-          iconName = isFocused ? "people" : "people-outline";
-        } else if (route.name === "Chat") {
-          iconName = isFocused ? "chatbubble-ellipses" : "chatbubble-ellipses-outline";
-        } else if (route.name === "Tournaments") {
-          iconName = isFocused ? "medal" : "medal-outline";
-        } else if (route.name === "Trainer") {
-          iconName = isFocused ? "fitness" : "fitness-outline"; // New icon for Trainer tab
-        } else if (route.name === "Profile") {
-          iconName = isFocused ? "person" : "person-outline"; // Profile icon
-        } else if (route.name === "Payment History") {
-          iconName = isFocused ? "cash" : "cash-outline"; // Payment History icon
-        }
-
-        const onPress = () => {
-          const event = navigation.emit({
-            type: "tabPress",
-            target: route.key,
-            canPreventDefault: true,
-          });
-
-          // Prevent multiple rapid taps
-          if (event.defaultPrevented) return;
-
-          // Always navigate to the initial screen of the tab's stack
-          switch (route.name) {
-            case "Home":
-              navigation.navigate("Home", { screen: "PlayerHome" });
-              break;
-            case "Events":
-              navigation.navigate("Events", { screen: "EventScreen" });
-              break;
-            case "Social":
-              navigation.navigate("Social", { screen: "SocialHome" });
-              break;
-            case "Chat":
-              navigation.navigate("Chat", { screen: "ChatList" });
-              break;
-            case "Profile":
-              navigation.navigate("Profile", { screen: "Player Profile" });
-              break;
-            default:
-              navigation.navigate(route.name);
-              break;
+          let iconName;
+          if (route.name === "Home") {
+            iconName = isFocused ? "home" : "home-outline";
+          } else if (route.name === "Events") {
+            iconName = isFocused ? "calendar" : "calendar-outline";
+          } else if (route.name === "Social") {
+            iconName = isFocused ? "people" : "people-outline";
+          } else if (route.name === "Turf") {
+            iconName = isFocused ? "football" : "football-outline";
+          } else if (route.name === "Store") {
+            iconName = isFocused ? "storefront" : "storefront-outline";
           }
-        };
 
-        const onLongPress = () => {
-          navigation.emit({
-            type: "tabLongPress",
-            target: route.key,
-          });
-        };
+          const onPress = () => {
+            const event = navigation.emit({
+              type: "tabPress",
+              target: route.key,
+              canPreventDefault: true,
+            });
 
-        return (
-          <TouchableOpacity
-            key={route.key}
-            onPress={onPress}
-            onLongPress={onLongPress}
-            style={styles.tabItem}
-          >
-            <View style={styles.iconContainer}>
-              {isFocused && <View style={styles.activeBackground} />}
-              <Ionicons
-                name={iconName}
-                size={28}
-                color={isFocused ? "#E3FF3B" : "#555"}
-                style={isFocused ? styles.activeIcon : null}
-              />
-            </View>
-            <Text
-              style={[
-                styles.label,
-                isFocused ? styles.activeLabelWithMargin : null,
-              ]}
+            if (event.defaultPrevented) return;
+
+            switch (route.name) {
+              case "Home":
+                navigation.navigate("Home", { screen: "PlayerHome" });
+                break;
+              case "Events":
+                navigation.navigate("Events", { screen: "EventScreen" });
+                break;
+              case "Social":
+                navigation.navigate("Social", { screen: "SocialHome" });
+                break;
+              case "Turf":
+                navigation.navigate("Turf", { screen: "Play" });
+                break;
+              case "Store":
+                navigation.navigate("Store", { screen: "EquipmentHub" });
+                break;
+              default:
+                navigation.navigate(route.name);
+                break;
+            }
+          };
+
+          const onLongPress = () => {
+            navigation.emit({
+              type: "tabLongPress",
+              target: route.key,
+            });
+          };
+
+          return (
+            <TouchableOpacity
+              key={route.key}
+              onPress={onPress}
+              onLongPress={onLongPress}
+              style={styles.tabItem}
             >
-              {route.name}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
+              <View
+                style={[styles.tabContent, isFocused && styles.activeTabPill]}
+              >
+                <Ionicons
+                  name={iconName}
+                  size={24}
+                  color={isFocused ? "#15A765" : "#5D5D5D"}
+                />
+                <Text
+                  style={[styles.label, isFocused ? styles.activeLabel : null]}
+                >
+                  {route.name}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
     </View>
   );
 };
 
 // Main tab navigator for Player
 const PlayerNavigator = () => {
-  const insets = useSafeAreaInsets(); // ✅ get device safe area insets
-
+  const insets = useSafeAreaInsets();
   return (
     <Tab.Navigator
-      screenOptions={({ route, navigation }) => ({
+      screenOptions={{
         headerShown: false,
-        tabBarStyle: {
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          elevation: 0,
-          backgroundColor: '#fff',
-          borderTopWidth: 0,
-          paddingBottom: insets?.bottom || 0,
-          height: 60 + (insets?.bottom || 0),
-        },
-      })}
+      }}
       tabBar={(props) => <CustomTabBar {...props} insets={insets} />}
     >
       <Tab.Screen name="Home" component={HomeStack} />
       <Tab.Screen name="Events" component={EventStack} />
       <Tab.Screen name="Social" component={SocialStack} />
-      <Tab.Screen name="Chat" component={ChatStack} />
-      <Tab.Screen name="Profile" component={ProfileStack} screenOptions={{ headerShown: true }} />
+      <Tab.Screen name="Turf" component={PlayStack} />
+      <Tab.Screen name="Store" component={StoreStack} />
+      {/* Chat and Profile stay registered (hidden from the bar) so existing
+          navigation.navigate("Chat" | "Profile", { screen: ... }) calls keep
+          working from other screens (header avatars, social icons, etc.). */}
+      <Tab.Screen
+        name="Chat"
+        component={ChatStack}
+        options={{ tabBarButton: () => null }}
+      />
+      <Tab.Screen
+        name="Profile"
+        component={ProfileStack}
+        options={{ tabBarButton: () => null }}
+      />
     </Tab.Navigator>
   );
 };
@@ -712,52 +924,44 @@ const PlayerNavigator = () => {
 const styles = StyleSheet.create({
   tabBar: {
     flexDirection: "row",
-    justifyContent: "space-evenly",
-    paddingBottom: Platform.OS === "ios" ? 25 : 15,
-    borderRadius: 16,
-    marginBottom: 10,
+    justifyContent: "space-between",
+    alignItems: "center",
     backgroundColor: "#fff",
+    borderRadius: 24,
+    borderColor: "#ECF4EB",
+    borderWidth: 1,
+    boxShadow: "0px 0px 18.4px 0px #BDBDDB4D",
+    elevation: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    bottom: 5,
+    marginHorizontal: 16,
   },
   tabItem: {
+    flex: 1,
     alignItems: "center",
     justifyContent: "center",
   },
-  iconContainer: {
-    // width: 40,
-    // height: 40,
-    justifyContent: "center",
+  tabContent: {
     alignItems: "center",
-    display: "flex",
-    gap: 15,
+    justifyContent: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 24,
   },
-  activeBackground: {
-    position: "absolute",
-    bottom: 5,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "#0079EE", // Orange color as in original design
-    elevation: 6,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    zIndex: -1,
-    alignContent: "center",
+  activeTabPill: {
+    backgroundColor: "#E8F7F0",
   },
   label: {
-    fontSize: 14,
-    color: "#333",
-    textAlign: "center",
+    fontSize: 10,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "600",
+    color: "#5D5D5D",
   },
-  activeLabelWithMargin: {
-    color: "#333",
-    fontSize: 14,
-    marginTop: 10,
-  },
-  activeIcon: {
-    color: "#E3FF3B",
-    bottom: 20,
+  activeLabel: {
+    color: "#15A765",
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
   },
 });
 

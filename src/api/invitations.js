@@ -9,6 +9,7 @@ const INVITATIONS = {
   SENT: (playerId) => `${BASE_URL}/invitations/sent/${playerId}`,
   PENDING_COUNT: (playerId) => `${BASE_URL}/invitations/pending-count/${playerId}`,
   BY_TOURNAMENT: (tournamentId) => `${BASE_URL}/invitations/tournament/${tournamentId}`,
+  DEFAULT_PLAYERS: `${BASE_URL}/invitations/default-players`,
   SEARCH_PLAYERS: `${BASE_URL}/chat/search-players`,
 };
 

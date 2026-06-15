@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import MaterialIcons from "react-native-vector-icons/MaterialIcons";
 import { useNavigation, useRoute } from "@react-navigation/native";
+import { getSportName } from "../../utils/sportTrack";
 
 const MyEventDetailsScreen = () => {
   const navigation = useNavigation();
@@ -24,7 +25,7 @@ const MyEventDetailsScreen = () => {
   const currentEvent = {
     id: bookingData._id,
     name: tournament.title || bookingData.tournamentName,
-    type: tournament.sportsType || bookingData.tournamentType,
+    type: getSportName(tournament) || bookingData.tournamentType,
     date: tournament.startDate || "TBA",
     price: `₹ ${bookingData.paymentAmount || 0}/-`,
     startTime: tournament.selectedTime?.startTime || "TBA",

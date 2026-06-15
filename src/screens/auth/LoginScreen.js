@@ -17,6 +17,7 @@ import {
 import { useAuth } from "../../context/AuthContext";
 import { Ionicons, MaterialIcons, FontAwesome5 } from "@expo/vector-icons";
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   GoogleSignin,
   isErrorWithCode,
@@ -24,6 +25,13 @@ import {
 } from "@react-native-google-signin/google-signin";
 
 const { width, height } = Dimensions.get("window");
+
+// Green player design system
+const GREEN = "#15A765";        // primary brand — buttons, active states, accents
+const GREEN_DARK = "#0F8A55";   // gradients, emphasis text
+const GREEN_TINT = "#E8F7F0";   // active chip bg, soft fills
+const TEXT_DARK = "#1A181B";    // headings / primary text
+const TEXT_MUTED = "#6B7280";   // secondary text, labels, placeholders
 
 // Configure Google Sign-In
 // Replace this with YOUR Web Client ID from Google Cloud Console
@@ -40,6 +48,7 @@ const LoginScreen = ({ navigation }) => {
   const [validationErrors, setValidationErrors] = useState({});
   const [googleLoading, setGoogleLoading] = useState(false);
   const { login, googleLogin, loading } = useAuth();
+  const insets = useSafeAreaInsets();
 
   const handleGoogleSignIn = async () => {
     try {
@@ -148,7 +157,7 @@ const LoginScreen = ({ navigation }) => {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
       <LinearGradient
-        colors={['#34A4FA', '#3B4DFD']}
+        colors={['#22B873', '#15A765']}
         style={styles.gradient}
       >
         {/* Abstract Background Shapes */}
@@ -161,14 +170,18 @@ const LoginScreen = ({ navigation }) => {
           style={{ flex: 1 }}
         >
           <ScrollView
-            contentContainerStyle={styles.scrollView}
+            style={styles.scroll}
+            contentContainerStyle={[
+              styles.scrollView,
+              { paddingTop: insets.top + 30, paddingBottom: insets.bottom + 40 },
+            ]}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
             <View style={styles.headerContainer}>
               <View style={styles.logoBadge}>
                 <LinearGradient
-                  colors={['#FF8C00', '#FF4E00']}
+                  colors={['#22B873', '#0F8A55']}
                   style={styles.logoGradient}
                 >
                   <FontAwesome5 name="medal" size={40} color="#fff" />
@@ -189,7 +202,7 @@ const LoginScreen = ({ navigation }) => {
                 <Text style={styles.inputLabel}>Email Address</Text>
                 <View style={[styles.inputWrapper, validationErrors.email && styles.inputErrorBorder]}>
                   <View style={styles.iconBox}>
-                    <MaterialIcons name="alternate-email" size={20} color="#3B4DFD" />
+                    <MaterialIcons name="alternate-email" size={20} color={GREEN} />
                   </View>
                   <TextInput
                     style={styles.input}
@@ -218,7 +231,7 @@ const LoginScreen = ({ navigation }) => {
                 <Text style={styles.inputLabel}>Password</Text>
                 <View style={[styles.inputWrapper, validationErrors.password && styles.inputErrorBorder]}>
                   <View style={styles.iconBox}>
-                    <MaterialIcons name="lock-outline" size={20} color="#3B4DFD" />
+                    <MaterialIcons name="lock-outline" size={20} color={GREEN} />
                   </View>
                   <TextInput
                     style={styles.input}
@@ -263,7 +276,7 @@ const LoginScreen = ({ navigation }) => {
                   disabled={loading}
                 >
                   <LinearGradient
-                    colors={['#FF6A00', '#FF4E00']}
+                    colors={['#22B873', '#0F8A55']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={styles.buttonGradient}
@@ -335,7 +348,7 @@ const styles = StyleSheet.create({
     width: width * 0.7,
     height: width * 0.7,
     borderRadius: width * 0.35,
-    backgroundColor: 'rgba(255,106,0,0.1)',
+    backgroundColor: 'rgba(15,138,85,0.18)',
   },
   circle3: {
     position: 'absolute',
@@ -346,11 +359,12 @@ const styles = StyleSheet.create({
     borderRadius: 50,
     backgroundColor: 'rgba(255,255,255,0.05)',
   },
+  scroll: {
+    flex: 1,
+  },
   scrollView: {
     flexGrow: 1,
     paddingHorizontal: 25,
-    paddingTop: Platform.OS === 'ios' ? 80 : 60,
-    paddingBottom: 40,
   },
   headerContainer: {
     alignItems: "center",
@@ -428,13 +442,13 @@ const styles = StyleSheet.create({
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F4F7FF",
+    backgroundColor: GREEN_TINT,
     borderRadius: 18,
     paddingHorizontal: 12,
     height: 60,
     marginBottom: 15,
     borderWidth: 1.5,
-    borderColor: "#E8EEFF",
+    borderColor: "#CDEBDD",
   },
   inputErrorBorder: {
     borderColor: "#FF3B30",
@@ -444,7 +458,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: 'rgba(59,77,253,0.1)',
+    backgroundColor: 'rgba(21,167,101,0.12)',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 10,
@@ -472,7 +486,7 @@ const styles = StyleSheet.create({
     marginBottom: 25,
   },
   forgotPasswordText: {
-    color: "#3B4DFD",
+    color: GREEN_DARK,
     fontSize: 14,
     fontWeight: "800",
   },
@@ -482,7 +496,7 @@ const styles = StyleSheet.create({
     height: 60,
     marginBottom: 25,
     elevation: 8,
-    shadowColor: "#FF6A00",
+    shadowColor: GREEN_DARK,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.4,
     shadowRadius: 10,

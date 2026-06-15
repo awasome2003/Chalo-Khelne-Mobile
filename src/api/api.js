@@ -1,9 +1,11 @@
 // config/api.js — Central API configuration
 
 // ── Server Configuration ──
-// Toggle this ONE line for dev vs production:
-// const Wbsite_SERVER_URL = "https://chalokhelne.com";              // production
-const Wbsite_SERVER_URL = "http://192.168.1.31:3003";          // local development
+// Auto-selects by build: production bundles (__DEV__ === false) use the live
+// HTTPS server; Metro/dev builds use the LAN IP. No manual toggle before APK build.
+const Wbsite_SERVER_URL = __DEV__
+  ? "http://10.88.83.245:3003" // local development
+  : "https://chalokhelne.com"; // production
 
 const SERVER_URL = Wbsite_SERVER_URL;
 const BASE_URL = `${SERVER_URL}/api`;
@@ -17,6 +19,7 @@ const ENDPOINTS = {
     OWNER: `${BASE_URL}/turfs/owner`,
     REVIEWS: (id) => `${BASE_URL}/turfs/${id}/reviews`,
     TOGGLE_STATUS: (id) => `${BASE_URL}/turfs/${id}/toggle-status`,
+    AVAILABILITY_TODAY: `${BASE_URL}/turfs/availability/today`,
 
     // Get certified trainers for a specific turf
     CERTIFIED_TRAINERS: (turfId) =>
@@ -51,14 +54,7 @@ const ENDPOINTS = {
     BY_ID: (id) => `${BASE_URL}/tournaments/${id}`,
   },
 
-  // Payment and booking endpoints
-  PAYMENTS: {
-    CREATE_ORDER: `${BASE_URL}/players/create-order`,
-    VERIFY_PAYMENT: `${BASE_URL}/players/verify-payment`,
-    PAYMENT_STATUS: (orderId) =>
-      `${BASE_URL}/players/payment-status/${orderId}`,
-  },
-
+  // Booking endpoints
   BOOKINGS: {
     CREATE: `${BASE_URL}/players/bookings/create`,
     BY_USER: (userId) => `${BASE_URL}/players/bookings/user/${userId}`,

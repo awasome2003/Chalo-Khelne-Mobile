@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { assetUrl } from "../../utils/assetUrl";
 import {
   View,
   Text,
@@ -11,15 +12,30 @@ import {
   Modal,
   ActivityIndicator,
   Platform,
+  Linking,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import colors from "../../config/colors";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
 import axios from "axios";
+import TRAINERS from "../../api/trainers";
 import { useAuth } from "../../context/AuthContext";
 import * as WebBrowser from "expo-web-browser";
 import * as FileSystem from "expo-file-system/legacy";
 
+// ─── Green design system tokens ──────────────────────────────────────────
+const GREEN = "#15A765";
+const GREEN_DARK = "#0F8A55";
+const GREEN_TINT = "#E8F7F0";
+const AMBER = "#F59E0B";
+const TEXT_DARK = "#1A181B";
+const TEXT_MUTED = "#6B7280";
+const BORDER = "#EEEEFF";
+const FIELD_BG = "#F4F4F5";
+const SCREEN_BG = "#FFFFFF";
+
 const TrainerScreen = ({ navigation }) => {
+  const insets = useSafeAreaInsets();
   const { token, user } = useAuth();
   const isAuthenticated = !!token;
 
@@ -80,17 +96,12 @@ const TrainerScreen = ({ navigation }) => {
         const processedCertificates = response.data.certificates.map((cert) => {
           let formattedUrl = cert.certificateUrl;
 
-          // Handle Windows-style paths or relative paths
+          // Normalize any cert path (Windows abs path, /uploads, relative, or full URL).
           if (formattedUrl) {
             if (formattedUrl.match(/^[A-Z]:\\/)) {
-              // Extract just the filename for Windows paths
-              const filename = formattedUrl.split("\\").pop();
-              formattedUrl = `${TRAINERS.BASE_URL}/api/uploads/certificates/${filename}`;
-            } else if (formattedUrl.startsWith("/uploads")) {
-              formattedUrl = `${TRAINERS.BASE_URL}${formattedUrl}`;
-            } else if (!formattedUrl.startsWith("http")) {
-              formattedUrl = `${TRAINERS.BASE_URL}/api/${formattedUrl}`;
+              formattedUrl = "certificates/" + formattedUrl.split("\\").pop();
             }
+            formattedUrl = assetUrl(formattedUrl);
           }
 
           // Determine if it's a PDF
@@ -270,17 +281,10 @@ const TrainerScreen = ({ navigation }) => {
       // Process the trainer data
       const trainerData = response.data;
 
-      // Fix profile image URL if it's a relative path
-      if (
-        trainerData.profileImage &&
-        trainerData.profileImage.startsWith("/")
-      ) {
-        trainerData.profileImage = `${TRAINERS.BASE_URL}${trainerData.profileImage}`;
-      } else if (trainerData.profileImage) {
-        console.log(
-          "TrainerScreen - Original profile image URL:",
-          trainerData.profileImage
-        );
+      // Resolve profile image via the shared assetUrl helper (handles
+      // relative paths, leading slashes, backslashes, and full URLs).
+      if (trainerData.profileImage) {
+        trainerData.profileImage = assetUrl(trainerData.profileImage);
       } else {
         console.log("TrainerScreen - No profile image available");
       }
@@ -523,15 +527,13 @@ const TrainerScreen = ({ navigation }) => {
     const experienceText = `${item.experience || 0} ${item.experience === 1 ? "year" : "years"
       } experience`;
 
-    // Create full image URL if it's a relative path
-    let imageUrl = item.profileImage;
-    if (imageUrl && imageUrl.startsWith("/")) {
-      imageUrl = `${TRAINERS.BASE_URL}${imageUrl}`;
-    }
+    // Resolve image via the shared assetUrl helper.
+    const imageUrl = assetUrl(item.profileImage);
 
     return (
       <TouchableOpacity
         style={styles.trainerCard}
+        activeOpacity={0.85}
         onPress={() => handleTrainerPress(item)}
       >
         <Image
@@ -546,20 +548,23 @@ const TrainerScreen = ({ navigation }) => {
           }
         />
         <View style={styles.trainerInfo}>
-          <Text style={styles.trainerName}>{fullName}</Text>
-          <Text style={styles.trainerSport}>
+          <Text style={styles.trainerName} numberOfLines={1}>
+            {fullName}
+          </Text>
+          <Text style={styles.trainerSport} numberOfLines={1}>
             {item.sports && item.sports.length > 0
               ? `${item.sports[0]} Coach`
               : "Sports Coach"}
           </Text>
           <View style={styles.ratingContainer}>
-            <Ionicons name="star" size={16} color="#FFD700" />
+            <Ionicons name="star" size={14} color={AMBER} />
             <Text style={styles.ratingText}>{item.rating || 0}</Text>
+            <Text style={styles.experience}>· {experienceText}</Text>
           </View>
-          <Text style={styles.experience}>{experienceText}</Text>
         </View>
         <TouchableOpacity
           style={styles.bookButton}
+          activeOpacity={0.85}
           onPress={() => handleTrainerPress(item)}
         >
           <Text style={styles.bookButtonText}>Book</Text>
@@ -571,12 +576,15 @@ const TrainerScreen = ({ navigation }) => {
   const renderSessionType = ({ item }) => (
     <TouchableOpacity
       style={styles.sessionTypeCard}
+      activeOpacity={0.85}
       onPress={() => handleSessionTypePress(item)}
     >
       <View style={styles.sessionTypeIcon}>
-        <Ionicons name={item.icon} size={28} color={colors.primary} />
+        <Ionicons name={item.icon} size={26} color={GREEN} />
       </View>
-      <Text style={styles.sessionTypeName}>{item.name}</Text>
+      <Text style={styles.sessionTypeName} numberOfLines={2}>
+        {item.name}
+      </Text>
     </TouchableOpacity>
   );
 
@@ -606,38 +614,49 @@ const TrainerScreen = ({ navigation }) => {
   if (loading.trainers && loading.featured && loading.sessionTypes) {
     return (
       <View style={styles.fullScreenLoader}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <ActivityIndicator size="large" color={GREEN} />
         <Text style={styles.loadingText}>Loading trainers...</Text>
       </View>
     );
   }
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Find Your Coach</Text>
-        <Text style={styles.headerSubtitle}>
-          Improve your skills with expert guidance
-        </Text>
-      </View>
-
-      {/* Search and Filter Bar */}
-      <TouchableOpacity
-        style={styles.searchBar}
-        onPress={() => promptSignIn("search for trainers")}
+    <View style={styles.container}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 110 }}
+        showsVerticalScrollIndicator={false}
       >
-        <Ionicons name="search" size={20} color="#666" />
-        <Text style={styles.searchPlaceholder}>
-          Search by name, sport or location
-        </Text>
-      </TouchableOpacity>
+        <LinearGradient
+          colors={[GREEN, GREEN_DARK]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.header, { paddingTop: insets.top + 16 }]}
+        >
+          <Text style={styles.headerTitle}>Find Your Coach</Text>
+          <Text style={styles.headerSubtitle}>
+            Improve your skills with expert guidance
+          </Text>
+        </LinearGradient>
 
-      {/* Session Types */}
-      {loading.sessionTypes ? (
-        <View style={styles.sectionLoader}>
-          <ActivityIndicator size="small" color={colors.primary} />
-        </View>
-      ) : error.sessionTypes ? (
+        {/* Search and Filter Bar */}
+        <TouchableOpacity
+          style={styles.searchBar}
+          activeOpacity={0.85}
+          onPress={() => promptSignIn("search for trainers")}
+        >
+          <Ionicons name="search" size={20} color={TEXT_MUTED} />
+          <Text style={styles.searchPlaceholder}>
+            Search by name, sport or location
+          </Text>
+        </TouchableOpacity>
+
+        {/* Session Types */}
+        {loading.sessionTypes ? (
+          <View style={styles.sectionLoader}>
+            <ActivityIndicator size="small" color={GREEN} />
+          </View>
+        ) : error.sessionTypes ? (
         <View style={styles.errorSection}>
           <Text style={styles.errorText}>
             Error loading session types: {error.sessionTypes}
@@ -666,7 +685,7 @@ const TrainerScreen = ({ navigation }) => {
       {/* Featured Coach */}
       {loading.featured ? (
         <View style={styles.sectionLoader}>
-          <ActivityIndicator size="small" color={colors.primary} />
+          <ActivityIndicator size="small" color={GREEN} />
         </View>
       ) : error.featured ? (
         <View style={styles.errorSection}>
@@ -676,19 +695,27 @@ const TrainerScreen = ({ navigation }) => {
         </View>
       ) : featuredTrainer ? (
         <View style={styles.featuredSection}>
-          <View style={styles.featuredCard}>
+          <LinearGradient
+            colors={[GREEN_TINT, "#FFFFFF"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.featuredCard}
+          >
             <View style={styles.featuredContent}>
-              <Text style={styles.featuredLabel}>Featured Coach</Text>
-              <Text style={styles.featuredName}>
+              <View style={styles.featuredLabelPill}>
+                <Ionicons name="star" size={11} color={AMBER} />
+                <Text style={styles.featuredLabel}>Featured Coach</Text>
+              </View>
+              <Text style={styles.featuredName} numberOfLines={1}>
                 {`${featuredTrainer.firstName || ""} ${featuredTrainer.lastName || ""
                   }`.trim() || "Top Coach"}
               </Text>
-              <Text style={styles.featuredSport}>
+              <Text style={styles.featuredSport} numberOfLines={1}>
                 {featuredTrainer.sports && featuredTrainer.sports.length > 0
                   ? `Professional ${featuredTrainer.sports[0]} Coach`
                   : "Professional Coach"}
               </Text>
-              <Text style={styles.featuredDescription}>
+              <Text style={styles.featuredDescription} numberOfLines={3}>
                 {featuredTrainer.bio
                   ? `${featuredTrainer.bio.substring(0, 100)}${featuredTrainer.bio.length > 100 ? "..." : ""
                   }`
@@ -697,6 +724,7 @@ const TrainerScreen = ({ navigation }) => {
               </Text>
               <TouchableOpacity
                 style={styles.featuredButton}
+                activeOpacity={0.85}
                 onPress={() => handleTrainerPress(featuredTrainer)}
               >
                 <Text style={styles.featuredButtonText}>View Profile</Text>
@@ -704,28 +732,23 @@ const TrainerScreen = ({ navigation }) => {
             </View>
             <Image
               source={
-                featuredTrainer.profileImage &&
-                  featuredTrainer.profileImage.startsWith("/")
-                  ? {
-                    uri: `${TRAINERS.BASE_URL}${featuredTrainer.profileImage}`,
-                  }
-                  : featuredTrainer.profileImage
-                    ? { uri: featuredTrainer.profileImage }
-                    : require("../../../assets/Trainers.png")
+                assetUrl(featuredTrainer.profileImage)
+                  ? { uri: assetUrl(featuredTrainer.profileImage) }
+                  : require("../../../assets/Trainers.png")
               }
               style={styles.featuredImage}
               onError={() =>
                 console.log("Error loading featured trainer image")
               }
             />
-          </View>
+          </LinearGradient>
         </View>
       ) : null}
 
       {/* Top Rated Trainers */}
       {loading.trainers ? (
         <View style={styles.sectionLoader}>
-          <ActivityIndicator size="small" color={colors.primary} />
+          <ActivityIndicator size="small" color={GREEN} />
         </View>
       ) : error.trainers ? (
         <View style={styles.errorSection}>
@@ -746,8 +769,13 @@ const TrainerScreen = ({ navigation }) => {
           </View>
           {trainers.length === 0 ? (
             <View style={styles.emptyState}>
-              <Ionicons name="people-outline" size={48} color="#ccc" />
-              <Text style={styles.emptyStateText}>
+              <MaterialCommunityIcons
+                name="account-search-outline"
+                size={52}
+                color="#D1D5DB"
+              />
+              <Text style={styles.emptyStateText}>No trainers yet</Text>
+              <Text style={styles.emptyStateSubtext}>
                 No trainers available at the moment
               </Text>
             </View>
@@ -766,8 +794,10 @@ const TrainerScreen = ({ navigation }) => {
       {/* Book a Session CTA */}
       <TouchableOpacity
         style={styles.ctaButton}
+        activeOpacity={0.85}
         onPress={() => promptSignIn("request a custom coaching package")}
       >
+        <Ionicons name="sparkles-outline" size={18} color="#FFFFFF" />
         <Text style={styles.ctaButtonText}>Request Custom Coaching</Text>
       </TouchableOpacity>
 
@@ -781,25 +811,23 @@ const TrainerScreen = ({ navigation }) => {
         {selectedTrainer && (
           <View style={styles.modalContainer}>
             <View style={styles.modalContent}>
+              <View style={styles.modalHandle} />
               <TouchableOpacity
                 style={styles.modalCloseButton}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 onPress={() => setShowTrainerModal(false)}
               >
-                <Ionicons name="close" size={24} color="#333" />
+                <Ionicons name="close" size={22} color={TEXT_DARK} />
               </TouchableOpacity>
 
-              <ScrollView>
+              <ScrollView showsVerticalScrollIndicator={false}>
                 <View style={styles.trainerProfileHeader}>
                   <Image
                     source={
-                      selectedTrainer.profileImage &&
-                        selectedTrainer.profileImage.startsWith("/")
-                        ? {
-                          uri: `${TRAINERS.BASE_URL}${selectedTrainer.profileImage}`,
-                        }
-                        : selectedTrainer.profileImage && !profileImageError
-                          ? { uri: selectedTrainer.profileImage }
-                          : require("../../../assets/Trainers.png")
+                      assetUrl(selectedTrainer.profileImage) &&
+                        !profileImageError
+                        ? { uri: assetUrl(selectedTrainer.profileImage) }
+                        : require("../../../assets/Trainers.png")
                     }
                     style={styles.trainerProfileImage}
                     onError={(e) => {
@@ -811,18 +839,18 @@ const TrainerScreen = ({ navigation }) => {
                     }}
                   />
                   <View style={styles.trainerProfileInfo}>
-                    <Text style={styles.trainerProfileName}>
+                    <Text style={styles.trainerProfileName} numberOfLines={1}>
                       {`${selectedTrainer.firstName || ""} ${selectedTrainer.lastName || ""
                         }`.trim()}
                     </Text>
-                    <Text style={styles.trainerProfileSport}>
+                    <Text style={styles.trainerProfileSport} numberOfLines={1}>
                       {selectedTrainer.sports &&
                         selectedTrainer.sports.length > 0
                         ? `${selectedTrainer.sports[0]} Coach`
                         : "Sports Coach"}
                     </Text>
                     <View style={styles.ratingContainer}>
-                      <Ionicons name="star" size={18} color="#FFD700" />
+                      <Ionicons name="star" size={16} color={AMBER} />
                       <Text style={styles.trainerProfileRating}>
                         {selectedTrainer.rating || 0}
                       </Text>
@@ -849,7 +877,7 @@ const TrainerScreen = ({ navigation }) => {
                       <Ionicons
                         name="cash-outline"
                         size={20}
-                        color={colors.primary}
+                        color={GREEN}
                       />
                     </View>
                     <View style={styles.detailInfo}>
@@ -865,7 +893,7 @@ const TrainerScreen = ({ navigation }) => {
                       <Ionicons
                         name="time-outline"
                         size={20}
-                        color={colors.primary}
+                        color={GREEN}
                       />
                     </View>
                     <View style={styles.detailInfo}>
@@ -884,7 +912,7 @@ const TrainerScreen = ({ navigation }) => {
                       <Ionicons
                         name="location-outline"
                         size={20}
-                        color={colors.primary}
+                        color={GREEN}
                       />
                     </View>
                     <View style={styles.detailInfo}>
@@ -903,7 +931,7 @@ const TrainerScreen = ({ navigation }) => {
                   </Text>
 
                   {loadingCertificates ? (
-                    <ActivityIndicator size="small" color={colors.primary} />
+                    <ActivityIndicator size="small" color={GREEN} />
                   ) : trainerCertificates.length === 0 ? (
                     <Text style={styles.noCertificatesText}>
                       No certificates available
@@ -919,7 +947,7 @@ const TrainerScreen = ({ navigation }) => {
                           <Ionicons
                             name={certificate.isPdf ? "document-text" : "image"}
                             size={20}
-                            color={colors.primary}
+                            color={GREEN}
                           />
                         </View>
                         <View style={styles.certificateContent}>
@@ -942,8 +970,8 @@ const TrainerScreen = ({ navigation }) => {
                         </View>
                         <Ionicons
                           name="chevron-forward"
-                          size={20}
-                          color="#999"
+                          size={18}
+                          color={TEXT_MUTED}
                         />
                       </TouchableOpacity>
                     ))
@@ -952,6 +980,7 @@ const TrainerScreen = ({ navigation }) => {
 
                 <TouchableOpacity
                   style={styles.bookSessionButton}
+                  activeOpacity={0.85}
                   onPress={() => handleBookSession(selectedTrainer)}
                 >
                   <Text style={styles.bookSessionButtonText}>
@@ -974,20 +1003,22 @@ const TrainerScreen = ({ navigation }) => {
         {selectedSessionForDetails && (
           <View style={styles.modalContainer}>
             <View style={styles.modalContent}>
+              <View style={styles.modalHandle} />
               <TouchableOpacity
                 style={styles.modalCloseButton}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 onPress={() => setShowSessionDetailsModal(false)}
               >
-                <Ionicons name="close" size={24} color="#333" />
+                <Ionicons name="close" size={22} color={TEXT_DARK} />
               </TouchableOpacity>
 
-              <ScrollView>
+              <ScrollView showsVerticalScrollIndicator={false}>
                 <View style={styles.sessionDetailsHeader}>
                   <View style={styles.sessionTypeIconLarge}>
                     <Ionicons
                       name={selectedSessionForDetails.icon}
                       size={40}
-                      color={colors.primary}
+                      color={GREEN}
                     />
                   </View>
                   <Text style={styles.sessionDetailsTitle}>
@@ -1007,7 +1038,7 @@ const TrainerScreen = ({ navigation }) => {
                         <Ionicons
                           name="checkmark-circle"
                           size={20}
-                          color={colors.primary}
+                          color={GREEN}
                         />
                         <Text style={styles.sessionInfoText}>
                           {expectation}
@@ -1024,7 +1055,7 @@ const TrainerScreen = ({ navigation }) => {
                       <Ionicons
                         name="time-outline"
                         size={20}
-                        color={colors.primary}
+                        color={GREEN}
                       />
                     </View>
                     <View style={styles.sessionInfoRowContent}>
@@ -1039,7 +1070,7 @@ const TrainerScreen = ({ navigation }) => {
                       <Ionicons
                         name="people-outline"
                         size={20}
-                        color={colors.primary}
+                        color={GREEN}
                       />
                     </View>
                     <View style={styles.sessionInfoRowContent}>
@@ -1056,7 +1087,7 @@ const TrainerScreen = ({ navigation }) => {
                       <Ionicons
                         name="cash-outline"
                         size={20}
-                        color={colors.primary}
+                        color={GREEN}
                       />
                     </View>
                     <View style={styles.sessionInfoRowContent}>
@@ -1098,14 +1129,16 @@ const TrainerScreen = ({ navigation }) => {
         {selectedTrainer && (
           <View style={styles.modalContainer}>
             <View style={styles.modalContent}>
+              <View style={styles.modalHandle} />
               <TouchableOpacity
                 style={styles.modalCloseButton}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 onPress={() => setShowBookingModal(false)}
               >
-                <Ionicons name="close" size={24} color="#333" />
+                <Ionicons name="close" size={22} color={TEXT_DARK} />
               </TouchableOpacity>
 
-              <ScrollView>
+              <ScrollView showsVerticalScrollIndicator={false}>
                 <Text style={styles.bookingTitle}>Book a Session</Text>
                 <Text style={styles.bookingSubtitle}>
                   with{" "}
@@ -1136,7 +1169,7 @@ const TrainerScreen = ({ navigation }) => {
                         <Ionicons
                           name={type.icon}
                           size={22}
-                          color={colors.primary}
+                          color={GREEN}
                         />
                         <Text style={styles.bookingSessionTypeName}>
                           {type.name}
@@ -1321,188 +1354,219 @@ const TrainerScreen = ({ navigation }) => {
           </View>
         )}
       </Modal>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8f8f8",
+    backgroundColor: SCREEN_BG,
+  },
+  scroll: {
+    flex: 1,
   },
   header: {
-    padding: 20,
-    backgroundColor: colors.primary,
+    paddingHorizontal: 20,
+    paddingBottom: 22,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
   },
   headerTitle: {
-    fontSize: 24,
-    fontWeight: "bold",
+    fontSize: 22,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "800",
     color: "#fff",
-    marginTop: 20,
+    marginTop: 6,
   },
   headerSubtitle: {
-    fontSize: 16,
+    fontSize: 14,
+    fontFamily: "Poppins_400Regular",
     color: "#fff",
-    opacity: 0.8,
+    opacity: 0.92,
     marginTop: 5,
   },
   searchBar: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fff",
-    marginHorizontal: 15,
-    marginTop: 15,
-    marginBottom: 5,
-    paddingHorizontal: 15,
-    paddingVertical: 12,
-    borderRadius: 8,
+    backgroundColor: FIELD_BG,
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 4,
+    paddingHorizontal: 16,
+    height: 50,
+    borderRadius: 28,
     borderWidth: 1,
-    borderColor: "#eee",
+    borderColor: BORDER,
+    gap: 10,
   },
   searchPlaceholder: {
-    color: "#999",
-    fontSize: 15,
-    marginLeft: 10,
+    color: TEXT_MUTED,
+    fontSize: 14,
+    fontFamily: "Poppins_400Regular",
   },
   section: {
-    marginTop: 20,
-    marginHorizontal: 15,
+    marginTop: 22,
+    marginHorizontal: 16,
   },
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 15,
+    marginBottom: 14,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#333",
+    fontSize: 17,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: TEXT_DARK,
   },
   viewAllText: {
-    fontSize: 14,
-    color: colors.primary,
+    fontSize: 13,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "600",
+    color: GREEN,
   },
   sessionTypeCard: {
-    width: 120,
-    height: 100,
+    width: 116,
+    height: 104,
     backgroundColor: "#fff",
-    borderRadius: 10,
+    borderRadius: 16,
     marginRight: 12,
-    padding: 10,
+    padding: 12,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: BORDER,
   },
   sessionTypeIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: "rgba(244, 81, 30, 0.1)",
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: GREEN_TINT,
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 8,
   },
   sessionTypeName: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: "#333",
+    fontSize: 13,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "600",
+    color: TEXT_DARK,
     textAlign: "center",
   },
   featuredSection: {
-    marginTop: 25,
-    marginHorizontal: 15,
+    marginTop: 24,
+    marginHorizontal: 16,
   },
   featuredCard: {
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    padding: 15,
+    borderRadius: 18,
+    padding: 16,
     flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: BORDER,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 3,
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
   },
   featuredContent: {
     flex: 1,
     paddingRight: 10,
   },
+  featuredLabelPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 4,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    marginBottom: 6,
+  },
   featuredLabel: {
-    fontSize: 12,
-    color: colors.primary,
-    fontWeight: "bold",
+    fontSize: 10,
+    fontFamily: "Montserrat_600SemiBold",
+    color: GREEN_DARK,
+    fontWeight: "700",
     textTransform: "uppercase",
+    letterSpacing: 0.4,
   },
   featuredName: {
     fontSize: 18,
-    fontWeight: "bold",
-    color: "#333",
-    marginTop: 5,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "800",
+    color: TEXT_DARK,
+    marginTop: 2,
   },
   featuredSport: {
-    fontSize: 14,
-    color: "#666",
+    fontSize: 13,
+    fontFamily: "Poppins_400Regular",
+    color: TEXT_MUTED,
     marginTop: 2,
   },
   featuredDescription: {
-    fontSize: 13,
-    color: "#666",
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular",
+    color: TEXT_MUTED,
     marginTop: 8,
     lineHeight: 18,
   },
   featuredButton: {
-    backgroundColor: colors.primary,
-    paddingVertical: 8,
-    paddingHorizontal: 15,
-    borderRadius: 20,
+    backgroundColor: GREEN,
+    paddingVertical: 9,
+    paddingHorizontal: 16,
+    borderRadius: 999,
     alignSelf: "flex-start",
-    marginTop: 10,
+    marginTop: 12,
   },
   featuredButtonText: {
     color: "#fff",
     fontSize: 12,
-    fontWeight: "bold",
+    fontFamily: "Poppins_400Regular",
+    fontWeight: "700",
   },
   featuredImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    borderWidth: 3,
+    borderColor: "#fff",
   },
   trainerCard: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#fff",
-    borderRadius: 10,
-    padding: 15,
-    marginBottom: 10,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    borderRadius: 16,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: BORDER,
   },
   trainerImage: {
     width: 60,
     height: 60,
     borderRadius: 30,
+    backgroundColor: FIELD_BG,
   },
   trainerInfo: {
     flex: 1,
-    marginLeft: 15,
+    marginLeft: 14,
   },
   trainerName: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#333",
+    fontSize: 15,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: TEXT_DARK,
   },
   trainerSport: {
-    fontSize: 14,
-    color: "#666",
+    fontSize: 13,
+    fontFamily: "Poppins_400Regular",
+    color: TEXT_MUTED,
     marginTop: 2,
   },
   ratingContainer: {
@@ -1511,98 +1575,123 @@ const styles = StyleSheet.create({
     marginTop: 5,
   },
   ratingText: {
-    fontSize: 14,
-    color: "#666",
-    marginLeft: 5,
+    fontSize: 13,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "600",
+    color: TEXT_DARK,
+    marginLeft: 4,
   },
   experience: {
-    fontSize: 13,
-    color: "#666",
-    marginTop: 3,
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular",
+    color: TEXT_MUTED,
+    marginLeft: 6,
   },
   bookButton: {
-    backgroundColor: colors.primary,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 20,
+    backgroundColor: GREEN,
+    paddingVertical: 9,
+    paddingHorizontal: 18,
+    borderRadius: 10,
   },
   bookButtonText: {
     color: "#fff",
     fontSize: 12,
-    fontWeight: "bold",
+    fontFamily: "Poppins_400Regular",
+    fontWeight: "700",
   },
   ctaButton: {
-    backgroundColor: colors.primary,
-    marginHorizontal: 15,
-    marginTop: 25,
-    marginBottom: 25,
-    paddingVertical: 15,
-    borderRadius: 8,
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: GREEN,
+    marginHorizontal: 16,
+    marginTop: 24,
+    marginBottom: 8,
+    paddingVertical: 15,
+    borderRadius: 14,
   },
   ctaButtonText: {
     color: "#fff",
-    fontSize: 16,
-    fontWeight: "bold",
+    fontSize: 15,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
   },
   fullScreenLoader: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#f8f8f8",
+    backgroundColor: SCREEN_BG,
     padding: 20,
   },
   loadingText: {
     marginTop: 10,
-    color: "#666",
-    fontSize: 16,
+    color: TEXT_MUTED,
+    fontSize: 14,
+    fontFamily: "Poppins_400Regular",
   },
   sectionLoader: {
-    height: 100,
+    height: 90,
     justifyContent: "center",
     alignItems: "center",
-    marginHorizontal: 15,
+    marginHorizontal: 16,
     marginVertical: 10,
   },
   errorSection: {
-    padding: 20,
-    backgroundColor: "#ffebee",
-    borderRadius: 10,
-    marginHorizontal: 15,
+    padding: 18,
+    backgroundColor: "#FEF2F2",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#FECACA",
+    marginHorizontal: 16,
     marginVertical: 10,
   },
   errorText: {
-    color: "#d32f2f",
-    fontSize: 14,
+    color: "#DC2626",
+    fontSize: 13,
+    fontFamily: "Poppins_400Regular",
     textAlign: "center",
   },
   retryText: {
-    color: colors.primary,
-    fontWeight: "bold",
+    color: GREEN,
+    fontWeight: "700",
+    fontFamily: "Montserrat_600SemiBold",
     textAlign: "center",
     marginTop: 10,
   },
   emptyState: {
     alignItems: "center",
     justifyContent: "center",
-    padding: 30,
+    paddingVertical: 36,
+    paddingHorizontal: 24,
     backgroundColor: "#fff",
-    borderRadius: 10,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: BORDER,
   },
   emptyStateText: {
-    color: "#666",
-    marginTop: 10,
+    color: TEXT_MUTED,
+    marginTop: 12,
     fontSize: 16,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  emptyStateSubtext: {
+    color: "#9CA3AF",
+    marginTop: 4,
+    fontSize: 13,
+    fontFamily: "Poppins_400Regular",
     textAlign: "center",
   },
   noDataText: {
     fontSize: 14,
-    color: "#999",
+    color: TEXT_MUTED,
     fontStyle: "italic",
   },
   noSlotsText: {
-    fontSize: 14,
-    color: "#999",
+    fontSize: 13,
+    color: TEXT_MUTED,
     fontStyle: "italic",
     textAlign: "center",
     padding: 10,
@@ -1616,15 +1705,24 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     backgroundColor: "#fff",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     paddingHorizontal: 20,
     paddingBottom: 30,
+    paddingTop: 8,
     maxHeight: "90%",
+  },
+  modalHandle: {
+    alignSelf: "center",
+    width: 44,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: "#E5E7EB",
+    marginBottom: 4,
   },
   modalCloseButton: {
     alignSelf: "flex-end",
-    padding: 15,
+    padding: 8,
   },
 
   // Trainer Profile Modal styles
@@ -1634,58 +1732,66 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   trainerProfileImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: FIELD_BG,
   },
   trainerProfileInfo: {
     flex: 1,
-    marginLeft: 15,
+    marginLeft: 16,
   },
   trainerProfileName: {
-    fontSize: 22,
-    fontWeight: "bold",
-    color: "#333",
+    fontSize: 21,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "800",
+    color: TEXT_DARK,
   },
   trainerProfileSport: {
-    fontSize: 16,
-    color: "#666",
+    fontSize: 14,
+    fontFamily: "Poppins_400Regular",
+    color: TEXT_MUTED,
     marginTop: 2,
   },
   trainerProfileRating: {
-    fontSize: 16,
-    color: "#666",
+    fontSize: 14,
+    color: TEXT_DARK,
     marginLeft: 5,
-    fontWeight: "bold",
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
   },
   trainerProfileExperience: {
-    fontSize: 14,
-    color: "#666",
-    marginTop: 3,
+    fontSize: 13,
+    fontFamily: "Poppins_400Regular",
+    color: TEXT_MUTED,
+    marginTop: 4,
   },
   trainerProfileSection: {
-    marginBottom: 20,
+    marginBottom: 22,
   },
   trainerProfileSectionTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#333",
+    fontSize: 16,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: TEXT_DARK,
     marginBottom: 10,
   },
   trainerProfileBio: {
-    fontSize: 15,
+    fontSize: 14,
+    fontFamily: "Poppins_400Regular",
     color: "#444",
     lineHeight: 22,
   },
   detailRow: {
     flexDirection: "row",
-    marginBottom: 12,
+    alignItems: "center",
+    marginBottom: 14,
   },
   detailIconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "rgba(244, 81, 30, 0.1)",
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: GREEN_TINT,
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12,
@@ -1694,13 +1800,16 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   detailLabel: {
-    fontSize: 14,
-    color: "#666",
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular",
+    color: TEXT_MUTED,
   },
   detailValue: {
-    fontSize: 16,
-    color: "#333",
-    fontWeight: "500",
+    fontSize: 15,
+    fontFamily: "Montserrat_500Medium",
+    color: TEXT_DARK,
+    fontWeight: "600",
+    marginTop: 1,
   },
   qualificationItem: {
     flexDirection: "row",
@@ -1713,38 +1822,42 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   bookSessionButton: {
-    backgroundColor: colors.primary,
+    backgroundColor: GREEN,
     paddingVertical: 15,
-    borderRadius: 10,
+    borderRadius: 14,
     alignItems: "center",
-    marginTop: 10,
+    marginTop: 6,
     marginBottom: 20,
   },
   bookSessionButtonText: {
     color: "#fff",
-    fontSize: 16,
-    fontWeight: "bold",
+    fontSize: 15,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
   },
 
   // Booking Modal styles
   bookingTitle: {
-    fontSize: 22,
-    fontWeight: "bold",
-    color: "#333",
-    marginTop: 5,
+    fontSize: 21,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "800",
+    color: TEXT_DARK,
+    marginTop: 4,
   },
   bookingSubtitle: {
-    fontSize: 16,
-    color: "#666",
+    fontSize: 14,
+    fontFamily: "Poppins_400Regular",
+    color: TEXT_MUTED,
     marginBottom: 20,
   },
   bookingSection: {
     marginBottom: 20,
   },
   bookingSectionTitle: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#333",
+    fontSize: 15,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: TEXT_DARK,
     marginBottom: 12,
   },
   sessionTypeRow: {
@@ -1753,16 +1866,17 @@ const styles = StyleSheet.create({
   },
   bookingSessionType: {
     width: "23%",
-    backgroundColor: "#f8f8f8",
-    borderRadius: 8,
+    backgroundColor: FIELD_BG,
+    borderRadius: 12,
     padding: 10,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#eee",
+    borderColor: BORDER,
   },
   bookingSessionTypeName: {
-    fontSize: 12,
-    color: "#333",
+    fontSize: 11,
+    fontFamily: "Poppins_400Regular",
+    color: TEXT_DARK,
     marginTop: 5,
     textAlign: "center",
   },
@@ -1773,64 +1887,68 @@ const styles = StyleSheet.create({
   },
   dateButton: {
     width: "23%",
-    backgroundColor: "#f8f8f8",
-    borderRadius: 8,
+    backgroundColor: FIELD_BG,
+    borderRadius: 12,
     padding: 10,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#eee",
+    borderColor: BORDER,
     marginBottom: 8,
   },
   dateButtonSelected: {
-    borderColor: colors.primary,
-    backgroundColor: "rgba(244, 81, 30, 0.1)",
+    borderColor: GREEN,
+    backgroundColor: GREEN_TINT,
   },
   dateButtonDay: {
     fontSize: 12,
-    color: "#333",
+    fontFamily: "Poppins_400Regular",
+    color: TEXT_MUTED,
     marginBottom: 2,
   },
   dateButtonDate: {
-    fontSize: 14,
-    fontWeight: "bold",
-    color: "#333",
+    fontSize: 13,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: TEXT_DARK,
   },
   timeSlotList: {
     paddingVertical: 5,
   },
   timeSlotButton: {
-    paddingHorizontal: 15,
+    paddingHorizontal: 16,
     paddingVertical: 10,
-    backgroundColor: "#f8f8f8",
-    borderRadius: 20,
+    backgroundColor: FIELD_BG,
+    borderRadius: 999,
     marginRight: 10,
     borderWidth: 1,
-    borderColor: "#eee",
+    borderColor: BORDER,
   },
   timeSlotUnavailable: {
-    backgroundColor: "#f0f0f0",
-    borderColor: "#ddd",
+    backgroundColor: "#F0F0F0",
+    borderColor: "#E5E7EB",
   },
   timeSlotSelected: {
-    borderColor: colors.primary,
-    backgroundColor: "rgba(244, 81, 30, 0.1)",
+    borderColor: GREEN,
+    backgroundColor: GREEN_TINT,
   },
   timeSlotText: {
-    fontSize: 14,
-    color: "#333",
+    fontSize: 13,
+    fontFamily: "Poppins_400Regular",
+    color: TEXT_DARK,
   },
   timeSlotTextUnavailable: {
-    color: "#999",
+    color: "#9CA3AF",
   },
   timeSlotTextSelected: {
-    color: colors.primary,
-    fontWeight: "bold",
+    color: GREEN_DARK,
+    fontWeight: "700",
   },
   bookingDetailRow: {
     marginBottom: 15,
   },
   bookingDetailLabel: {
-    fontSize: 15,
+    fontSize: 14,
+    fontFamily: "Poppins_400Regular",
     color: "#444",
     marginBottom: 8,
   },
@@ -1841,25 +1959,26 @@ const styles = StyleSheet.create({
   bookingDetailOption: {
     paddingHorizontal: 15,
     paddingVertical: 8,
-    backgroundColor: "#f8f8f8",
-    borderRadius: 20,
+    backgroundColor: FIELD_BG,
+    borderRadius: 999,
     marginRight: 10,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: "#eee",
+    borderColor: BORDER,
   },
   bookingDetailOptionSelected: {
-    borderColor: colors.primary,
-    backgroundColor: "rgba(244, 81, 30, 0.1)",
+    borderColor: GREEN,
+    backgroundColor: GREEN_TINT,
   },
   bookingDetailOptionText: {
-    fontSize: 14,
-    color: "#333",
+    fontSize: 13,
+    fontFamily: "Poppins_400Regular",
+    color: TEXT_DARK,
   },
   bookingSummary: {
-    backgroundColor: "#f8f8f8",
-    borderRadius: 10,
-    padding: 15,
+    backgroundColor: FIELD_BG,
+    borderRadius: 14,
+    padding: 16,
     marginTop: 10,
     marginBottom: 20,
   },
@@ -1869,85 +1988,95 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   bookingSummaryLabel: {
-    fontSize: 15,
+    fontSize: 14,
+    fontFamily: "Poppins_400Regular",
     color: "#444",
   },
   bookingSummaryValue: {
-    fontSize: 15,
-    color: "#333",
-    fontWeight: "500",
+    fontSize: 14,
+    fontFamily: "Montserrat_500Medium",
+    color: TEXT_DARK,
+    fontWeight: "600",
   },
   bookingSummaryRowTotal: {
     flexDirection: "row",
     justifyContent: "space-between",
     marginTop: 5,
-    paddingTop: 10,
+    paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: "#ddd",
+    borderTopColor: "#E5E7EB",
   },
   bookingSummaryLabelTotal: {
-    fontSize: 16,
-    color: "#333",
-    fontWeight: "bold",
+    fontSize: 15,
+    fontFamily: "Montserrat_600SemiBold",
+    color: TEXT_DARK,
+    fontWeight: "700",
   },
   bookingSummaryValueTotal: {
     fontSize: 16,
-    color: colors.primary,
-    fontWeight: "bold",
+    fontFamily: "Montserrat_600SemiBold",
+    color: GREEN,
+    fontWeight: "800",
   },
   confirmBookingButton: {
-    backgroundColor: colors.primary,
+    backgroundColor: GREEN,
     paddingVertical: 15,
-    borderRadius: 10,
+    borderRadius: 14,
     alignItems: "center",
     marginBottom: 20,
   },
   disabledButton: {
-    backgroundColor: "#ccc",
+    backgroundColor: "#CBD5E1",
   },
   confirmBookingButtonText: {
     color: "#fff",
-    fontSize: 16,
-    fontWeight: "bold",
+    fontSize: 15,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
   },
   sessionTypeIconLarge: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: "rgba(244, 81, 30, 0.1)",
+    backgroundColor: GREEN_TINT,
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 15,
   },
   sessionDetailsHeader: {
     alignItems: "center",
-    paddingVertical: 20,
+    paddingVertical: 16,
   },
   sessionDetailsTitle: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#333",
-    marginBottom: 10,
+    fontSize: 22,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "800",
+    color: TEXT_DARK,
+    marginBottom: 6,
   },
   sessionDetailsDescription: {
-    fontSize: 16,
+    fontSize: 14,
+    fontFamily: "Poppins_400Regular",
     color: "#444",
-    lineHeight: 24,
+    lineHeight: 22,
     marginBottom: 20,
     textAlign: "center",
     paddingHorizontal: 10,
   },
   sessionInfoSection: {
-    marginBottom: 25,
-    backgroundColor: "#f9f9f9",
-    padding: 15,
-    borderRadius: 10,
+    marginBottom: 22,
+    backgroundColor: "#F9FAFB",
+    padding: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: BORDER,
   },
   sessionInfoTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#333",
-    marginBottom: 15,
+    fontSize: 16,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: TEXT_DARK,
+    marginBottom: 14,
   },
   sessionInfoItem: {
     flexDirection: "row",
@@ -1955,7 +2084,8 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   sessionInfoText: {
-    fontSize: 15,
+    fontSize: 14,
+    fontFamily: "Poppins_400Regular",
     color: "#444",
     marginLeft: 10,
     flex: 1,
@@ -1963,58 +2093,62 @@ const styles = StyleSheet.create({
   },
   sessionInfoRow: {
     flexDirection: "row",
-    marginBottom: 15,
+    alignItems: "center",
+    marginBottom: 14,
   },
   sessionInfoRowIcon: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "rgba(244, 81, 30, 0.1)",
+    backgroundColor: GREEN_TINT,
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 15,
+    marginRight: 14,
   },
   sessionInfoRowContent: {
     flex: 1,
   },
   sessionInfoRowTitle: {
-    fontSize: 15,
-    fontWeight: "bold",
-    color: "#333",
+    fontSize: 14,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: TEXT_DARK,
   },
   sessionInfoRowText: {
-    fontSize: 14,
-    color: "#666",
-    marginTop: 3,
+    fontSize: 13,
+    fontFamily: "Poppins_400Regular",
+    color: TEXT_MUTED,
+    marginTop: 2,
   },
   findTrainersButton: {
-    backgroundColor: colors.primary,
+    backgroundColor: GREEN,
     paddingVertical: 15,
-    borderRadius: 10,
+    borderRadius: 14,
     alignItems: "center",
-    marginVertical: 20,
+    marginVertical: 16,
   },
   findTrainersButtonText: {
     color: "#fff",
-    fontSize: 16,
-    fontWeight: "bold",
+    fontSize: 15,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
   },
-  // Add to the existing styles object
+  // Certificate row styles
   certificateItem: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#f9f9f9",
-    borderRadius: 8,
+    backgroundColor: "#F9FAFB",
+    borderRadius: 12,
     padding: 12,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: "#eee",
+    borderColor: BORDER,
   },
   certificateIconContainer: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "rgba(244, 81, 30, 0.1)",
+    backgroundColor: GREEN_TINT,
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12,
@@ -2023,23 +2157,27 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   certificateName: {
-    fontSize: 15,
-    fontWeight: "bold",
-    color: "#333",
+    fontSize: 14,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: TEXT_DARK,
   },
   certificateIssuer: {
-    fontSize: 13,
-    color: "#666",
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular",
+    color: TEXT_MUTED,
     marginTop: 2,
   },
   certificateDate: {
-    fontSize: 12,
-    color: "#888",
+    fontSize: 11,
+    fontFamily: "Poppins_400Regular",
+    color: "#9CA3AF",
     marginTop: 2,
   },
   noCertificatesText: {
-    fontSize: 14,
-    color: "#888",
+    fontSize: 13,
+    fontFamily: "Poppins_400Regular",
+    color: TEXT_MUTED,
     fontStyle: "italic",
     textAlign: "center",
     padding: 10,

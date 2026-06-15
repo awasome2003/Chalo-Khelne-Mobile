@@ -1,910 +1,704 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
-  TextInput,
   TouchableOpacity,
-  Image,
-  Alert,
   ActivityIndicator,
-  SafeAreaView,
+  Alert,
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
-import { MaterialIcons, FontAwesome5 } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import axios from "axios";
 import API from "../../api/api";
 import { useAuth } from "../../context/AuthContext";
-import CouponInput from "../../components/CouponInput";
+
+// 31 days starting today (today + next 30).
+const DATE_RANGE_DAYS = 31;
+
+// Parse the hour portion of a free-form time string ("6:00", "06:00", "9:00 AM"...).
+const parseHour = (timeStr) => {
+  if (!timeStr) return null;
+  const s = String(timeStr).trim().toLowerCase();
+  const m = s.match(/(\d{1,2}):?(\d{0,2})\s*(am|pm)?/);
+  if (!m) return null;
+  let h = parseInt(m[1], 10);
+  const ap = m[3];
+  if (ap === "pm" && h < 12) h += 12;
+  if (ap === "am" && h === 12) h = 0;
+  if (isNaN(h)) return null;
+  return h;
+};
+
+// Convert any 24h `HH:MM` segments inside a string to 12h `HH:MM` (zero-padded).
+// The AM/PM tab toggle already conveys the period, so we drop the suffix to
+// keep the cells visually compact. e.g. "13:00 - 14:00" → "01:00 - 02:00".
+const to12h = (raw) => {
+  if (!raw || typeof raw !== "string") return raw;
+  return raw.replace(/(\d{1,2}):(\d{2})/g, (match, hStr, mStr) => {
+    let h = parseInt(hStr, 10);
+    if (isNaN(h)) return match;
+    if (h === 0) h = 12;
+    else if (h > 12) h -= 12;
+    return `${String(h).padStart(2, "0")}:${mStr}`;
+  });
+};
+
+const sameDay = (a, b) =>
+  a.getFullYear() === b.getFullYear() &&
+  a.getMonth() === b.getMonth() &&
+  a.getDate() === b.getDate();
+
+const toISODate = (d) => {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+// Fallback slot list when the availability endpoint returns nothing.
+const PREDEFINED_TIME_SLOTS = [
+  { id: "slot-6", startTime: "6:00", endTime: "7:00", timeSlot: "06:00 - 07:00", available: true, price: 500 },
+  { id: "slot-7", startTime: "7:00", endTime: "8:00", timeSlot: "07:00 - 08:00", available: true, price: 500 },
+  { id: "slot-8", startTime: "8:00", endTime: "9:00", timeSlot: "08:00 - 09:00", available: true, price: 500 },
+  { id: "slot-9", startTime: "9:00", endTime: "10:00", timeSlot: "09:00 - 10:00", available: true, price: 500 },
+  { id: "slot-10", startTime: "10:00", endTime: "11:00", timeSlot: "10:00 - 11:00", available: false, price: 500 },
+  { id: "slot-11", startTime: "11:00", endTime: "12:00", timeSlot: "11:00 - 12:00", available: true, price: 500 },
+  { id: "slot-13", startTime: "13:00", endTime: "14:00", timeSlot: "13:00 - 14:00", available: true, price: 500 },
+  { id: "slot-14", startTime: "14:00", endTime: "15:00", timeSlot: "14:00 - 15:00", available: true, price: 500 },
+  { id: "slot-15", startTime: "15:00", endTime: "16:00", timeSlot: "15:00 - 16:00", available: true, price: 500 },
+  { id: "slot-16", startTime: "16:00", endTime: "17:00", timeSlot: "16:00 - 17:00", available: true, price: 500 },
+  { id: "slot-18", startTime: "18:00", endTime: "19:00", timeSlot: "18:00 - 19:00", available: true, price: 600 },
+  { id: "slot-19", startTime: "19:00", endTime: "20:00", timeSlot: "19:00 - 20:00", available: true, price: 600 },
+  { id: "slot-20", startTime: "20:00", endTime: "21:00", timeSlot: "20:00 - 21:00", available: true, price: 600 },
+  { id: "slot-21", startTime: "21:00", endTime: "22:00", timeSlot: "21:00 - 22:00", available: true, price: 600 },
+];
+
+const COURT_ICON_BY_TYPE = (type) => {
+  const t = String(type || "").toLowerCase();
+  if (t.includes("grass") || t.includes("natural")) return "soccer-field";
+  if (t.includes("indoor") || t.includes("hall")) return "stadium";
+  if (t.includes("synthetic") || t.includes("turf")) return "soccer-field";
+  return "soccer-field";
+};
 
 const VenueBookingScreen = ({ route }) => {
-  const { turfId } = route.params;
+  const params = route.params || {};
+  const { turfId } = params;
+  const incomingDate = params.date;
+  const incomingSport = params.selectedSport;
+
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const { user, isAuthenticated } = useAuth();
+  const { user } = useAuth();
 
-  // Form states
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+  const today = useMemo(() => new Date(), []);
+  const [selectedDate, setSelectedDate] = useState(() => {
+    if (incomingDate) {
+      const d = new Date(`${incomingDate}T00:00:00`);
+      if (!isNaN(d.getTime())) return d;
+    }
+    return today;
+  });
+  const [period, setPeriod] = useState("AM");
   const [selectedTimeSlot, setSelectedTimeSlot] = useState(null);
-  const [selectedSport, setSelectedSport] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [selectedCourt, setSelectedCourt] = useState(null);
+
   const [turfDetails, setTurfDetails] = useState(null);
   const [loadingTurf, setLoadingTurf] = useState(true);
   const [availableTimeSlots, setAvailableTimeSlots] = useState([]);
-  const [availableSports, setAvailableSports] = useState([]);
-  const [termsAccepted, setTermsAccepted] = useState(false);
-  const [validationErrors, setValidationErrors] = useState({});
-  const [appliedCoupon, setAppliedCoupon] = useState(null); // { coupon_id, code, discount_amount, final_amount }
+  const [loadingSlots, setLoadingSlots] = useState(false);
 
-  // Initialize form with user data and fetch turf details
+  // ─── Fetch ───────────────────────────────────────────────────────────
   useEffect(() => {
-    if (isAuthenticated && user) {
-      setName(user.fullName || user.name || "");
-      setEmail(user.email || "");
-      setPhone(user.phone || user.phoneNumber || "");
-    }
     fetchTurfDetails();
-  }, [user, isAuthenticated, turfId]);
+  }, [turfId]);
 
-  // Effect to fetch available time slots when date or turf changes
   useEffect(() => {
-    if (turfId && date) {
-      fetchAvailability();
-    }
-  }, [turfId, date]);
+    if (turfId && selectedDate) fetchAvailability();
+  }, [turfId, selectedDate, incomingSport]);
 
-  // Fetch turf details
   const fetchTurfDetails = async () => {
+    setLoadingTurf(true);
     try {
-      setLoadingTurf(true);
-      const response = await fetch(API.ENDPOINTS.TURFS.BY_ID(turfId));
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status}`);
-      }
-
-      const data = await response.json();
+      const res = await fetch(API.ENDPOINTS.TURFS.BY_ID(turfId));
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
       setTurfDetails(data);
-
-      // Set initial selected sport if available
-      if (data.sports && data.sports.length > 0) {
-        setSelectedSport(data.sports[0]);
-        setAvailableSports(data.sports);
+      // Auto-pick first court when the turf has any configured.
+      if (Array.isArray(data.courts) && data.courts.length > 0) {
+        setSelectedCourt(data.courts[0]);
       }
-    } catch (error) {
-      console.error("Error fetching turf details:", error);
-      Alert.alert("Error", "Failed to load venue details. Please try again.");
+    } catch (err) {
+      console.error("Error fetching turf details:", err);
+      Alert.alert("Error", "Failed to load venue details.");
     } finally {
       setLoadingTurf(false);
     }
   };
 
-  // Fetch availability for selected date
   const fetchAvailability = async () => {
+    setLoadingSlots(true);
     try {
-      const sportParam = selectedSport
-        ? `&sportName=${selectedSport.name}`
-        : "";
-      const response = await axios.get(
-        `${API.ENDPOINTS.TURF_BOOKINGS.AVAILABILITY(
-          turfId
-        )}?date=${date}${sportParam}`
+      const sport = incomingSport;
+      const sportParam =
+        sport && (sport.name || sport)
+          ? `&sportName=${encodeURIComponent(sport.name || sport)}`
+          : "";
+      const dateStr = toISODate(selectedDate);
+      const res = await axios.get(
+        `${API.ENDPOINTS.TURF_BOOKINGS.AVAILABILITY(turfId)}?date=${dateStr}${sportParam}`
       );
-
       if (
-        response.data.success &&
-        response.data.timeSlots &&
-        response.data.timeSlots.length > 0
+        res.data?.success &&
+        Array.isArray(res.data.timeSlots) &&
+        res.data.timeSlots.length > 0
       ) {
-        setAvailableTimeSlots(response.data.timeSlots);
+        setAvailableTimeSlots(res.data.timeSlots);
       } else {
-        setAvailableTimeSlots(predefinedTimeSlots);
+        setAvailableTimeSlots(PREDEFINED_TIME_SLOTS);
       }
-
-      // Still update sports from API if available
-      if (
-        response.data.success &&
-        response.data.sports &&
-        response.data.sports.length > 0
-      ) {
-        setAvailableSports(response.data.sports);
-
-        // If no sport is selected yet, select the first one
-        if (!selectedSport) {
-          setSelectedSport(response.data.sports[0]);
-        }
-      }
-    } catch (error) {
-      console.error("Error fetching availability:", error);
-
-      setAvailableTimeSlots(predefinedTimeSlots);
-
-      if (
-        !selectedSport &&
-        turfDetails?.sports &&
-        turfDetails.sports.length > 0
-      ) {
-        setSelectedSport(turfDetails.sports[0]);
-      }
+    } catch (err) {
+      console.error("Error fetching availability:", err);
+      setAvailableTimeSlots(PREDEFINED_TIME_SLOTS);
+    } finally {
+      setLoadingSlots(false);
+      setSelectedTimeSlot(null);
     }
   };
 
-  // Fallback time slots in case the API call fails
-  const predefinedTimeSlots = [
-    {
-      id: "slot-6",
-      startTime: "6:00",
-      endTime: "7:00",
-      timeSlot: "6:00 - 7:00",
-      available: true,
-      price: 500,
-    },
-    {
-      id: "slot-7",
-      startTime: "7:00",
-      endTime: "8:00",
-      timeSlot: "7:00 - 8:00",
-      available: true,
-      price: 500,
-    },
-    {
-      id: "slot-8",
-      startTime: "8:00",
-      endTime: "9:00",
-      timeSlot: "8:00 - 9:00",
-      available: true,
-      price: 500,
-    },
-    {
-      id: "slot-9",
-      startTime: "9:00",
-      endTime: "10:00",
-      timeSlot: "9:00 - 10:00",
-      available: true,
-      price: 500,
-    },
-    {
-      id: "slot-10",
-      startTime: "10:00",
-      endTime: "11:00",
-      timeSlot: "10:00 - 11:00",
-      available: true,
-      price: 500,
-    },
-    {
-      id: "slot-11",
-      startTime: "11:00",
-      endTime: "12:00",
-      timeSlot: "11:00 - 12:00",
-      available: true,
-      price: 500,
-    },
-    {
-      id: "slot-12",
-      startTime: "12:00",
-      endTime: "13:00",
-      timeSlot: "12:00 - 13:00",
-      available: true,
-      price: 500,
-    },
-    {
-      id: "slot-13",
-      startTime: "13:00",
-      endTime: "14:00",
-      timeSlot: "13:00 - 14:00",
-      available: false,
-      price: 500,
-    },
-    {
-      id: "slot-14",
-      startTime: "14:00",
-      endTime: "15:00",
-      timeSlot: "14:00 - 15:00",
-      available: true,
-      price: 500,
-    },
-    {
-      id: "slot-15",
-      startTime: "15:00",
-      endTime: "16:00",
-      timeSlot: "15:00 - 16:00",
-      available: true,
-      price: 500,
-    },
-    {
-      id: "slot-16",
-      startTime: "16:00",
-      endTime: "17:00",
-      timeSlot: "16:00 - 17:00",
-      available: true,
-      price: 500,
-    },
-    {
-      id: "slot-17",
-      startTime: "17:00",
-      endTime: "18:00",
-      timeSlot: "17:00 - 18:00",
-      available: false,
-      price: 500,
-    },
-    {
-      id: "slot-18",
-      startTime: "18:00",
-      endTime: "19:00",
-      timeSlot: "18:00 - 19:00",
-      available: true,
-      price: 600,
-    },
-    {
-      id: "slot-19",
-      startTime: "19:00",
-      endTime: "20:00",
-      timeSlot: "19:00 - 20:00",
-      available: true,
-      price: 600,
-    },
-    {
-      id: "slot-20",
-      startTime: "20:00",
-      endTime: "21:00",
-      timeSlot: "20:00 - 21:00",
-      available: true,
-      price: 600,
-    },
-    {
-      id: "slot-21",
-      startTime: "21:00",
-      endTime: "22:00",
-      timeSlot: "21:00 - 22:00",
-      available: true,
-      price: 600,
-    },
-  ];
-
-  // Handle date selection
-  const handleDateChange = (newDate) => {
-    setDate(newDate);
-    setSelectedTimeSlot(null); // Reset time slot selection when date changes
-  };
-
-  // Handle sport selection
-  const handleSportChange = (sport) => {
-    setSelectedSport(sport);
-    fetchAvailability(); // Refresh availability for the new sport
-  };
-
-  // Form validation
-  const validateForm = () => {
-    const errors = {};
-
-    if (!name.trim()) errors.name = "Name is required";
-    if (!email.trim()) errors.email = "Email is required";
-    if (!phone.trim()) errors.phone = "Phone number is required";
-    if (!/^\d{10}$/.test(phone.trim())) {
-      errors.phone = "Phone number must be exactly 10 digits";
+  // ─── Derived ─────────────────────────────────────────────────────────
+  const dateRange = useMemo(() => {
+    const base = new Date(today);
+    base.setHours(0, 0, 0, 0);
+    const arr = [];
+    for (let i = 0; i < DATE_RANGE_DAYS; i++) {
+      const d = new Date(base);
+      d.setDate(base.getDate() + i);
+      arr.push(d);
     }
+    return arr;
+  }, [today]);
 
-    if (!date) errors.date = "Date is required";
-    if (!selectedTimeSlot) errors.timeSlot = "Please select a time slot";
-    if (!selectedSport) errors.sport = "Please select a sport";
+  const monthLabel = useMemo(() => {
+    return selectedDate.toLocaleDateString("en-US", {
+      month: "long",
+      year: "numeric",
+    });
+  }, [selectedDate]);
 
-    if (!termsAccepted) {
-      errors.terms = "You must accept the terms and conditions";
-    }
+  const slotsForPeriod = useMemo(() => {
+    return (availableTimeSlots || []).filter((slot) => {
+      const h = parseHour(slot.startTime);
+      if (h === null) return true; // be lenient with unparseable times
+      return period === "AM" ? h < 12 : h >= 12;
+    });
+  }, [availableTimeSlots, period]);
 
-    setValidationErrors(errors);
-    return Object.keys(errors).length === 0;
-  };
+  const courts = Array.isArray(turfDetails?.courts) ? turfDetails.courts : [];
+  const turfName = turfDetails?.name ? `${turfDetails.name} Turf` : "Book Turf";
 
-  // Handle booking submission
-  const handleBooking = async () => {
-    if (!validateForm()) {
+  const canProceed =
+    !!selectedTimeSlot && (courts.length === 0 || !!selectedCourt);
+
+  // ─── Actions ─────────────────────────────────────────────────────────
+  const handleViewCart = () => {
+    if (!user) {
+      Alert.alert("Login Required", "Please login to continue.");
       return;
     }
+    if (!canProceed) return;
 
-    try {
-      setLoading(true);
-
-      // Create booking data
-      const bookingData = {
-        userId: user?.id || user?._id,
-        userName: name,
-        userEmail: email,
-        userPhone: phone,
-        turfId: turfId,
-        turfName: turfDetails?.name,
-        sportName: selectedSport.name,
-        date: date,
-        timeSlot: selectedTimeSlot.timeSlot,
-        amount: selectedSport.pricePerHour || selectedTimeSlot.price,
-        paymentMethod: "cash",
-      };
-
-      // Call API to create booking
-      const response = await axios.post(
-        API.ENDPOINTS.TURF_BOOKINGS.CREATE,
-        bookingData
-      );
-
-      // Check if booking was successful
-      if (response.data && response.data.success) {
-        // Extract booking details from response
-        const bookingId = response.data.booking?._id;
-
-        // Navigate to confirmation screen
-        navigation.navigate("TurfConfirmation", {
-          bookingId,
-          userId: user?.id || user?._id,
-          turfId: turfId,
-          turfName: turfDetails?.name || "Turf",
-          type: selectedSport.name,
-          date: date,
-          time: selectedTimeSlot.timeSlot,
-          venue: turfDetails?.address
-            ? `${turfDetails.address.area}, ${turfDetails.address.city}`
-            : "Venue address not available",
-          amount: selectedSport.pricePerHour || selectedTimeSlot.price,
-          status: "Confirmed",
-          name,
-          email,
-          phone,
-          paymentMethod: "cash",
-        });
-      } else {
-        throw new Error(
-          response.data?.message || "Booking failed. Please try again."
-        );
-      }
-    } catch (error) {
-      console.error("Booking error:", error);
-      Alert.alert(
-        "Booking Failed",
-        error.response?.data?.message ||
-          error.message ||
-          "Failed to complete booking. Please try again."
-      );
-    } finally {
-      setLoading(false);
-    }
+    navigation.navigate("TurfBookingPreview", {
+      turfId,
+      turfName: turfDetails?.name,
+      turfAddress: turfDetails?.address
+        ? `${turfDetails.address.area || ""}${
+            turfDetails.address.city ? ", " + turfDetails.address.city : ""
+          }`.trim()
+        : "",
+      date: toISODate(selectedDate),
+      selectedSlot: selectedTimeSlot,
+      selectedCourt: selectedCourt,
+      selectedSport: incomingSport || turfDetails?.sports?.[0] || null,
+    });
   };
 
-  // Render loading state
+  // ─── Render ──────────────────────────────────────────────────────────
   if (loadingTurf) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#FF6A00" />
+        <ActivityIndicator size="large" color="#15A765" />
         <Text style={styles.loadingText}>Loading venue details...</Text>
       </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["top"]}>
       {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <MaterialIcons name="arrow-back" size={24} color="#333" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Book Turf</Text>
-        <View style={{ width: 24 }} />
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={styles.backBtn}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="chevron-back" size={22} color="#1A181B" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>{turfName}</Text>
+        </View>
+        <View style={styles.slotInfo}>
+          <Ionicons name="information-circle-outline" size={14} color="#FF8D28" />
+          <Text style={styles.slotInfoText}>Each slot is 60 min.</Text>
+        </View>
       </View>
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-      <ScrollView style={styles.formContainer} contentContainerStyle={{ paddingBottom: 40 }}>
-        {/* Turf Info */}
-        <View style={styles.turfInfoCard}>
-          <Text style={styles.turfName}>{turfDetails?.name}</Text>
-          <Text style={styles.turfAddress}>
-            {turfDetails?.address
-              ? `${turfDetails.address.area}, ${turfDetails.address.city}`
-              : "Address not available"}
-          </Text>
-        </View>
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: 120, paddingHorizontal: 16 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={styles.pageTitle}>Select Slot</Text>
 
-        {/* Contact Information */}
-        <View style={styles.formSection}>
-          <Text style={styles.sectionTitle}>Contact Information</Text>
+        {/* Month label */}
+        <Text style={styles.monthLabel}>{monthLabel}</Text>
 
-          <View style={styles.inputWrapper}>
-            <Text style={styles.inputLabel}>Full Name</Text>
-            <TextInput
-              style={[
-                styles.input,
-                validationErrors.name ? styles.inputError : null,
-              ]}
-              placeholder="Enter your full name"
-              value={name}
-              onChangeText={setName}
-              placeholderTextColor="#aaa"
-            />
-            {validationErrors.name && (
-              <Text style={styles.errorText}>{validationErrors.name}</Text>
-            )}
-          </View>
-
-          <View style={styles.inputWrapper}>
-            <Text style={styles.inputLabel}>Email</Text>
-            <TextInput
-              style={[
-                styles.input,
-                validationErrors.email ? styles.inputError : null,
-              ]}
-              placeholder="Enter your email"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              value={email}
-              onChangeText={setEmail}
-              placeholderTextColor="#aaa"
-            />
-            {validationErrors.email && (
-              <Text style={styles.errorText}>{validationErrors.email}</Text>
-            )}
-          </View>
-
-          <View style={styles.inputWrapper}>
-            <Text style={styles.inputLabel}>Phone Number</Text>
-            <TextInput
-              style={[
-                styles.input,
-                validationErrors.phone ? styles.inputError : null,
-              ]}
-              placeholder="Enter your phone number"
-              keyboardType="phone-pad"
-              value={phone}
-              onChangeText={setPhone}
-              placeholderTextColor="#aaa"
-            />
-            {validationErrors.phone && (
-              <Text style={styles.errorText}>{validationErrors.phone}</Text>
-            )}
-          </View>
-        </View>
-
-        {/* Booking Details */}
-        <View style={styles.formSection}>
-          <Text style={styles.sectionTitle}>Booking Details</Text>
-
-          {/* Date Selection */}
-          <View style={styles.inputWrapper}>
-            <Text style={styles.inputLabel}>Date</Text>
-            {/* Simple date input - you can enhance this with a date picker */}
-            <TextInput
-              style={[
-                styles.input,
-                validationErrors.date ? styles.inputError : null,
-              ]}
-              placeholder="YYYY-MM-DD"
-              value={date}
-              onChangeText={handleDateChange}
-              placeholderTextColor="#aaa"
-            />
-            {validationErrors.date && (
-              <Text style={styles.errorText}>{validationErrors.date}</Text>
-            )}
-          </View>
-
-          {/* Sport Selection */}
-          {availableSports.length > 0 && (
-            <View style={styles.inputWrapper}>
-              <Text style={styles.inputLabel}>Select Sport</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={styles.sportOptionsContainer}>
-                  {availableSports.map((sport, index) => (
-                    <TouchableOpacity
-                      key={index}
-                      style={[
-                        styles.sportOption,
-                        selectedSport?.name === sport.name &&
-                          styles.selectedSportOption,
-                      ]}
-                      onPress={() => handleSportChange(sport)}
-                    >
-                      <Text
-                        style={[
-                          styles.sportOptionText,
-                          selectedSport?.name === sport.name &&
-                            styles.selectedSportOptionText,
-                        ]}
-                      >
-                        {sport.name}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.sportPriceText,
-                          selectedSport?.name === sport.name &&
-                            styles.selectedSportOptionText,
-                        ]}
-                      >
-                        ₹{sport.pricePerHour}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </ScrollView>
-              {validationErrors.sport && (
-                <Text style={styles.errorText}>{validationErrors.sport}</Text>
-              )}
-            </View>
-          )}
-
-          {/* Time Slot Selection */}
-          <View style={styles.inputWrapper}>
-            <Text style={styles.inputLabel}>Select Time Slot</Text>
-            {availableTimeSlots.length > 0 ? (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={styles.timeSlotContainer}
+        {/* Horizontal date scroller */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.dateRow}
+          style={{ marginBottom: 24 }}
+        >
+          {dateRange.map((d) => {
+            const isSelected = sameDay(d, selectedDate);
+            const isToday = sameDay(d, today);
+            const dayName = d
+              .toLocaleDateString("en-US", { weekday: "short" })
+              .toUpperCase();
+            return (
+              <View
+                key={d.toISOString()}
+                style={{ alignItems: "center", marginRight: 10 }}
               >
-                <View style={styles.timeSlotWrap}>
-                  {availableTimeSlots.map((slot, index) => (
-                    <TouchableOpacity
-                      key={index}
-                      style={[
-                        styles.timeSlotButton,
-                        selectedTimeSlot?.id === slot.id &&
-                          styles.selectedTimeSlot,
-                        !slot.available && styles.disabledTimeSlot,
-                      ]}
-                      onPress={() =>
-                        slot.available && setSelectedTimeSlot(slot)
-                      }
-                      disabled={!slot.available}
-                    >
-                      <Text
-                        style={[
-                          styles.timeSlotText,
-                          selectedTimeSlot?.id === slot.id &&
-                            styles.selectedTimeSlotText,
-                          !slot.available && styles.disabledTimeSlotText,
-                        ]}
-                      >
-                        {slot.timeSlot}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </ScrollView>
-            ) : (
-              <Text style={styles.noSlotsText}>
-                No time slots available for this date
-              </Text>
-            )}
-            {validationErrors.timeSlot && (
-              <Text style={styles.errorText}>{validationErrors.timeSlot}</Text>
-            )}
-          </View>
-        </View>
-
-        {/* Payment Information */}
-        <View style={styles.formSection}>
-          <Text style={styles.sectionTitle}>Payment Information</Text>
-          <View style={styles.paymentCard}>
-            <View style={styles.paymentRow}>
-              <Text style={styles.paymentLabel}>Hourly Rate:</Text>
-              <Text style={styles.paymentValue}>
-                ₹{selectedSport ? selectedSport.pricePerHour : "N/A"}
-              </Text>
-            </View>
-            <View style={styles.paymentRow}>
-              <Text style={styles.paymentLabel}>Payment Method:</Text>
-              <Text style={styles.paymentValue}>Cash (Pay at Venue)</Text>
-            </View>
-            <View style={styles.paymentInfoBox}>
-              <MaterialIcons name="info" size={20} color="#0047AB" />
-              <Text style={styles.paymentInfoText}>
-                Please bring the exact amount in cash when you arrive at the
-                venue.
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Coupon Code */}
-        {selectedSport && (
-          <View style={styles.formSection}>
-            <CouponInput
-              totalAmount={selectedSport.pricePerHour || 0}
-              applicableType="facility"
-              applicableId={turfId}
-              userId={user?._id || user?.id}
-              onApply={(couponData) => setAppliedCoupon(couponData)}
-              onRemove={() => setAppliedCoupon(null)}
-            />
-            {appliedCoupon && (
-              <View style={{ backgroundColor: "#ECFDF5", borderRadius: 10, padding: 10, marginTop: 4 }}>
-                <Text style={{ fontSize: 13, color: "#065F46", fontWeight: "600" }}>
-                  Final Amount: ₹{appliedCoupon.final_amount} (saved ₹{appliedCoupon.discount_amount})
-                </Text>
+                <TouchableOpacity
+                  style={[
+                    styles.dateCard,
+                    isSelected && styles.dateCardSelected,
+                  ]}
+                  onPress={() => setSelectedDate(new Date(d))}
+                  activeOpacity={0.85}
+                >
+                  <Text
+                    style={[
+                      styles.dateDay,
+                      isSelected && styles.dateDaySelected,
+                    ]}
+                  >
+                    {dayName}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.dateNum,
+                      isSelected && styles.dateNumSelected,
+                    ]}
+                  >
+                    {String(d.getDate()).padStart(2, "0")}
+                  </Text>
+                </TouchableOpacity>
+                {isToday && <Text style={styles.todayLabel}>Today</Text>}
               </View>
-            )}
+            );
+          })}
+        </ScrollView>
+
+        {/* Time header + AM/PM toggle */}
+        <View style={styles.timeHeaderRow}>
+          <Text style={styles.sectionTitle}>Time</Text>
+          <View style={styles.periodToggle}>
+            <TouchableOpacity
+              style={[
+                styles.periodBtn,
+                period === "AM" && styles.periodBtnActive,
+              ]}
+              onPress={() => setPeriod("AM")}
+              activeOpacity={0.85}
+            >
+              <Text
+                style={[
+                  styles.periodText,
+                  period === "AM" && styles.periodTextActive,
+                ]}
+              >
+                AM
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.periodBtn,
+                period === "PM" && styles.periodBtnActive,
+              ]}
+              onPress={() => setPeriod("PM")}
+              activeOpacity={0.85}
+            >
+              <Text
+                style={[
+                  styles.periodText,
+                  period === "PM" && styles.periodTextActive,
+                ]}
+              >
+                PM
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Time slot grid */}
+        {loadingSlots ? (
+          <View style={{ padding: 24, alignItems: "center" }}>
+            <ActivityIndicator size="small" color="#15A765" />
+          </View>
+        ) : slotsForPeriod.length > 0 ? (
+          <View style={styles.slotGrid}>
+            {slotsForPeriod.map((slot) => {
+              const isSelected = selectedTimeSlot?.id === slot.id;
+              const isDisabled = slot.available === false;
+              return (
+                <TouchableOpacity
+                  key={slot.id}
+                  style={[
+                    styles.slotBtn,
+                    isSelected && styles.slotBtnSelected,
+                    isDisabled && styles.slotBtnDisabled,
+                  ]}
+                  disabled={isDisabled}
+                  onPress={() => setSelectedTimeSlot(slot)}
+                  activeOpacity={0.85}
+                >
+                  <Text
+                    style={[
+                      styles.slotText,
+                      isSelected && styles.slotTextSelected,
+                      isDisabled && styles.slotTextDisabled,
+                    ]}
+                  >
+                    {to12h(slot.timeSlot)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        ) : (
+          <View style={styles.emptySlots}>
+            <Text style={styles.emptySlotsText}>
+              No slots available for this {period} window.
+            </Text>
           </View>
         )}
 
-        {/* Terms and Conditions */}
-        <TouchableOpacity
-          style={styles.termsRow}
-          onPress={() => setTermsAccepted(!termsAccepted)}
-        >
-          <MaterialIcons
-            name={termsAccepted ? "check-box" : "check-box-outline-blank"}
-            size={24}
-            color={termsAccepted ? "#FF6A00" : "#666"}
-          />
-          <Text style={styles.termsText}>
-            I agree to the venue's terms and conditions
-          </Text>
-        </TouchableOpacity>
-
-        {validationErrors.terms && (
-          <Text style={[styles.errorText, { textAlign: "center" }]}>
-            {validationErrors.terms}
-          </Text>
+        {/* Select Court */}
+        {courts.length > 0 && (
+          <View style={{ marginTop: 24 }}>
+            <Text style={styles.sectionTitle}>Select Court</Text>
+            <View style={styles.courtRow}>
+              {courts.map((court, i) => {
+                const isSelected = selectedCourt?.name === court.name;
+                return (
+                  <TouchableOpacity
+                    key={`${court.name}-${i}`}
+                    style={[
+                      styles.courtCard,
+                      isSelected && styles.courtCardSelected,
+                    ]}
+                    onPress={() => setSelectedCourt(court)}
+                    activeOpacity={0.85}
+                  >
+                    <MaterialCommunityIcons
+                      name={COURT_ICON_BY_TYPE(court.type || court.name)}
+                      size={24}
+                      color="#15A765"
+                    />
+                    <Text style={styles.courtLabel}>{court.name}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
         )}
-
-        {/* Book Now Button */}
-        <TouchableOpacity
-          style={styles.bookButton}
-          onPress={handleBooking}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <Text style={styles.bookButtonText}>Book Now</Text>
-          )}
-        </TouchableOpacity>
       </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Bottom sticky CTA */}
+      <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 12 }]}>
+        <TouchableOpacity
+          style={[
+            styles.cartBtn,
+            !canProceed && styles.cartBtnDisabled,
+          ]}
+          onPress={handleViewCart}
+          disabled={!canProceed}
+          activeOpacity={0.85}
+        >
+          <View style={styles.cartLeft}>
+            <Ionicons name="cart-outline" size={18} color="#fff" />
+            <Text style={styles.cartLeftText}>
+              {selectedTimeSlot ? "1 Slot added" : "Select a slot"}
+            </Text>
+          </View>
+          <View style={styles.cartRight}>
+            <Text style={styles.cartRightText}>View Cart</Text>
+            <Ionicons name="chevron-forward" size={18} color="#fff" />
+          </View>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  container: { flex: 1, backgroundColor: "#FFFFFF" },
+
+  loadingContainer: {
     flex: 1,
-    backgroundColor: "#f5f7fa",
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
   },
+  loadingText: { marginTop: 10, color: "#666", fontSize: 14 },
+
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingBottom: 12,
-    backgroundColor: "#fff",
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
   },
+  headerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    gap: 8,
+  },
+  backBtn: { width: 28, height: 28, justifyContent: "center" },
   headerTitle: {
     fontSize: 18,
-    fontWeight: "600",
-    color: "#333",
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: "#1A181B",
+    flexShrink: 1,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
+  slotInfo: {
+    flexDirection: "row",
     alignItems: "center",
+    gap: 4,
   },
-  loadingText: {
-    marginTop: 10,
-    color: "#666",
+  slotInfoText: {
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular",
+    color: "#FF8D28",
   },
-  formContainer: {
-    flex: 1,
-  },
-  turfInfoCard: {
-    margin: 16,
-    padding: 16,
-    backgroundColor: "#fff",
-    borderRadius: 8,
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  turfName: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 4,
-  },
-  turfAddress: {
-    fontSize: 14,
-    color: "#666",
-    marginBottom: 8,
-  },
-  formSection: {
-    margin: 16,
-    marginTop: 0,
-    padding: 16,
-    backgroundColor: "#fff",
-    borderRadius: 8,
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
+
+  pageTitle: {
+    fontSize: 24,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: "#1A181B",
+    marginTop: 4,
     marginBottom: 12,
   },
-  inputWrapper: {
-    marginBottom: 16,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: "#333",
-    marginBottom: 6,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 15,
-    backgroundColor: "#f9f9f9",
-    color: "#333",
-  },
-  inputError: {
-    borderColor: "#f44336",
-  },
-  errorText: {
-    color: "#f44336",
-    fontSize: 12,
-    marginTop: 4,
-  },
-  sportOptionsContainer: {
-    flexDirection: "row",
-    marginVertical: 8,
-  },
-  sportOption: {
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    backgroundColor: "#f5f5f5",
-    marginRight: 10,
-    minWidth: 80,
-    alignItems: "center",
-  },
-  selectedSportOption: {
-    backgroundColor: "#FF6A00",
-    borderColor: "#FF6A00",
-  },
-  sportOptionText: {
-    fontSize: 14,
-    color: "#333",
-    fontWeight: "500",
-  },
-  sportPriceText: {
-    fontSize: 12,
-    color: "#666",
-    marginTop: 2,
-  },
-  selectedSportOptionText: {
-    color: "#fff",
-  },
-  timeSlotContainer: {
-    marginTop: 8,
-    marginBottom: 8,
-  },
-  timeSlotWrap: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-  },
-  timeSlotButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    marginRight: 8,
-    marginBottom: 8,
-    backgroundColor: "#f5f5f5",
-  },
-  selectedTimeSlot: {
-    backgroundColor: "#FF6A00",
-    borderColor: "#FF6A00",
-  },
-  disabledTimeSlot: {
-    backgroundColor: "#f0f0f0",
-    borderColor: "#e0e0e0",
-    opacity: 0.5,
-  },
-  timeSlotText: {
+  monthLabel: {
     fontSize: 13,
-    color: "#444",
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "500",
+    color: "#645E66",
+    marginBottom: 10,
   },
-  selectedTimeSlotText: {
-    color: "#fff",
-  },
-  disabledTimeSlotText: {
-    color: "#999",
-  },
-  noSlotsText: {
-    color: "#f57c00",
-    fontStyle: "italic",
-    marginTop: 8,
-    fontSize: 13,
-  },
-  paymentCard: {
-    marginTop: 8,
-    paddingHorizontal: 10,
+
+  // Date scroller
+  dateRow: { paddingRight: 8 },
+  dateCard: {
+    width: 60,
     paddingVertical: 12,
-    backgroundColor: "#f9f9f9",
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#eee",
+    borderColor: "#EEF1FA",
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    gap: 4,
   },
-  paymentRow: {
+  dateCardSelected: {
+    backgroundColor: "#15A765",
+    borderColor: "#15A765",
+  },
+  dateDay: {
+    fontSize: 11,
+    fontFamily: "Poppins_400Regular",
+    color: "#645E66",
+  },
+  dateDaySelected: { color: "#FFFFFF" },
+  dateNum: {
+    fontSize: 20,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: "#1A181B",
+  },
+  dateNumSelected: { color: "#FFFFFF" },
+  todayLabel: {
+    marginTop: 4,
+    fontSize: 11,
+    fontFamily: "Poppins_400Regular",
+    color: "#645E66",
+  },
+
+  // Time header
+  timeHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 8,
+    alignItems: "center",
+    marginBottom: 12,
   },
-  paymentLabel: {
-    fontSize: 14,
-    color: "#555",
+  sectionTitle: {
+    fontSize: 18,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: "#1A181B",
   },
-  paymentValue: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: "#333",
-  },
-  paymentInfoBox: {
+  periodToggle: {
     flexDirection: "row",
-    alignItems: "flex-start",
-    marginTop: 8,
-    padding: 10,
-    backgroundColor: "#e3f2fd",
+    backgroundColor: "#F4F4F5",
+    borderRadius: 10,
+    padding: 4,
+    gap: 4,
+  },
+  periodBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 6,
     borderRadius: 8,
   },
-  paymentInfoText: {
-    flex: 1,
+  periodBtnActive: { backgroundColor: "#15A765" },
+  periodText: {
     fontSize: 13,
-    color: "#0047AB",
-    marginLeft: 10,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "600",
+    color: "#1A181B",
   },
-  termsRow: {
+  periodTextActive: { color: "#FFFFFF" },
+
+  // Slot grid (3-column wrap)
+  slotGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    rowGap: 10,
+  },
+  slotBtn: {
+    width: "31.5%",
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#EEF1FA",
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+  },
+  slotBtnSelected: {
+    borderColor: "#15A765",
+    borderWidth: 1.5,
+    backgroundColor: "#FFFFFF",
+  },
+  slotBtnDisabled: {
+    backgroundColor: "#F4F4F5",
+    borderColor: "#F4F4F5",
+  },
+  slotText: {
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular",
+    fontWeight: "500",
+    color: "#1A181B",
+  },
+  slotTextSelected: { color: "#15A765", fontWeight: "700" },
+  slotTextDisabled: { color: "#999" },
+
+  emptySlots: { paddingVertical: 24, alignItems: "center" },
+  emptySlotsText: {
+    fontSize: 13,
+    fontFamily: "Poppins_400Regular",
+    color: "#666666",
+  },
+
+  // Courts
+  courtRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 12,
+  },
+  courtCard: {
+    flex: 1,
+    paddingVertical: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#EEF1FA",
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    gap: 6,
+  },
+  courtCardSelected: {
+    backgroundColor: "#E8F7F0",
+    borderColor: "#15A765",
+  },
+  courtLabel: {
+    fontSize: 13,
+    fontFamily: "Poppins_400Regular",
+    color: "#1A181B",
+    textAlign: "center",
+  },
+
+  // Bottom bar
+  bottomBar: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: "#F0F0F0",
+  },
+  cartBtn: {
+    backgroundColor: "#15A765",
+    borderRadius: 16,
     flexDirection: "row",
     alignItems: "center",
-    marginHorizontal: 16,
-    marginVertical: 16,
-  },
-  termsText: {
-    fontSize: 14,
-    color: "#444",
-    marginLeft: 8,
-    flex: 1,
-  },
-  bookButton: {
-    backgroundColor: "#FF6A00",
-    borderRadius: 8,
+    justifyContent: "space-between",
+    paddingHorizontal: 18,
     paddingVertical: 14,
-    marginHorizontal: 16,
-    marginBottom: 24,
-    alignItems: "center",
-    justifyContent: "center",
   },
-  bookButtonText: {
-    color: "#fff",
-    fontSize: 16,
+  cartBtnDisabled: {
+    backgroundColor: "#A4D9BD",
+  },
+  cartLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
+  cartLeftText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "600",
+  },
+  cartRight: { flexDirection: "row", alignItems: "center", gap: 4 },
+  cartRightText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontFamily: "Montserrat_500Medium",
     fontWeight: "600",
   },
 });

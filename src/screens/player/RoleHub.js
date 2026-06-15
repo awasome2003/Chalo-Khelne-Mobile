@@ -122,7 +122,40 @@ const RoleHub = () => {
     const existing = activeRoles[role.key];
 
     if (existing) {
-      // Already have this profile — navigate to view/edit
+      // Referee with active profile → show action menu (assignments / browse jobs / edit)
+      if (role.key === "referee") {
+        Alert.alert(
+          `${role.title}`,
+          "What would you like to do?",
+          [
+            {
+              text: "My Assignments",
+              onPress: () => navigation.navigate("RefereeAssignments"),
+            },
+            {
+              text: "Browse Officiating Jobs",
+              onPress: () =>
+                navigation.navigate("BrowseTournamentJobs", {
+                  roleFilter: "referee",
+                }),
+            },
+            {
+              text: "Edit Profile",
+              onPress: () =>
+                navigation.navigate("ServiceProfileSetup", {
+                  roleKey: role.key,
+                  roleTitle: role.title,
+                  isEdit: true,
+                  profileData: existing.data,
+                }),
+            },
+            { text: "Cancel", style: "cancel" },
+          ]
+        );
+        return;
+      }
+
+      // Other active roles — navigate straight to edit
       navigation.navigate("ServiceProfileSetup", {
         roleKey: role.key,
         roleTitle: role.title,

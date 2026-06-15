@@ -12,6 +12,7 @@ import {
   Alert,
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import tournamentConfig from "../../api/tournaments";
 
 const TeamKnockouts = ({ route }) => {
@@ -207,11 +208,15 @@ const TeamKnockouts = ({ route }) => {
           onPress: async () => {
             setRrGenerating(true);
             try {
+              const token = await AsyncStorage.getItem("auth_token");
               const res = await fetch(
                 `${tournamentConfig.BASE_URL}/tournaments/team-knockout/round-robin/generate`,
                 {
                   method: "POST",
-                  headers: { "Content-Type": "application/json" },
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                  },
                   body: JSON.stringify({
                     tournamentId,
                     scheduleDetails: {

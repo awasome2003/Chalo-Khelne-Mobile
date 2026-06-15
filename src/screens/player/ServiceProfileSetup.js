@@ -124,12 +124,14 @@ const ServiceProfileSetup = () => {
       if (roleKey === "trainer") {
         endpoint = `${API.BASE_URL}/trainer/profile/${userId}`;
         payload = { ...basePayload, fees: { perSession: parseInt(form.rateAmount) || 0 } };
-        if (!isEdit) await axios.get(endpoint); // auto-creates if new
+        // Opt-in auto-create when setting up for the first time. Backend ignores the flag for existing profiles.
+        if (!isEdit) await axios.get(`${endpoint}?createIfMissing=true`);
         await axios.put(endpoint, payload);
       } else if (roleKey === "referee") {
         endpoint = `${API.BASE_URL}/referee/profile/${userId}`;
         payload = { ...basePayload, certificationLevel: form.certificationLevel || "Level 1" };
-        if (!isEdit) await axios.get(endpoint); // auto-creates if new
+        // Opt-in auto-create when setting up for the first time. Backend ignores the flag for existing profiles.
+        if (!isEdit) await axios.get(`${endpoint}?createIfMissing=true`);
         await axios.put(endpoint, payload);
       } else {
         Alert.alert("Coming Soon", `${roleTitle} profile setup will be available soon.`);

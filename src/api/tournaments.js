@@ -128,6 +128,11 @@ const ENDPOINTS = {
     CREATE: `${BASE_URL}/tournaments/matches`,
     NEXT_ROUND: `${BASE_URL}/tournaments/generate-next-round`,
     BYE_MATCHES: `${BASE_URL}/tournaments/generate-bye-matches`,
+    // Round-Robin phase (precedes the knockout bracket for Davis Cup style flows).
+    // Server stores RR matches in TeamKnockoutMatches with round=0; this endpoint
+    // returns the per-team points table computed from those completed matches.
+    ROUND_ROBIN_STANDINGS: (tournamentId) =>
+      `${BASE_URL}/tournaments/team-knockout/round-robin/standings/${tournamentId}`,
     BY_TOURNAMENT: (tournamentId) =>
       `${BASE_URL}/tournaments/${tournamentId}/matches-by-tournament`,
     BY_ROUND: `${BASE_URL}/tournaments/matches-by-round`,
@@ -226,6 +231,7 @@ const ENDPOINTS = {
     // Match Scores
     MATCH_SCORES: (matchId) => `${BASE_URL}/tournaments/matches/${matchId}/scores`,
     LIVE_STATE: (matchId) => `${BASE_URL}/tournaments/matches/${matchId}/live-state`,
+    COMPLETE_GAME: (matchId) => `${BASE_URL}/tournaments/matches/${matchId}/complete-game`,
 
     // Bulk Score Sync
     BULK_SYNC: (tournamentId) => `${BASE_URL}/tournaments/${tournamentId}/bulk-sync-scores`

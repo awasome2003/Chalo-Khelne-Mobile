@@ -1,4 +1,5 @@
 import axios from "axios";
+import tokenStore from "./tokenStore";
 import PlayerPaymentAPI from "../api/PlayerPayment"; // config file we made for routes
 
 // Create axios instance (recommended)
@@ -7,6 +8,18 @@ const axiosInstance = axios.create({
     headers: {
         "Content-Type": "application/json",
     },
+});
+
+// This is a separate axios instance, so it does NOT inherit the app's global
+// Authorization default — attach the token explicitly (Phase 3, app-wide coverage).
+axiosInstance.interceptors.request.use(async (config) => {
+    try {
+        const token = await tokenStore.getToken();
+        if (token) config.headers.Authorization = `Bearer ${token}`;
+    } catch (e) {
+        // ignore — request proceeds unauthenticated and the server will 401
+    }
+    return config;
 });
 
 // ✅ Upload payment proof (Player uploads screenshot)

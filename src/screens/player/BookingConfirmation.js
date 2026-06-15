@@ -37,6 +37,12 @@ const BookingConfirmation = ({ route, navigation }) => {
     phone = null,
     team = null,
     selectedCategories = [],
+    // STEP 12c — Multi-sport: forward-looking shape from BookingScreen.
+    // sportSelections is the authoritative per-sport breakdown; totalFee
+    // is the backend-computed authoritative total. Both fall back to the
+    // fetched bookingData when route.params doesn't carry them.
+    sportSelections = [],
+    totalFee = null,
     paymentMethod = "cash",
   } = route.params || {};
 
@@ -187,6 +193,11 @@ const BookingConfirmation = ({ route, navigation }) => {
             paymentMethod: bookingData.paymentMethod || paymentMethod || "cash",
             status: bookingData.status || status || "Confirmed",
             selectedCategories: bookingData.selectedCategories || selectedCategories || [],
+            // STEP 12c — Multi-sport additions. sportSelections falls back to
+            // route.params and then to []; totalFee falls back to paymentAmount
+            // for legacy bookings that don't carry totalFee.
+            sportSelections: bookingData.sportSelections || sportSelections || [],
+            totalFee: (bookingData.totalFee != null ? bookingData.totalFee : (totalFee != null ? totalFee : bookingData.paymentAmount || 0)),
             paymentDate: new Date().toLocaleDateString(),
             paymentTime: new Date().toLocaleTimeString(),
             venuePaymentStatus: bookingData.paymentStatus || "pending",
@@ -431,27 +442,69 @@ const BookingConfirmation = ({ route, navigation }) => {
             </View>
           </View>
 
-          {/* Selected Categories Section - Only show if categories exist */}
-          {bookingDetails?.selectedCategories && bookingDetails.selectedCategories.length > 0 && (
-            <>
-              <View style={styles.receiptDivider} />
+          {/* Sports & Categories Section — STEP 17b.iii: sportSelections is
+              the only shape after STEP 16. Legacy selectedCategories
+              fallback removed. */}
+          {(() => {
+            const ss = bookingDetails?.sportSelections || [];
+            if (ss.length === 0) return null;
 
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Selected Categories</Text>
-
-                {bookingDetails.selectedCategories.map((category, index) => {
-                  const categoryName = category.name || category.title || category.categoryName || category._id;
-                  return (
-                    <View key={`category-${index}`} style={styles.detailRow}>
-                      <MaterialIcons name="sports" size={20} color="#FF6A00" />
-                      <Text style={styles.detailLabel}>Category {index + 1}:</Text>
-                      <Text style={styles.detailValue}>{categoryName}</Text>
+            // Group by sportName. Preserve insertion order via Map.
+            const groups = new Map();
+            for (const entry of ss) {
+              const key = entry.sportName || "Sport";
+              if (!groups.has(key)) groups.set(key, []);
+              groups.get(key).push(entry);
+            }
+            // Authoritative total — from backend (per STEP 12c approval
+            // note). Falls back to paymentAmount for older bookings.
+            const total = bookingDetails.totalFee != null
+              ? bookingDetails.totalFee
+              : (bookingDetails.amount || 0);
+            return (
+                <>
+                  <View style={styles.receiptDivider} />
+                  <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>Sports & Categories</Text>
+                    {[...groups.entries()].map(([sportName, entries], gi) => (
+                      <View key={`sport-${gi}`} style={{ marginBottom: 12 }}>
+                        <View style={[styles.detailRow, { marginBottom: 4 }]}>
+                          <MaterialIcons name="sports" size={20} color="#FF6A00" />
+                          <Text style={[styles.detailLabel, { fontWeight: '700', color: '#263238' }]}>
+                            {sportName}
+                          </Text>
+                          <Text style={[styles.detailValue, { color: '#90A4AE', fontSize: 12 }]}>
+                            {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
+                          </Text>
+                        </View>
+                        {entries.map((entry, ei) => {
+                          const fee = Number(entry.fee || 0);
+                          return (
+                            <View
+                              key={`sport-${gi}-cat-${ei}`}
+                              style={[styles.detailRow, { paddingLeft: 28 }]}
+                            >
+                              <Text style={[styles.detailLabel, { flex: 1 }]}>
+                                • {entry.categoryName || 'Category'}
+                              </Text>
+                              <Text style={[styles.detailValue, fee === 0 && { color: '#90A4AE' }]}>
+                                {fee === 0 ? 'Free' : `₹${fee}`}
+                              </Text>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    ))}
+                    <View style={[styles.detailRow, { borderTopWidth: 1, borderTopColor: '#ECEFF1', paddingTop: 8, marginTop: 4 }]}>
+                      <Text style={[styles.detailLabel, { fontWeight: '700' }]}>Total</Text>
+                      <Text style={[styles.detailValue, { fontWeight: '700', color: '#FF6A00' }]}>
+                        ₹{total} · {ss.length} {ss.length === 1 ? 'entry' : 'entries'}
+                      </Text>
                     </View>
-                  );
-                })}
-              </View>
-            </>
-          )}
+                  </View>
+                </>
+              );
+          })()}
 
           {/* Team Section - Only show if team exists */}
           {bookingDetails?.team && (

@@ -13,6 +13,7 @@ import {
 import MaterialIcons from "react-native-vector-icons/MaterialIcons";
 import { useNavigation } from "@react-navigation/native";
 import { useAuth } from "../../context/AuthContext";
+import { getSportName } from "../../utils/sportTrack";
 import TournamentConfig from "../../api/tournaments";
 import API from "../../api/api";
 import axios from "axios";
@@ -65,7 +66,7 @@ const MyEventScreen = () => {
           const formattedEvent = {
             id: booking._id,
             name: tournament.title || booking.tournamentName,
-            type: tournament.sportsType || booking.tournamentType,
+            type: getSportName(tournament) || booking.tournamentType,
             date: tournament.startDate || "TBA",
             price: `₹ ${booking.paymentAmount}/-`,
             startTime: tournament.selectedTime?.startTime || "TBA",

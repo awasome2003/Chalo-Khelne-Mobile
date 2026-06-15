@@ -20,6 +20,8 @@ const ENDPOINTS = {
   // Comments
   ADD_COMMENT: (postId) => `${BASE_URL}/posts/${postId}/comments`,
   GET_COMMENTS: (postId) => `${BASE_URL}/posts/${postId}/comments`,
+  DELETE_COMMENT: (postId, commentId) =>
+    `${BASE_URL}/posts/${postId}/comments/${commentId}`,
 
   // Post filtering
   BY_USER: (userId) => `${BASE_URL}/posts/${userId}`,

@@ -5,6 +5,7 @@ import { useOnboarding } from "../context/OnboardingContext";
 import PlayerNavigator from "./PlayerNavigator";
 import ViewerNavigator from "./ViewerNavigator";
 import OnboardingNavigator from "./OnboardingNavigator";
+import TrainerStaffNavigator from "./TrainerStaffNavigator";
 import axios from "axios";
 import config from "../api/api";
 import { getDeviceId } from "../utils/deviceId";
@@ -28,8 +29,13 @@ const AppNavigator = () => {
         setHasCompletedOnboarding(response.data.hasCompleted);
       } catch (error) {
         console.error("Error checking onboarding status:", error);
-        // If error, assume onboarding not completed to be safe
-        setHasCompletedOnboarding(false);
+        // Fail-open: assume onboarding IS completed when the network call
+        // fails or times out. A returning user briefly losing connectivity
+        // (subway, plane, dead WiFi, server hiccup) should not be re-shown
+        // the onboarding flow — that's a worse experience than a brand-new
+        // user accidentally skipping the welcome screens, which they can
+        // still reach manually if the app exposes it.
+        setHasCompletedOnboarding(true);
       } finally {
         setCheckingOnboarding(false);
       }
@@ -60,6 +66,11 @@ const AppNavigator = () => {
 
   // If user is authenticated, route to appropriate navigator based on role
   if (isAuthenticated && user) {
+    // Club-staff trainers / coaches are Manager accounts — route them to their
+    // own experience instead of the player navigator (which expects a User).
+    if (user.role === "Manager" && (user.staffRole === "trainer" || user.staffRole === "coach")) {
+      return <TrainerStaffNavigator />;
+    }
     switch (user.role) {
       case "Player":
         return <PlayerNavigator />;

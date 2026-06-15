@@ -18,6 +18,7 @@ import {
 import { MaterialIcons, FontAwesome5, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { useAuth } from "../../context/AuthContext";
+import { getSportName, getTournamentType } from "../../utils/sportTrack";
 import axios from "axios";
 import apiConfig from "../../api/api";
 import { LinearGradient } from 'expo-linear-gradient';
@@ -27,7 +28,28 @@ import { getSportPlayMode } from '../../utils/bookingFieldConfig';
 const { width } = Dimensions.get('window');
 
 const BookingScreen = ({ route }) => {
-  const { tournament, selectedCategory, employeeId: passedEmployeeId } = route.params;
+  // STEP 12b — Multi-sport: route.params now also carries sportSelections.
+  // selectedCategory is the existing legacy shape (used by the review UI
+  // here); sportSelections is the new authoritative shape for the API.
+  const {
+    tournament,
+    selectedCategory,
+    sportSelections: sportSelectionsParam,
+    employeeId: passedEmployeeId,
+  } = route.params;
+  // When sportSelections wasn't sent (legacy entry points), derive from
+  // selectedCategory so the API submit always has a consistent shape.
+  const sportSelections = Array.isArray(sportSelectionsParam) && sportSelectionsParam.length > 0
+    ? sportSelectionsParam
+    : (Array.isArray(selectedCategory) ? selectedCategory.map((c) => ({
+        sportId: c.sportId || null,
+        // STEP 17b.iii — read sport name from per-sport track. rawData
+        // contains the full tournament doc with sports[]; root sportsType
+        // fallback removed.
+        sportName: c.sportName || getSportName(tournament?.rawData) || getSportName(tournament) || null,
+        categoryName: c.name,
+        fee: Number(c.fee || 0),
+      })) : []);
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { user, isAuthenticated } = useAuth();
@@ -59,9 +81,9 @@ const BookingScreen = ({ route }) => {
 
   const scrollViewRef = useRef(null);
 
-  // Tournament type detection
-  const tournamentRawType = tournament.rawData?.type || tournament.rawData?.sportsType;
-  const tournamentType = tournamentRawType || tournament.type || "Tournament";
+  // Tournament type detection — STEP 17b.iii: per-sport.
+  const tournamentRawType = getTournamentType(tournament.rawData) || getSportName(tournament.rawData);
+  const tournamentType = tournamentRawType || getTournamentType(tournament) || "Tournament";
 
   // Sport-aware team detection
   const isTeamSport = playMode.isTeam;
@@ -272,6 +294,17 @@ const BookingScreen = ({ route }) => {
   const handleBookingSubmission = async () => {
     setLoading(true);
     try {
+      // STEP 12b — Multi-sport: derive the proper legacy `selectedCategories`
+      // API shape (with `price` field, not `fee`) from sportSelections so the
+      // backend's STEP 9c dual-write logic computes totalFee correctly. Send
+      // sportSelections alongside as the new authoritative shape.
+      const apiSelectedCategories = sportSelections.map((s) => ({
+        id: null,
+        name: s.categoryName,
+        price: Number(s.fee || 0),
+        gender: null,
+        ageCategory: null,
+      }));
       const bookingData = {
         userId: user?.id || user?._id,
         tournamentId: tournament.id || tournament._id,
@@ -281,7 +314,8 @@ const BookingScreen = ({ route }) => {
         userPhone: phone,
         tournamentName: tournament.name,
         tournamentType: tournamentType,
-        selectedCategories: selectedCategory,
+        selectedCategories: apiSelectedCategories,
+        sportSelections,
         paymentAmount: totalFee,
         paymentMethod: "cash",
         employeeId: passedEmployeeId || null,

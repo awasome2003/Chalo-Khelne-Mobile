@@ -1,8 +1,109 @@
 import React, { createContext, useState, useEffect, useContext, useCallback } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import axios from "axios";
 import AUTH from "../api/auth";
 import NotificationService from "../services/NotificationService";
 import { setTokenExpiredHandler } from "../services/apiClient";
+import tokenStore from "../services/tokenStore";
+
+// ── Global axios auth (Phase 3) ──
+// Attaches the token to EVERY bare-axios call app-wide (legacy + new screens)
+// and auto-logs-out on 401 — without per-screen changes. The 401 interceptor
+// re-rejects the ORIGINAL error so callers' `err.response.data.message` still works.
+let _globalLogout = null;
+let _globalAxiosAttached = false;
+const setAuthHeader = (token) => {
+  if (token) axios.defaults.headers.common.Authorization = `Bearer ${token}`;
+  else delete axios.defaults.headers.common.Authorization;
+};
+
+// ── Refresh-token flow (Phase 8.1) ──
+// On a 401, transparently exchange the refresh token for a new access token and
+// retry the original request. Concurrent 401s queue behind a SINGLE in-flight
+// refresh; only when the refresh itself fails do we log out.
+let _isRefreshing = false;
+let _refreshQueue = [];
+const _flushQueue = (err, token) => {
+  _refreshQueue.forEach((p) => (err ? p.reject(err) : p.resolve(token)));
+  _refreshQueue = [];
+};
+// Uses fetch (NOT axios) so it never re-enters the axios interceptor → no loop.
+const _performRefresh = async () => {
+  const refreshToken = await tokenStore.getRefreshToken();
+  if (!refreshToken) throw new Error("no_refresh_token");
+  const res = await fetch(AUTH.ENDPOINTS.REFRESH, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refreshToken }),
+  });
+  if (!res.ok) throw new Error("refresh_failed");
+  const data = await res.json();
+  if (!data.token) throw new Error("refresh_failed");
+  await tokenStore.setToken(data.token);
+  if (data.refreshToken) await tokenStore.setRefreshToken(data.refreshToken);
+  setAuthHeader(data.token);
+  return data.token;
+};
+
+const attachGlobalAxios = () => {
+  if (_globalAxiosAttached) return;
+  _globalAxiosAttached = true;
+  // Request: enforce the live in-memory token on every bare-axios call. This
+  // overrides any stale per-call header a screen may set (e.g. a screen still
+  // reading the old AsyncStorage key now returns null → "Bearer null"); the
+  // real token (kept in SecureStore, mirrored to the axios default) wins.
+  axios.interceptors.request.use((config) => {
+    const def = axios.defaults.headers.common.Authorization;
+    if (def) {
+      config.headers = config.headers || {};
+      config.headers.Authorization = def;
+    }
+    return config;
+  });
+  // Response: on 401, refresh-then-retry; logout only if the refresh fails.
+  axios.interceptors.response.use(
+    (r) => r,
+    async (error) => {
+      const original = error.config;
+      const status = error?.response?.status;
+      if (status !== 401 || !original || original._retry) {
+        return Promise.reject(error);
+      }
+      // Never attempt to refresh the auth endpoints themselves (avoid loops).
+      const url = original.url || "";
+      if (url.includes("/auth/refresh") || url.includes("/login") || url.includes("/google-login")) {
+        if (_globalLogout) _globalLogout();
+        return Promise.reject(error);
+      }
+      if (_isRefreshing) {
+        // Queue behind the in-flight refresh, then retry with the new token.
+        return new Promise((resolve, reject) => _refreshQueue.push({ resolve, reject })).then(
+          (token) => {
+            original._retry = true;
+            original.headers = original.headers || {};
+            original.headers.Authorization = `Bearer ${token}`;
+            return axios(original);
+          }
+        );
+      }
+      original._retry = true;
+      _isRefreshing = true;
+      try {
+        const newToken = await _performRefresh();
+        _flushQueue(null, newToken);
+        original.headers = original.headers || {};
+        original.headers.Authorization = `Bearer ${newToken}`;
+        return axios(original);
+      } catch (refreshErr) {
+        _flushQueue(refreshErr, null);
+        if (_globalLogout) _globalLogout();
+        return Promise.reject(error);
+      } finally {
+        _isRefreshing = false;
+      }
+    }
+  );
+};
 
 // ... (Storage object remains same)
 const USER_KEY = "auth_user";
@@ -33,10 +134,10 @@ export const useAuth = () => {
 
 // Helper functions for storage operations
 const Storage = {
-  // Token operations
+  // Token operations — backed by SecureStore via tokenStore (Phase 3b)
   async storeToken(token) {
     try {
-      await AsyncStorage.setItem("auth_token", token);
+      await tokenStore.setToken(token);
     } catch (error) {
       console.error("Error storing token", error);
     }
@@ -44,7 +145,7 @@ const Storage = {
 
   async getToken() {
     try {
-      return await AsyncStorage.getItem("auth_token");
+      return await tokenStore.getToken();
     } catch (error) {
       console.error("Error getting token", error);
       return null;
@@ -73,7 +174,8 @@ const Storage = {
   // Clear storage
   async clear() {
     try {
-      await AsyncStorage.removeItem("auth_token");
+      await tokenStore.clearToken();
+      await tokenStore.clearRefreshToken();
       await AsyncStorage.removeItem(USER_KEY);
     } catch (error) {
       console.error("Error clearing storage", error);
@@ -94,23 +196,29 @@ export const AuthProvider = ({ children }) => {
       try {
         setIsInitializing(true);
         setLoading(true);
-        const storedToken = await Storage.getToken();
+        let storedToken = await Storage.getToken();
         const storedUser = await Storage.getUser();
 
         if (storedToken && storedUser) {
-          // Check if token is expired before using it
+          // If the (1h) access token is expired, try to refresh it before
+          // giving up — only log out if there's no valid refresh token.
           try {
             const parts = storedToken.split(".");
             if (parts.length === 3) {
               const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
               if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
-                console.log("[AUTH] Stored token expired, clearing...");
-                await Storage.clear();
-                setUser(null);
-                setToken(null);
-                setIsInitializing(false);
-                setLoading(false);
-                return;
+                try {
+                  storedToken = await _performRefresh();
+                  console.log("[AUTH] Access token refreshed on startup");
+                } catch (refreshErr) {
+                  console.log("[AUTH] Access expired and refresh failed, clearing...");
+                  await Storage.clear();
+                  setUser(null);
+                  setToken(null);
+                  setIsInitializing(false);
+                  setLoading(false);
+                  return;
+                }
               }
             }
           } catch {}
@@ -305,6 +413,7 @@ export const AuthProvider = ({ children }) => {
       }
 
       await Storage.storeToken(data.token);
+      if (data.refreshToken) await tokenStore.setRefreshToken(data.refreshToken);
       await Storage.storeUser(data.user);
       setUser(data.user);
       setToken(data.token);
@@ -348,6 +457,7 @@ export const AuthProvider = ({ children }) => {
       }
 
       await Storage.storeToken(responseData.token);
+      if (responseData.refreshToken) await tokenStore.setRefreshToken(responseData.refreshToken);
       await Storage.storeUser(responseData.user);
 
       setUser(responseData.user);
@@ -380,6 +490,19 @@ export const AuthProvider = ({ children }) => {
   const logout = useCallback(async () => {
     setLoading(true);
     try {
+      // Best-effort server-side revoke of the refresh token (kill-switch).
+      try {
+        const rt = await tokenStore.getRefreshToken();
+        if (rt) {
+          await fetch(AUTH.ENDPOINTS.LOGOUT, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ refreshToken: rt }),
+          });
+        }
+      } catch (revokeErr) {
+        // Ignore — the local clear below still logs the user out.
+      }
       await Storage.clear();
       setUser(null);
       setToken(null);
@@ -390,13 +513,21 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
-  // Register global token expiry handler for apiClient
+  // Register global token expiry handler for apiClient + the global bare-axios interceptor
   useEffect(() => {
     setTokenExpiredHandler(() => {
       console.log("[AUTH] Token expired — auto logout triggered");
       logout();
     });
+    _globalLogout = logout;
+    attachGlobalAxios();
   }, [logout]);
+
+  // Keep the global axios Authorization header in sync with auth state, so every
+  // bare-axios call across the app carries the token (and it clears on logout).
+  useEffect(() => {
+    setAuthHeader(token);
+  }, [token]);
 
   // Update profile (works for all user types)
   const updateProfile = async (userId, profileData, profileType = "user") => {

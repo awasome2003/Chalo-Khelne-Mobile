@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -7,16 +7,80 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
-  SafeAreaView,
+  Image,
+  Linking,
+  Share,
 } from "react-native";
-import { MaterialIcons, FontAwesome5 } from "@expo/vector-icons";
-import { useFocusEffect } from "@react-navigation/native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import axios from "axios";
 import API from "../../api/api";
 
-const VenueBookingConfirmation = ({ route, navigation }) => {
+const SUPPORT_PHONE = "+91 98765 43210";
+
+// ─── Helpers ────────────────────────────────────────────────────────────
+
+const formatDateFull = (raw) => {
+  if (!raw) return "";
+  const d = raw instanceof Date ? raw : new Date(raw);
+  if (isNaN(d.getTime())) return String(raw);
+  return d.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+};
+
+// "07:00 - 08:00" / "7:00 - 8:00" → "7:00 AM - 8:00 AM" (or PM)
+const formatTimeRange = (timeSlot) => {
+  if (!timeSlot) return "";
+  const matches = timeSlot.match(/(\d{1,2}):(\d{2})/g);
+  if (!matches || matches.length === 0) return timeSlot;
+  const fmt = (t) => {
+    const [hStr, mStr] = t.split(":");
+    let h = parseInt(hStr, 10);
+    if (isNaN(h)) return t;
+    const ap = h >= 12 ? "PM" : "AM";
+    if (h === 0) h = 12;
+    else if (h > 12) h -= 12;
+    return `${h}:${mStr} ${ap}`;
+  };
+  if (matches.length === 1) return fmt(matches[0]);
+  return `${fmt(matches[0])} - ${fmt(matches[1])}`;
+};
+
+const paymentMethodLabel = (method, provider) => {
+  const m = String(method || "").toLowerCase();
+  const p = String(provider || "").toLowerCase();
+  if (m === "cash") return "Cash on Delivery";
+  if (m === "online") {
+    if (p === "upi") return "UPI";
+    if (p === "card") return "Card";
+    if (p === "wallet") return "Wallet";
+    return "Online";
+  }
+  if (m === "free") return "Free";
+  if (m === "waived") return "Waived";
+  if (!method) return "—";
+  return method.charAt(0).toUpperCase() + method.slice(1);
+};
+
+const statusColors = (status) => {
+  const s = String(status || "").toLowerCase();
+  if (s.includes("confirm")) return { bg: "#E8F7F0", text: "#15A765" };
+  if (s.includes("cancel")) return { bg: "#FFEBEE", text: "#C62828" };
+  if (s.includes("pending")) return { bg: "#FFF8E1", text: "#F57C00" };
+  return { bg: "#F4F4F5", text: "#666666" };
+};
+
+const VenueBookingConfirmation = ({ route }) => {
+  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+
   const {
     bookingId = null,
     turfName = null,
@@ -30,88 +94,41 @@ const VenueBookingConfirmation = ({ route, navigation }) => {
     email = null,
     phone = null,
     paymentMethod = "cash",
+    paymentProvider = "",
   } = route.params || {};
 
   const [loading, setLoading] = useState(true);
   const [booking, setBooking] = useState(null);
   const [error, setError] = useState(null);
 
-  // Check if booking is in the future
-  const isBookingFuture = () => {
-    if (!booking) return false;
-
-    // Parse booking date and time
-    const bookingDateStr = booking.date;
-    const bookingTimeStr = booking.timeSlot;
-
-    if (!bookingDateStr || !bookingTimeStr) return false;
-
-    // Create a date object for the booking date and time
-    let bookingDateTime;
-    try {
-      // Extract time part from the time slot (handles "7:00 PM - 8:00 PM" or "18:00 - 19:00")
-      let hours, minutes;
-      const ampmMatch = bookingTimeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
-      const h24Match = bookingTimeStr.match(/(\d+):(\d+)/);
-
-      if (ampmMatch) {
-        hours = parseInt(ampmMatch[1]);
-        minutes = parseInt(ampmMatch[2]);
-        const period = ampmMatch[3];
-        if (period.toUpperCase() === "PM" && hours < 12) hours += 12;
-        else if (period.toUpperCase() === "AM" && hours === 12) hours = 0;
-      } else if (h24Match) {
-        hours = parseInt(h24Match[1]);
-        minutes = parseInt(h24Match[2]);
-      } else {
-        return false;
-      }
-
-      // Parse the date
-      const bookingDate = new Date(bookingDateStr);
-
-      // Set the time
-      bookingDate.setHours(hours, minutes, 0, 0);
-      bookingDateTime = bookingDate;
-    } catch (error) {
-      console.error("Error parsing booking date/time:", error);
-      return false;
-    }
-
-    // Compare with current date and time
-    const now = new Date();
-    return bookingDateTime > now;
-  };
-
-  // Generate a booking reference number
-  const bookingRef = bookingId && typeof bookingId === "string" && bookingId.length >= 8
-    ? bookingId.substring(0, 8).toUpperCase()
-    : `TRF-${Math.floor(Math.random() * 10000)
-        .toString()
-        .padStart(4, "0")}`;
+  // Short uppercased booking reference (first 8 chars of the id).
+  const bookingRef =
+    bookingId && typeof bookingId === "string" && bookingId.length >= 8
+      ? bookingId.substring(0, 8).toUpperCase()
+      : `TRF-${Math.floor(Math.random() * 10000)
+          .toString()
+          .padStart(4, "0")}`;
 
   useFocusEffect(
-    React.useCallback(() => {
-      // If we have a bookingId, fetch the booking details
+    useCallback(() => {
       if (bookingId) {
         fetchBookingDetails();
       } else {
-        // Otherwise use the params passed in the route
-        const bookingData = {
+        setBooking({
           id: bookingRef,
-          turfName: turfName,
+          turfName,
           sportName: type,
-          date: date,
+          date,
           timeSlot: time,
-          venue: venue,
-          amount: amount,
-          status: status,
-          name: name,
-          email: email,
-          phone: phone,
-          paymentMethod: paymentMethod,
-        };
-        setBooking(bookingData);
+          venue,
+          amount,
+          status,
+          name,
+          email,
+          phone,
+          paymentMethod,
+          paymentProvider,
+        });
         setLoading(false);
       }
     }, [bookingId])
@@ -123,61 +140,88 @@ const VenueBookingConfirmation = ({ route, navigation }) => {
       const response = await axios.get(
         API.ENDPOINTS.TURF_BOOKINGS.BY_ID(bookingId)
       );
-
       if (response.data && response.data.success) {
-        const bookingData = response.data.booking;
-
-        // Format the booking data for display
+        const b = response.data.booking;
         setBooking({
-          id: bookingData._id,
-          turfName: bookingData.turfName,
-          sportName: bookingData.sport?.name || "Not specified",
-          date: new Date(bookingData.date).toLocaleDateString(),
-          timeSlot: bookingData.timeSlot,
-          venue: bookingData.turfId?.address
-            ? `${bookingData.turfId.address.area}, ${bookingData.turfId.address.city}`
+          id: b._id,
+          turfName: b.turfName,
+          sportName: b.sport?.name || type || "Not specified",
+          date: b.date,
+          timeSlot: b.timeSlot,
+          venue: b.turfId?.address
+            ? `${b.turfId.address.area}, ${b.turfId.address.city}`
             : venue || "Venue not specified",
-          amount: bookingData.amount,
-          status: bookingData.status,
-          name: bookingData.userName,
-          email: bookingData.userEmail,
-          phone: bookingData.userPhone,
-          paymentMethod: bookingData.paymentMethod,
-          paymentStatus: bookingData.paymentStatus,
+          amount: b.amount,
+          status: b.status,
+          name: b.userName,
+          email: b.userEmail,
+          phone: b.userPhone,
+          paymentMethod: b.paymentMethod,
+          paymentProvider: b.paymentProvider,
+          paymentStatus: b.paymentStatus,
         });
       } else {
-        // If API request was successful but booking wasn't found
         throw new Error("Booking not found");
       }
-    } catch (error) {
-      console.error("Error fetching booking details:", error);
-
-      setError(
-        "Failed to load booking details. Using provided information instead."
-      );
-
-      // Fall back to route params
-      const bookingData = {
+    } catch (err) {
+      console.error("Error fetching booking details:", err);
+      setError("Failed to load booking details. Using provided information.");
+      setBooking({
         id: bookingRef,
-        turfName: turfName,
+        turfName,
         sportName: type,
-        date: date,
+        date,
         timeSlot: time,
-        venue: venue,
-        amount: amount,
-        status: status,
-        name: name,
-        email: email,
-        phone: phone,
-        paymentMethod: paymentMethod,
-      };
-      setBooking(bookingData);
+        venue,
+        amount,
+        status,
+        name,
+        email,
+        phone,
+        paymentMethod,
+        paymentProvider,
+      });
     } finally {
       setLoading(false);
     }
   };
 
-  // Handle booking cancellation
+  // ─── Actions ─────────────────────────────────────────────────────────
+  const handleBack = () => {
+    // Back lands the user on the turf listing (PlayerVenue). It's registered
+    // under "TurfList" in HomeStack and "Play" in PlayStack — pick whichever
+    // exists in the current navigator's state.
+    const state = navigation.getState();
+    const inHomeStack = state?.routes?.some((r) => r.name === "TurfList");
+    navigation.navigate(inHomeStack ? "TurfList" : "Play");
+  };
+
+  const handleShare = async () => {
+    try {
+      const message = `Booking confirmed at ${booking?.turfName || "the venue"} on ${formatDateFull(
+        booking?.date
+      )}, ${formatTimeRange(booking?.timeSlot)}. Ref: ${bookingRef}`;
+      await Share.share({ message });
+    } catch (e) {
+      console.error("Share failed:", e);
+    }
+  };
+
+  const handleCallSupport = () => {
+    const tel = SUPPORT_PHONE.replace(/[\s-]/g, "");
+    Linking.openURL(`tel:${tel}`).catch((e) =>
+      console.error("Open dialer failed:", e)
+    );
+  };
+
+  const handleChatSupport = () => {
+    navigation.navigate("Chat", { screen: "ChatList" });
+  };
+
+  const handleViewBookingList = () => {
+    navigation.navigate("MyBookings");
+  };
+
   const handleCancelBooking = () => {
     Alert.alert(
       "Cancel Booking",
@@ -190,31 +234,27 @@ const VenueBookingConfirmation = ({ route, navigation }) => {
           onPress: async () => {
             try {
               setLoading(true);
-              const response = await axios.post(
+              const res = await axios.post(
                 API.ENDPOINTS.TURF_BOOKINGS.CANCEL,
-                {
-                  bookingId: bookingId,
-                  reason: "Cancelled by user",
-                }
+                { bookingId, reason: "Cancelled by user" }
               );
-
-              if (response.data && response.data.success) {
+              if (res.data && res.data.success) {
                 Alert.alert(
                   "Booking Cancelled",
                   "Your booking has been successfully cancelled.",
-                  [{ text: "OK", onPress: () => navigation.navigate("Events") }]
+                  [{ text: "OK", onPress: handleBack }]
                 );
               } else {
                 throw new Error(
-                  response.data?.message || "Failed to cancel booking"
+                  res.data?.message || "Failed to cancel booking"
                 );
               }
-            } catch (error) {
-              console.error("Error cancelling booking:", error);
+            } catch (err) {
+              console.error("Error cancelling booking:", err);
               Alert.alert(
                 "Error",
-                error.response?.data?.message ||
-                  error.message ||
+                err.response?.data?.message ||
+                  err.message ||
                   "Failed to cancel booking"
               );
             } finally {
@@ -226,411 +266,451 @@ const VenueBookingConfirmation = ({ route, navigation }) => {
     );
   };
 
+  // ─── Render ──────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#FF6A00" />
-        <Text style={styles.loadingText}>Loading booking details...</Text>
+      <SafeAreaView style={s.loadingContainer} edges={["top"]}>
+        <ActivityIndicator size="large" color="#15A765" />
+        <Text style={s.loadingText}>Loading booking details...</Text>
       </SafeAreaView>
     );
   }
 
+  const pillColors = statusColors(booking?.status);
+  const canCancel =
+    String(booking?.status || "").toLowerCase() !== "cancelled" && bookingId;
+
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={s.container} edges={["top"]}>
       {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
+      <View style={s.header}>
         <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => navigation.goBack()}
+          style={s.headerBack}
+          onPress={handleBack}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <MaterialIcons name="arrow-back" size={24} color="#333" />
+          <Ionicons name="chevron-back" size={22} color="#1A181B" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Booking Confirmation</Text>
-        <View style={{ width: 24 }} />
+        <Text style={s.headerTitle}>Booking Confirmation</Text>
       </View>
 
-      <ScrollView style={styles.scrollContainer} contentContainerStyle={{ paddingBottom: 100 }}>
+      <ScrollView
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}
+        showsVerticalScrollIndicator={false}
+      >
         {error && (
-          <View style={styles.errorBanner}>
-            <MaterialIcons name="info" size={20} color="#fff" />
-            <Text style={styles.errorText}>{error}</Text>
+          <View style={s.errorBanner}>
+            <Ionicons name="information-circle" size={16} color="#fff" />
+            <Text style={s.errorText}>{error}</Text>
           </View>
         )}
 
-        {/* Success Icon */}
-        <View style={styles.successContainer}>
-          <View style={styles.iconCircle}>
-            <MaterialIcons name="check" size={60} color="#fff" />
+        {/* Success hero */}
+        <View style={s.successWrap}>
+          <View style={s.checkCircle}>
+            <Ionicons name="checkmark" size={42} color="#FFFFFF" />
           </View>
-          <Text style={styles.successTitle}>Booking Confirmed!</Text>
-          <Text style={styles.successMessage}>
-            Your turf booking has been successfully confirmed.
+          <Text style={s.successTitle}>Booking Confirmed</Text>
+          <Text style={s.successSubtitle}>
+            Your turf booking has been successfully confirmed enjoy!
           </Text>
-          <Text style={styles.bookingRef}>Booking Reference: {bookingRef}</Text>
         </View>
 
-        {/* Venue Details */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Venue Details</Text>
-
-          <View style={styles.detailRow}>
-            <MaterialIcons name="sports-tennis" size={20} color="#FF6A00" />
-            <Text style={styles.detailLabel}>Venue:</Text>
-            <Text style={styles.detailValue}>{booking?.turfName || "N/A"}</Text>
-          </View>
-
-          <View style={styles.detailRow}>
-            <MaterialIcons name="place" size={20} color="#FF6A00" />
-            <Text style={styles.detailLabel}>Address:</Text>
-            <Text style={styles.detailValue}>{booking?.venue || "N/A"}</Text>
-          </View>
-
-          <View style={styles.detailRow}>
-            <MaterialIcons name="category" size={20} color="#FF6A00" />
-            <Text style={styles.detailLabel}>Sport:</Text>
-            <Text style={styles.detailValue}>
-              {booking?.sportName || "N/A"}
+        {/* Ticket card */}
+        <View style={s.ticketCard}>
+          {/* Top stub */}
+          <View style={s.ticketTop}>
+            <Text style={s.ticketTurfName}>{booking?.turfName || "Turf"}</Text>
+            <Text style={s.ticketAddress} numberOfLines={2}>
+              {booking?.venue || "Address not available"}
             </Text>
           </View>
-        </View>
 
-        {/* Booking Details */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Booking Details</Text>
-
-          <View style={styles.detailRow}>
-            <MaterialIcons name="event" size={20} color="#FF6A00" />
-            <Text style={styles.detailLabel}>Date:</Text>
-            <Text style={styles.detailValue}>{booking?.date || "N/A"}</Text>
+          {/* Perforation */}
+          <View style={s.perforationRow}>
+            <View style={s.notchLeft} />
+            <View style={s.perforationLine} />
+            <View style={s.notchRight} />
           </View>
 
-          <View style={styles.detailRow}>
-            <MaterialIcons name="access-time" size={20} color="#FF6A00" />
-            <Text style={styles.detailLabel}>Time:</Text>
-            <Text style={styles.detailValue}>{booking?.timeSlot || "N/A"}</Text>
-          </View>
-
-          <View style={styles.detailRow}>
-            <MaterialIcons name="event-available" size={20} color="#FF6A00" />
-            <Text style={styles.detailLabel}>Status:</Text>
-            <Text
-              style={[
-                styles.statusText,
-                booking?.status === "confirmed" ||
-                booking?.status === "Confirmed"
-                  ? styles.statusConfirmed
-                  : booking?.status === "cancelled" ||
-                    booking?.status === "Cancelled"
-                  ? styles.statusCancelled
-                  : styles.statusPending,
-              ]}
+          {/* Bottom stub */}
+          <View style={s.ticketBottom}>
+            <TouchableOpacity
+              onPress={handleShare}
+              style={s.shareBtn}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              {booking?.status || "Pending"}
+              <Ionicons name="share-social-outline" size={20} color="#666" />
+            </TouchableOpacity>
+
+            <Text style={s.dateText}>{formatDateFull(booking?.date)}</Text>
+            <Text style={s.timeText}>
+              ({formatTimeRange(booking?.timeSlot)})
             </Text>
-          </View>
-        </View>
 
-        {/* Payment Details */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Payment Details</Text>
+            <View style={s.kvRow}>
+              <Text style={s.kvLabel}>Sport:</Text>
+              <Text style={s.kvValue}>{booking?.sportName || "—"}</Text>
+            </View>
 
-          <View style={styles.detailRow}>
-            <FontAwesome5 name="money-bill-wave" size={18} color="#4CAF50" />
-            <Text style={styles.detailLabel}>Payment:</Text>
-            <Text style={styles.detailValue}>Pay at Venue</Text>
-          </View>
+            <View style={s.kvRow}>
+              <Text style={s.kvLabel}>Booking Refrence</Text>
+              <Text style={s.refValue}>{bookingRef}</Text>
+            </View>
 
-          <View style={styles.detailRow}>
-            <MaterialIcons name="attach-money" size={20} color="#FF6A00" />
-            <Text style={styles.detailLabel}>Amount:</Text>
-            <Text style={styles.detailValue}>₹{booking?.amount || "0"}</Text>
-          </View>
+            <View style={s.kvRow}>
+              <Text style={s.kvLabel}>Payment method:</Text>
+              <Text style={s.kvValue}>
+                {paymentMethodLabel(
+                  booking?.paymentMethod,
+                  booking?.paymentProvider
+                )}
+              </Text>
+            </View>
 
-          <View style={styles.detailRow}>
-            <MaterialIcons name="payment" size={20} color="#FF6A00" />
-            <Text style={styles.detailLabel}>Status:</Text>
-            <Text
-              style={[
-                styles.paymentStatusText,
-                booking?.paymentStatus === "paid"
-                  ? styles.statusConfirmed
-                  : styles.statusPending,
-              ]}
-            >
-              {booking?.paymentStatus === "paid"
-                ? "Paid"
-                : "Pending (Pay at venue)"}
-            </Text>
-          </View>
-
-          <View style={styles.paymentNotice}>
-            <MaterialIcons name="info" size={18} color="#0047AB" />
-            <Text style={styles.paymentNoticeText}>
-              Please bring the exact amount to the venue. Show this booking
-              confirmation to the staff.
-            </Text>
-          </View>
-        </View>
-
-        {/* Contact Information */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Contact Information</Text>
-
-          <View style={styles.detailRow}>
-            <MaterialIcons name="person" size={20} color="#FF6A00" />
-            <Text style={styles.detailLabel}>Name:</Text>
-            <Text style={styles.detailValue}>{booking?.name || "N/A"}</Text>
-          </View>
-
-          <View style={styles.detailRow}>
-            <MaterialIcons name="email" size={20} color="#FF6A00" />
-            <Text style={styles.detailLabel}>Email:</Text>
-            <Text style={styles.detailValue}>{booking?.email || "N/A"}</Text>
-          </View>
-
-          <View style={styles.detailRow}>
-            <MaterialIcons name="phone" size={20} color="#FF6A00" />
-            <Text style={styles.detailLabel}>Phone:</Text>
-            <Text style={styles.detailValue}>{booking?.phone || "N/A"}</Text>
-          </View>
-        </View>
-
-        {/* Cancel Booking Button - Only show if booking is not cancelled */}
-        {(booking?.status === "confirmed" ||
-          booking?.status === "Confirmed" ||
-          booking?.status === "pending") && (
-          <>
-            {isBookingFuture() ? (
-              <TouchableOpacity
-                style={styles.cancelButton}
-                onPress={handleCancelBooking}
-              >
-                <MaterialIcons name="cancel" size={20} color="#fff" />
-                <Text style={styles.buttonText}>Cancel Booking</Text>
-              </TouchableOpacity>
-            ) : (
-              <View style={styles.disabledCancelButton}>
-                <MaterialIcons name="cancel" size={20} color="#fff" />
-                <Text style={styles.buttonText}>Cannot Cancel (Too Late)</Text>
+            <View style={s.kvRow}>
+              <Text style={s.kvLabel}>Status:</Text>
+              <View style={[s.statusPill, { backgroundColor: pillColors.bg }]}>
+                <Text style={[s.statusPillText, { color: pillColors.text }]}>
+                  {booking?.status || "Confirmed"}
+                </Text>
               </View>
-            )}
-          </>
+            </View>
+
+            <Image
+              source={require("../../../assets/fallback.jpg")}
+              style={s.sportsImage}
+              resizeMode="cover"
+            />
+          </View>
+        </View>
+
+        {/* View Booking List */}
+        <TouchableOpacity
+          style={s.primaryBtn}
+          onPress={handleViewBookingList}
+          activeOpacity={0.85}
+        >
+          <Text style={s.primaryBtnText}>View Booking List</Text>
+        </TouchableOpacity>
+
+        {/* Help card */}
+        <View style={s.helpCard}>
+          <Text style={s.helpTitle}>Need help?</Text>
+          <Text style={s.helpSubtitle}>
+            Your item is safe. Reach out for updates
+          </Text>
+
+          <View style={s.helpRow}>
+            <TouchableOpacity
+              style={s.helpBtn}
+              onPress={handleCallSupport}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="call-outline" size={18} color="#0088FF" />
+              <Text style={s.helpBtnText}>{SUPPORT_PHONE}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={s.helpBtn}
+              onPress={handleChatSupport}
+              activeOpacity={0.85}
+            >
+              <MaterialCommunityIcons
+                name="message-text-outline"
+                size={18}
+                color="#0088FF"
+              />
+              <Text style={s.helpBtnText}>Chat with us</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Secondary: Cancel Booking */}
+        {canCancel && (
+          <TouchableOpacity
+            style={s.cancelLink}
+            onPress={handleCancelBooking}
+            activeOpacity={0.7}
+          >
+            <Text style={s.cancelLinkText}>Cancel Booking</Text>
+          </TouchableOpacity>
         )}
       </ScrollView>
     </SafeAreaView>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#f5f7fa",
-  },
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: "#FFFFFF" },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#f5f7fa",
+    backgroundColor: "#FFFFFF",
   },
-  loadingText: {
-    marginTop: 10,
-    color: "#666",
-    fontSize: 16,
-  },
+  loadingText: { marginTop: 12, color: "#666", fontSize: 14 },
+
+  // Header
   header: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingBottom: 12,
-    backgroundColor: "#fff",
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
+    gap: 8,
   },
+  headerBack: { width: 28, height: 28, justifyContent: "center" },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 16,
+    fontFamily: "Montserrat_500Medium",
     fontWeight: "600",
-    color: "#333",
+    color: "#1A181B",
   },
-  backBtn: {
-    padding: 4,
-  },
-  scrollContainer: {
-    flex: 1,
-  },
+
   errorBanner: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#f44336",
+    gap: 6,
+    backgroundColor: "#F44336",
     padding: 10,
-    marginHorizontal: 16,
-    marginTop: 16,
-    borderRadius: 8,
+    borderRadius: 10,
+    marginTop: 6,
+    marginBottom: 10,
   },
-  errorText: {
-    color: "#fff",
-    marginLeft: 8,
-    flex: 1,
-    fontSize: 14,
-  },
-  successContainer: {
+  errorText: { color: "#fff", fontSize: 12, flex: 1 },
+
+  // Success hero
+  successWrap: {
     alignItems: "center",
-    padding: 24,
-    backgroundColor: "#fff",
-    margin: 16,
-    marginBottom: 8,
-    borderRadius: 12,
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    paddingTop: 8,
+    paddingBottom: 20,
   },
-  iconCircle: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    backgroundColor: "#4CAF50",
+  checkCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: "#15A765",
+    alignItems: "center",
     justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 14,
   },
   successTitle: {
     fontSize: 22,
+    fontFamily: "Montserrat_600SemiBold",
     fontWeight: "700",
-    color: "#333",
-    marginBottom: 8,
+    color: "#1A181B",
+    marginBottom: 6,
   },
-  successMessage: {
-    fontSize: 14,
-    color: "#666",
-    textAlign: "center",
-    marginBottom: 12,
-  },
-  bookingRef: {
-    fontSize: 15,
-    color: "#0047AB",
-    fontWeight: "600",
-  },
-  card: {
-    margin: 16,
-    marginTop: 8,
-    marginBottom: 8,
-    padding: 16,
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 12,
-  },
-  detailRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  detailLabel: {
-    width: 75,
-    fontSize: 14,
-    color: "#555",
-    marginLeft: 8,
-  },
-  detailValue: {
-    flex: 1,
-    fontSize: 14,
-    color: "#333",
-    fontWeight: "500",
-  },
-  statusText: {
-    fontSize: 14,
-    fontWeight: "500",
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  paymentStatusText: {
-    fontSize: 14,
-    fontWeight: "500",
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  statusConfirmed: {
-    backgroundColor: "#e8f5e9",
-    color: "#2e7d32",
-  },
-  statusPending: {
-    backgroundColor: "#fff8e1",
-    color: "#f57c00",
-  },
-  statusCancelled: {
-    backgroundColor: "#ffebee",
-    color: "#c62828",
-  },
-  paymentNotice: {
-    flexDirection: "row",
-    marginTop: 8,
-    padding: 10,
-    backgroundColor: "#e3f2fd",
-    borderRadius: 8,
-    alignItems: "flex-start",
-  },
-  paymentNoticeText: {
-    flex: 1,
+  successSubtitle: {
     fontSize: 13,
-    color: "#0047AB",
-    marginLeft: 8,
+    fontFamily: "Poppins_400Regular",
+    color: "#666666",
+    textAlign: "center",
+    paddingHorizontal: 24,
+    lineHeight: 18,
   },
-  buttonContainer: {
+
+  // Ticket card
+  ticketCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#EEF1FA",
+    overflow: "hidden",
+    marginBottom: 18,
+  },
+  ticketTop: {
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+    alignItems: "center",
+  },
+  ticketTurfName: {
+    fontSize: 17,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: "#1A181B",
+    marginBottom: 4,
+  },
+  ticketAddress: {
+    fontSize: 13,
+    fontFamily: "Poppins_400Regular",
+    color: "#645E66",
+    textAlign: "center",
+  },
+
+  // Perforation
+  perforationRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    margin: 16,
-    marginTop: 8,
-    marginBottom: 8,
+    alignItems: "center",
+    marginHorizontal: -8,
   },
-  homeButton: {
+  notchLeft: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#EEF1FA",
+    marginLeft: -1,
+  },
+  notchRight: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#EEF1FA",
+    marginRight: -1,
+  },
+  perforationLine: {
+    flex: 1,
+    borderTopWidth: 1.5,
+    borderStyle: "dashed",
+    borderTopColor: "#D1D5DB",
+    marginHorizontal: 6,
+  },
+
+  ticketBottom: {
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 12,
+    alignItems: "center",
+    position: "relative",
+  },
+  shareBtn: {
+    position: "absolute",
+    top: 14,
+    right: 16,
+    padding: 4,
+    zIndex: 2,
+  },
+  dateText: {
+    fontSize: 22,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: "#1A181B",
+  },
+  timeText: {
+    fontSize: 13,
+    fontFamily: "Poppins_400Regular",
+    color: "#645E66",
+    marginTop: 2,
+    marginBottom: 12,
+  },
+  kvRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 4,
+  },
+  kvLabel: {
+    fontSize: 13,
+    fontFamily: "Poppins_400Regular",
+    color: "#645E66",
+  },
+  kvValue: {
+    fontSize: 13,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "600",
+    color: "#1A181B",
+  },
+  refValue: {
+    fontSize: 13,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "600",
+    color: "#0088FF",
+  },
+  statusPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  statusPillText: {
+    fontSize: 11,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "700",
+  },
+  sportsImage: {
+    width: "100%",
+    height: 80,
+    marginTop: 16,
+    borderRadius: 8,
+  },
+
+  // Primary button
+  primaryBtn: {
+    backgroundColor: "#15A765",
+    borderRadius: 14,
+    height: 50,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+  primaryBtnText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "700",
+  },
+
+  // Help card
+  helpCard: {
+    backgroundColor: "#FAFAFA",
+    borderWidth: 1,
+    borderColor: "#EEF1FA",
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    marginBottom: 10,
+  },
+  helpTitle: {
+    fontSize: 14,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: "#1A181B",
+  },
+  helpSubtitle: {
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular",
+    color: "#666666",
+    marginTop: 2,
+    marginBottom: 12,
+  },
+  helpRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  helpBtn: {
     flex: 1,
     flexDirection: "row",
-    backgroundColor: "#0047AB",
-    borderRadius: 8,
-    paddingVertical: 12,
     alignItems: "center",
     justifyContent: "center",
-    marginLeft: 8,
-  },
-  cancelButton: {
-    flexDirection: "row",
-    backgroundColor: "#f44336",
-    borderRadius: 8,
+    gap: 6,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#EEF1FA",
+    borderRadius: 12,
     paddingVertical: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    marginHorizontal: 16,
-    marginBottom: 16,
+    paddingHorizontal: 8,
   },
-  buttonText: {
-    color: "#fff",
-    fontSize: 14,
+  helpBtnText: {
+    fontSize: 13,
+    fontFamily: "Montserrat_500Medium",
     fontWeight: "600",
-    marginLeft: 8,
+    color: "#0088FF",
   },
-  disabledCancelButton: {
-    flexDirection: "row",
-    backgroundColor: "#aaa",
-    borderRadius: 8,
-    paddingVertical: 12,
+
+  // Cancel link
+  cancelLink: {
     alignItems: "center",
-    justifyContent: "center",
-    marginHorizontal: 16,
-    marginBottom: 16,
-    opacity: 0.7,
+    paddingVertical: 14,
+  },
+  cancelLinkText: {
+    fontSize: 13,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "600",
+    color: "#C62828",
+    textDecorationLine: "underline",
   },
 });
 

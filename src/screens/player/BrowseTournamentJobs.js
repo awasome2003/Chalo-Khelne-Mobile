@@ -9,6 +9,7 @@ import { useNavigation } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import axios from "axios";
+import { getSportName } from "../../utils/sportTrack";
 import API from "../../api/api";
 import TournamentConfig from "../../api/tournaments";
 
@@ -64,12 +65,17 @@ const BrowseTournamentJobs = () => {
       if (res.data) {
         const list = Array.isArray(res.data) ? res.data : res.data.tournaments || [];
         const now = new Date();
-        // Show only upcoming tournaments (start date in future + not completed)
+        // Show upcoming AND live tournaments — only hide ones that have ended
+        // or are marked completed. A tournament is still "open for jobs" as
+        // long as today <= endDate (end-of-day).
         setTournaments(list.filter((t) => {
           if (t.currentStage === "completed") return false;
-          // Check start date — exclude past tournaments
-          const startDate = t.startDate ? new Date(t.startDate) : null;
-          if (startDate && startDate < now) return false;
+          const endRaw = t.endDate || t.startDate;
+          if (endRaw) {
+            const end = new Date(endRaw);
+            end.setHours(23, 59, 59, 999);
+            if (end < now) return false;
+          }
           return true;
         }));
       }
@@ -171,7 +177,7 @@ const BrowseTournamentJobs = () => {
           <Text style={styles.tournTitle}>{tournament.title}</Text>
           <View style={styles.tournMeta}>
             <MaterialCommunityIcons name="trophy-variant" size={13} color="#888" />
-            <Text style={styles.tournMetaText}>{tournament.sportsType || "Multi-Sport"}</Text>
+            <Text style={styles.tournMetaText}>{getSportName(tournament) || "Multi-Sport"}</Text>
             {tournament.startDate && (
               <>
                 <View style={styles.dot} />

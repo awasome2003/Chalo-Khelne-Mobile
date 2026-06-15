@@ -18,6 +18,7 @@ import {
 import axios from "axios";
 import Toast from "react-native-toast-message";
 import TournamentConfig from "../../api/tournaments";
+import { getTournamentType } from "../../utils/sportTrack";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker"; // ✅ keep if you use it for profile/tournament images
 import * as FileSystem from "expo-file-system/legacy"; // ✅ use legacy API to avoid deprecation error
@@ -47,8 +48,8 @@ const QRPaymentScreen = ({ navigation, route }) => {
   const status = bookingData?.status || "Pending";
   const team = bookingData?.team || {};
 
-  // Extract tournament details
-  const tournamentType = tournament?.type || "N/A";
+  // Extract tournament details — STEP 17b.iii: per-sport
+  const tournamentType = getTournamentType(tournament) || "N/A";
   const startDate = tournament?.startDate || "TBA";
   const endDate = tournament?.endDate || "TBA";
   const venue = tournament?.venue || "Venue not decided";
@@ -236,13 +237,19 @@ const QRPaymentScreen = ({ navigation, route }) => {
         userPhone: bookingData?.userPhone || "N/A",
         tournamentId,
         tournamentName: tournament?.name || "Tournament",
-        tournamentType: tournament?.type || "N/A",
+        tournamentType: getTournamentType(tournament) || "N/A",
         paymentAmount: amount,
         paymentMethod: "online",
         transactionId,
         status: "pending",
         team: bookingData?.team || {}, // Include team info if exists
-        selectedCategories: bookingData?.selectedCategories || [], // Include selected categories
+        selectedCategories: bookingData?.selectedCategories || [], // Include selected categories (legacy)
+        // STEP 14 — Multi-sport: forward both shapes to backend so the
+        // dual-write contract holds for online bookings created here.
+        sportSelections: bookingData?.sportSelections || [],
+        totalFee: (bookingData?.totalFee != null
+          ? bookingData.totalFee
+          : Number(amount ?? 0)),
         employeeId: bookingData?.employeeId || null,
       };
 
@@ -258,7 +265,9 @@ const QRPaymentScreen = ({ navigation, route }) => {
             amount: amount ?? tournament?.price ?? 0,
             registrationId: bookingPayload?.registrationId || `reg_${Date.now()}`,
             paymentMethod: "online", // ✅ add this
-            selectedCategories: bookingPayload.selectedCategories // ✅ ADD THIS
+            selectedCategories: bookingPayload.selectedCategories, // ✅ ADD THIS
+            // STEP 14 — also forward sportSelections to manager notification.
+            sportSelections: bookingPayload.sportSelections,
           });
 
 

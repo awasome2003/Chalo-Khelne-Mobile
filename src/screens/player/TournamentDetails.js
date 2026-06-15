@@ -14,18 +14,27 @@ import {
   Dimensions,
   Platform,
   StatusBar,
+  Share,
+  Linking,
 } from "react-native";
-import { MaterialIcons, FontAwesome5, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import {
+  MaterialIcons,
+  Ionicons,
+  MaterialCommunityIcons,
+} from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import axios from "axios";
 import TournamentConfig from "../../api/tournaments";
 import { useAuth } from "../../context/AuthContext";
 import Website_SERVER_URL from "../../api/api";
+import { getSportName } from "../../utils/sportTrack";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { LinearGradient } from 'expo-linear-gradient';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import DOBGateModal from "./DOBGateModal";
 
-const { width } = Dimensions.get('window');
+const { width } = Dimensions.get("window");
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
 
 const normalizeLocation = (eventLocation) => {
   if (!eventLocation) return "Location Not Specified";
@@ -43,7 +52,7 @@ const normalizeLocation = (eventLocation) => {
   if (typeof eventLocation === "object") {
     if (Array.isArray(eventLocation)) {
       const locationNames = [];
-      eventLocation.forEach(item => {
+      eventLocation.forEach((item) => {
         if (typeof item === "string") {
           if (item.startsWith("[") && item.endsWith("]")) {
             try {
@@ -55,15 +64,23 @@ const normalizeLocation = (eventLocation) => {
             }
           } else locationNames.push(item.trim());
         } else if (typeof item === "object" && item !== null) {
-          const name = item.name || item.title || item.address || item._id || JSON.stringify(item);
-          locationNames.push(typeof name === 'string' ? name.trim() : normalizeLocation(name));
+          const name =
+            item.name || item.title || item.address || item._id || JSON.stringify(item);
+          locationNames.push(typeof name === "string" ? name.trim() : normalizeLocation(name));
         }
       });
-      const result = locationNames.filter(name => name && name !== "" && name !== "Location Not Specified").join(", ");
+      const result = locationNames
+        .filter((name) => name && name !== "" && name !== "Location Not Specified")
+        .join(", ");
       return result || "Location Not Specified";
     } else {
-      const name = eventLocation.name || eventLocation.title || eventLocation.address || eventLocation._id || JSON.stringify(eventLocation);
-      return typeof name === 'string' ? name.trim() : normalizeLocation(name);
+      const name =
+        eventLocation.name ||
+        eventLocation.title ||
+        eventLocation.address ||
+        eventLocation._id ||
+        JSON.stringify(eventLocation);
+      return typeof name === "string" ? name.trim() : normalizeLocation(name);
     }
   }
   return String(eventLocation).trim() || "Location Not Specified";
@@ -84,22 +101,19 @@ const formatTime = (selectedTime) => {
   const to12Hour = (timeStr) => {
     if (!timeStr) return "";
     let cleanTime = timeStr.trim();
-    // If it already has AM/PM, return as is
     if (/[a-zA-Z]/.test(cleanTime)) return cleanTime;
 
-    let [hour, minute] = cleanTime.split(':').map(Number);
+    let [hour, minute] = cleanTime.split(":").map(Number);
     if (isNaN(hour)) return cleanTime;
 
-    const period = hour >= 12 ? 'PM' : 'AM';
+    const period = hour >= 12 ? "PM" : "AM";
     const h12 = hour % 12 || 12;
-    const mStr = minute !== undefined ? `:${minute.toString().padStart(2, '0')}` : ':00';
+    const mStr = minute !== undefined ? `:${minute.toString().padStart(2, "0")}` : ":00";
 
     return `${h12}${mStr} ${period}`;
   };
 
-  if (selectedTime.timeSlot) {
-    return selectedTime.timeSlot;
-  }
+  if (selectedTime.timeSlot) return selectedTime.timeSlot;
 
   let start = selectedTime.startTime;
   let end = selectedTime.endTime;
@@ -113,11 +127,8 @@ const formatTime = (selectedTime) => {
   const displayStart = to12Hour(start);
   const displayEnd = end ? to12Hour(end) : "";
 
-  if (displayEnd) {
-    return `${displayStart} - ${displayEnd}`;
-  }
+  if (displayEnd) return `${displayStart} - ${displayEnd}`;
 
-  // Fallback if period is provided separately item doesn't have it
   if (selectedTime.period && !displayStart.includes("AM") && !displayStart.includes("PM")) {
     return `${displayStart} ${selectedTime.period}`;
   }
@@ -126,8 +137,37 @@ const formatTime = (selectedTime) => {
 };
 
 const clearTournamentCache = async (id) => {
-  try { await AsyncStorage.removeItem(`tournament_${id}`); }
-  catch (error) { console.warn('Error clearing tournament cache:', error); }
+  try {
+    await AsyncStorage.removeItem(`tournament_${id}`);
+  } catch (error) {
+    console.warn("Error clearing tournament cache:", error);
+  }
+};
+
+// Amenity name → icon component + icon name. Falls back to a check icon.
+const getAmenityIcon = (name) => {
+  const key = String(name || "").toLowerCase().trim();
+  const map = {
+    floodlights: { Icon: Ionicons, iconName: "bulb-outline" },
+    lights: { Icon: Ionicons, iconName: "bulb-outline" },
+    washroom: { Icon: MaterialCommunityIcons, iconName: "human-male-female" },
+    restroom: { Icon: MaterialCommunityIcons, iconName: "human-male-female" },
+    toilet: { Icon: MaterialCommunityIcons, iconName: "human-male-female" },
+    parking: { Icon: MaterialIcons, iconName: "local-parking" },
+    water: { Icon: Ionicons, iconName: "water-outline" },
+    "drinking water": { Icon: Ionicons, iconName: "water-outline" },
+    "seating area": { Icon: MaterialIcons, iconName: "event-seat" },
+    seating: { Icon: MaterialIcons, iconName: "event-seat" },
+    "first aid": { Icon: MaterialIcons, iconName: "medical-services" },
+    medical: { Icon: MaterialIcons, iconName: "medical-services" },
+    wifi: { Icon: Ionicons, iconName: "wifi" },
+    ac: { Icon: MaterialCommunityIcons, iconName: "air-conditioner" },
+    shower: { Icon: MaterialCommunityIcons, iconName: "shower" },
+    cafe: { Icon: Ionicons, iconName: "cafe-outline" },
+    food: { Icon: MaterialIcons, iconName: "restaurant" },
+    snacks: { Icon: MaterialIcons, iconName: "restaurant" },
+  };
+  return map[key] || { Icon: MaterialIcons, iconName: "check-circle-outline" };
 };
 
 const TournamentDetails = ({ route, navigation }) => {
@@ -138,6 +178,7 @@ const TournamentDetails = ({ route, navigation }) => {
   const [tournament, setTournament] = useState(item || {});
   const [loading, setLoading] = useState(false);
   const [showMore, setShowMore] = useState(false);
+  const [showRules, setShowRules] = useState(false); // collapsed by default
   const [showCategoryPopup, setShowCategoryPopup] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState([]);
   const [isBooked, setIsBooked] = useState(false);
@@ -145,30 +186,136 @@ const TournamentDetails = ({ route, navigation }) => {
   const { user, isAuthenticated } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
 
-  // Whitelist/Verification
+  // Whitelist / Verification
   const [isVerified, setIsVerified] = useState(false);
   const [showVerifyModal, setShowVerifyModal] = useState(false);
+  const [showDOBGate, setShowDOBGate] = useState(false);
   const [empIdInput, setEmpIdInput] = useState("");
   const [verifiedEmployeeId, setVerifiedEmployeeId] = useState(null);
   const [verifyError, setVerifyError] = useState("");
 
   const actualTournamentId = tournamentId || item?.id || item?._id;
 
-  const categories = useMemo(() => {
-    let cats = tournament.rawData?.category || tournament.category || item?.category || [];
-    if (Array.isArray(cats) && cats.length > 0 && Array.isArray(cats[0])) cats = cats[0];
-    if (!Array.isArray(cats)) return [];
-    return cats.filter(c => c && (c.name || c.categoryName || c.title)).map(c => ({
-      _id: c._id || c.id,
-      name: c.name || c.categoryName || c.title,
-      fee: c.fee ?? c.amount ?? 0,
-    }));
-  }, [tournament.rawData?.category, tournament.category, item?.category]);
+  // STEP 17b.iii — per-sport sections from tournament.sports[].
+  const sportSections = useMemo(() => {
+    const sportsArr = tournament.rawData?.sports || tournament.sports || item?.sports;
+    if (!Array.isArray(sportsArr) || sportsArr.length === 0) return [];
+    return sportsArr
+      .filter((s) => s && Array.isArray(s.categories) && s.categories.length > 0)
+      .map((s) => ({
+        sportId: String(s.sportId || ""),
+        sportName: s.sportName || "Sport",
+        sportSlug: s.sportSlug || "",
+        categories: s.categories
+          .filter((c) => c && (c.name || c.categoryName || c.title))
+          .map((c) => ({
+            _id: String(c._id || c.id || `${s.sportId}-${c.name}`),
+            name: c.name || c.categoryName || c.title,
+            fee: c.fee ?? c.amount ?? 0,
+            // Per-category format — used to group rows under Format headings
+            // in the new design. Falls back to the tournament-level format if
+            // no per-category field is present.
+            format: c.format || c.playFormat || c.formatType || null,
+            sportId: String(s.sportId || ""),
+            sportName: s.sportName || "Sport",
+          })),
+      }));
+  }, [tournament.rawData, tournament.sports, item]);
 
-  const totalPrice = useMemo(() => selectedCategories.reduce((sum, cat) => sum + (parseFloat(cat.fee) || 0), 0), [selectedCategories]);
+  // Flat list of categories across all sports — preserves the existing
+  // selection-state contract (still uses unique `_id` keys).
+  const categories = useMemo(
+    () => sportSections.flatMap((s) => s.categories),
+    [sportSections]
+  );
+
+  // Group each sport's categories by Format for the new card design.
+  // If per-category format is missing everywhere, fall back to tournament-level
+  // format (or a single "Categories" heading).
+  const sportFormatSections = useMemo(() => {
+    if (sportSections.length === 0) return [];
+    const tournamentLevelFormat =
+      tournament.rawData?.playFormat ||
+      tournament.rawData?.format ||
+      tournament.rawData?.tournamentFormat ||
+      null;
+
+    return sportSections.map((sport) => {
+      const hasFormatField = sport.categories.some((c) => c.format);
+      let formatGroups;
+      if (hasFormatField) {
+        const map = new Map();
+        sport.categories.forEach((c) => {
+          const fmt = c.format || tournamentLevelFormat || "Categories";
+          if (!map.has(fmt)) map.set(fmt, []);
+          map.get(fmt).push(c);
+        });
+        formatGroups = Array.from(map.entries()).map(([formatName, cats]) => ({
+          formatName,
+          categories: cats,
+        }));
+      } else {
+        formatGroups = [
+          {
+            formatName: tournamentLevelFormat || "Categories",
+            categories: sport.categories,
+          },
+        ];
+      }
+      return { ...sport, formatGroups };
+    });
+  }, [sportSections, tournament.rawData]);
+
+  const totalPrice = useMemo(
+    () => selectedCategories.reduce((sum, cat) => sum + (parseFloat(cat.fee) || 0), 0),
+    [selectedCategories]
+  );
+
+  // Amenities — read from tournament.rawData.amenities (array | comma-separated string).
+  const amenitiesList = useMemo(() => {
+    const raw = tournament.rawData?.amenities;
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw.map((a) => String(a).trim()).filter(Boolean);
+    if (typeof raw === "string")
+      return raw
+        .split(",")
+        .map((a) => a.trim())
+        .filter(Boolean);
+    return [];
+  }, [tournament.rawData]);
+
+  // Rules — read from tournament.rawData.rules (array | newline-separated string).
+  const rulesList = useMemo(() => {
+    const raw = tournament.rawData?.rules;
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw.map((r) => String(r).trim()).filter(Boolean);
+    if (typeof raw === "string")
+      return raw
+        .split(/\r?\n/)
+        .map((r) => r.trim())
+        .filter(Boolean);
+    return [];
+  }, [tournament.rawData]);
+
+  // Short date range "Apr 24 - Apr 26"
+  const dateRangeShort = useMemo(() => {
+    const sd = tournament.rawData?.startDate;
+    const ed = tournament.rawData?.endDate;
+    if (!sd) return "TBA";
+    const start = new Date(sd);
+    if (isNaN(start)) return "TBA";
+    const monthDay = (d) => `${d.toLocaleString("default", { month: "short" })} ${d.getDate()}`;
+    if (!ed) return monthDay(start);
+    const end = new Date(ed);
+    if (isNaN(end) || end.getTime() === start.getTime()) return monthDay(start);
+    return `${monthDay(start)} - ${monthDay(end)}`;
+  }, [tournament.rawData]);
 
   useEffect(() => {
-    if (actualTournamentId && (!tournament.rawData || tournament.id !== actualTournamentId)) {
+    if (
+      actualTournamentId &&
+      (!tournament.rawData || tournament.id !== actualTournamentId)
+    ) {
       fetchTournamentDetails();
     }
   }, [actualTournamentId]);
@@ -178,14 +325,18 @@ const TournamentDetails = ({ route, navigation }) => {
     if (!id) return;
     setLoading(true);
     try {
-      const response = await axios.get(TournamentConfig.ENDPOINTS.BY_ID(id), { timeout: 8000 });
+      const response = await axios.get(TournamentConfig.ENDPOINTS.BY_ID(id), {
+        timeout: 8000,
+      });
       if (response.data) {
         const tData = response.data.tournament || response.data;
         const fullT = {
           id: tData._id || id,
           name: tData.title || tData.name || "Untitled Tournament",
           rawData: tData,
-          imageUri: tData.tournamentLogo ? `${Website_SERVER_URL.Wbsite_SERVER_URL}/uploads/tournaments/${tData.tournamentLogo}` : null,
+          imageUri: tData.tournamentLogo
+            ? `${Website_SERVER_URL.Wbsite_SERVER_URL}/uploads/tournaments/${tData.tournamentLogo}`
+            : null,
         };
         setTournament(fullT);
       }
@@ -199,16 +350,26 @@ const TournamentDetails = ({ route, navigation }) => {
   const checkUserBooking = async () => {
     try {
       const userId = user?.id || user?._id;
-      if (!userId) { setIsBooked(false); setBookingChecking(false); return; }
+      if (!userId) {
+        setIsBooked(false);
+        setBookingChecking(false);
+        return;
+      }
       setBookingChecking(true);
       const res = await axios.get(TournamentConfig.ENDPOINTS.BOOKINGS.BY_USER(userId));
       const bookings = res.data.data || res.data.bookings || res.data || [];
-      setIsBooked(bookings.some(b => {
-        const tId = b.tournamentId?._id || b.tournamentId;
-        return tId === actualTournamentId;
-      }));
-    } catch (e) { console.error("Booking check error:", e); setIsBooked(false); }
-    finally { setBookingChecking(false); }
+      setIsBooked(
+        bookings.some((b) => {
+          const tId = b.tournamentId?._id || b.tournamentId;
+          return tId === actualTournamentId;
+        })
+      );
+    } catch (e) {
+      console.error("Booking check error:", e);
+      setIsBooked(false);
+    } finally {
+      setBookingChecking(false);
+    }
   };
 
   useEffect(() => {
@@ -216,18 +377,25 @@ const TournamentDetails = ({ route, navigation }) => {
     else setBookingChecking(false);
   }, [actualTournamentId, user?.id]);
 
-  const isCorporateTournament = tournament.rawData?.whitelist && tournament.rawData.whitelist.length > 0;
+  const isCorporateTournament =
+    tournament.rawData?.whitelist && tournament.rawData.whitelist.length > 0;
 
   const handleRegistration = () => {
     if (!isAuthenticated) {
       Alert.alert("Login Required", "Please log in to register.", [
         { text: "Cancel", style: "cancel" },
-        { text: "Login", onPress: () => navigation.navigate("Login", { redirectTo: "Tournament Details", tournamentId: actualTournamentId }) }
+        {
+          text: "Login",
+          onPress: () =>
+            navigation.navigate("Login", {
+              redirectTo: "Tournament Details",
+              tournamentId: actualTournamentId,
+            }),
+        },
       ]);
       return;
     }
 
-    // Corporate tournament — verify employee before proceeding
     if (isCorporateTournament && !isVerified) {
       setShowVerifyModal(true);
       return;
@@ -237,8 +405,23 @@ const TournamentDetails = ({ route, navigation }) => {
   };
 
   const proceedToBooking = () => {
-    if (categories.length > 0) setShowCategoryPopup(true);
-    else navigation.navigate("Booking Screen", { tournament, selectedCategory: null, employeeId: verifiedEmployeeId });
+    if (!user?.dateOfBirth || !user?.sex) {
+      setShowDOBGate(true);
+      return;
+    }
+
+    if (categories.length > 0) {
+      navigation.navigate("TournamentBookingWizard", {
+        tournament,
+        employeeId: verifiedEmployeeId,
+      });
+    } else {
+      navigation.navigate("Booking Screen", {
+        tournament,
+        selectedCategory: null,
+        employeeId: verifiedEmployeeId,
+      });
+    }
   };
 
   const handleVerifyEmployee = () => {
@@ -249,17 +432,20 @@ const TournamentDetails = ({ route, navigation }) => {
     }
 
     const userMobile = user?.mobile || user?.phone || "";
-
-    // Normalize mobile — strip country code, spaces, dashes
     const normalizeMobile = (m) => {
       if (!m) return "";
       return m.toString().replace(/[\s\-\+]/g, "").slice(-10);
     };
 
     const whitelist = tournament.rawData?.whitelist || [];
-    const matched = whitelist.some(emp => {
-      const idMatch = emp.employeeId && emp.employeeId.toString().trim().toLowerCase() === trimmedId.toLowerCase();
-      const mobileMatch = userMobile && emp.mobile && normalizeMobile(emp.mobile) === normalizeMobile(userMobile);
+    const matched = whitelist.some((emp) => {
+      const idMatch =
+        emp.employeeId &&
+        emp.employeeId.toString().trim().toLowerCase() === trimmedId.toLowerCase();
+      const mobileMatch =
+        userMobile &&
+        emp.mobile &&
+        normalizeMobile(emp.mobile) === normalizeMobile(userMobile);
       return idMatch || mobileMatch;
     });
 
@@ -268,13 +454,24 @@ const TournamentDetails = ({ route, navigation }) => {
       setVerifiedEmployeeId(trimmedId);
       setVerifyError("");
       setShowVerifyModal(false);
-      // Proceed to booking after verification
       setTimeout(() => {
-        if (categories.length > 0) setShowCategoryPopup(true);
-        else navigation.navigate("Booking Screen", { tournament, selectedCategory: null, employeeId: trimmedId });
+        if (categories.length > 0) {
+          navigation.navigate("TournamentBookingWizard", {
+            tournament,
+            employeeId: trimmedId,
+          });
+        } else {
+          navigation.navigate("Booking Screen", {
+            tournament,
+            selectedCategory: null,
+            employeeId: trimmedId,
+          });
+        }
       }, 300);
     } else {
-      setVerifyError("Employee ID not found. Please check with your HR or tournament organizer.");
+      setVerifyError(
+        "Employee ID not found. Please check with your HR or tournament organizer."
+      );
     }
   };
 
@@ -291,51 +488,126 @@ const TournamentDetails = ({ route, navigation }) => {
   const formatDate = (date) => {
     if (!date || isNaN(new Date(date).getTime())) return "N.A.";
     const d = new Date(date);
-    return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+    return d.toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
   };
 
-  const bannerImg = tournament.imageUri ? { uri: tournament.imageUri } : require("../../../assets/tournament-banner.jpg");
+  // ─── New action handlers ─────────────────────────────────────────────────
+
+  const handleShare = async () => {
+    try {
+      const tName = tournament.name || tournament.rawData?.title || "Tournament";
+      const datePart = dateRangeShort && dateRangeShort !== "TBA" ? ` on ${dateRangeShort}` : "";
+      await Share.share({
+        message: `${tName}${datePart} — register at chalokhelne.com`,
+      });
+    } catch (err) {
+      console.error("[TournamentDetails] share failed:", err);
+    }
+  };
+
+  const handleOpenMap = () => {
+    const loc = location;
+    if (!loc || loc === "Location Not Specified") return;
+    const url = `https://maps.google.com/?q=${encodeURIComponent(loc)}`;
+    Linking.openURL(url).catch((e) =>
+      console.error("[TournamentDetails] open map failed:", e)
+    );
+  };
+
+  const handleInvite = () => {
+    navigation.navigate("InvitePlayer", {
+      tournamentId: tournament._id || tournament.id || tournamentId,
+      tournamentName: tournament.title || tournament.name,
+    });
+  };
+
+  const handleExploreJobs = () => {
+    navigation.navigate("BrowseTournamentJobsHome", {
+      preSelectedTournament: {
+        _id: tournament._id || tournament.id || tournamentId,
+        title: tournament.title || tournament.name,
+        sportsType: getSportName(tournament),
+      },
+    });
+  };
+
+  // ─── Derived ─────────────────────────────────────────────────────────────
+
+  const bannerImg = tournament.imageUri
+    ? { uri: tournament.imageUri }
+    : require("../../../assets/tournament-banner.jpg");
   const desc = tournament.rawData?.description || "No description available.";
-  const location = normalizeLocation(tournament.rawData?.eventLocation || tournament.rawData?.address);
+  const location = normalizeLocation(
+    tournament.rawData?.eventLocation || tournament.rawData?.address
+  );
+  const venueShort = location.split(",")[0] || location;
+  const timeRange = formatTime(tournament.rawData?.selectedTime);
+  const descNeedsToggle = (desc || "").length > 200;
+
+  // ─── Render ──────────────────────────────────────────────────────────────
 
   return (
     <View style={styles.mainWrapper}>
-      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
-
-      {/* Dynamic Header */}
-      <View style={[styles.customHeader, { paddingTop: insets.top + 5 }]}>
-        <LinearGradient colors={['rgba(0,0,0,0.6)', 'transparent']} style={StyleSheet.absoluteFill} />
-      </View>
+      <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
 
       <ScrollView
         style={styles.container}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#FF6A00"]} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={["#15A765"]}
+            tintColor="#15A765"
+          />
+        }
       >
-        {/* Banner Section */}
+        {/* Banner image (no overlay text per redesign) */}
         <View style={styles.bannerContainer}>
           <Image source={bannerImg} style={styles.bannerImg} resizeMode="cover" />
-          <LinearGradient colors={['transparent', 'rgba(0,0,0,0.8)']} style={styles.bannerOverlay}>
-            <View style={styles.bannerContent}>
-              <View style={styles.typeTag}>
-                <Text style={styles.typeText}>{tournament.rawData?.sportsType || "Athletics"}</Text>
-              </View>
-              <Text style={styles.tourName}>{tournament.name || "Tournament Arena"}</Text>
-              <View style={styles.hostRow}>
-                <Ionicons name="business" size={14} color="#FF6A00" />
-                <Text style={styles.hostName}>{tournament.rawData?.organizerName || "Sports Club"}</Text>
-              </View>
-            </View>
-          </LinearGradient>
         </View>
 
         {loading ? (
           <View style={styles.loadingBox}>
-            <ActivityIndicator size="large" color="#FF6A00" />
+            <ActivityIndicator size="large" color="#15A765" />
             <Text style={styles.loadText}>Fetching details...</Text>
           </View>
         ) : (
           <View style={styles.detailsContent}>
+            {/* Title card — overlaps the banner */}
+            <View style={styles.titleCard}>
+              <View style={styles.titleRow}>
+                <View style={{ flex: 1, marginRight: 12 }}>
+                  <Text style={styles.titleText} numberOfLines={2}>
+                    {tournament.name || "Tournament"}
+                  </Text>
+                  <View style={styles.locRow}>
+                    <Ionicons name="location-outline" size={14} color="#666" />
+                    <Text style={styles.locText} numberOfLines={1}>
+                      {location}
+                    </Text>
+                  </View>
+                </View>
+                <TouchableOpacity onPress={handleShare} style={styles.shareSquare}>
+                  <MaterialIcons name="share" size={16} color="#666" />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.dateTimeRow}>
+                <View style={styles.dateTimeCard}>
+                  <MaterialIcons name="calendar-today" size={16} color="#666" />
+                  <Text style={styles.dateTimeText}>{dateRangeShort}</Text>
+                </View>
+                <View style={styles.dateTimeCard}>
+                  <MaterialIcons name="access-time" size={16} color="#666" />
+                  <Text style={styles.dateTimeText}>{timeRange}</Text>
+                </View>
+              </View>
+            </View>
 
             {/* Corporate Tournament Badge */}
             {isCorporateTournament && (
@@ -345,7 +617,9 @@ const TournamentDetails = ({ route, navigation }) => {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.corporateBadgeTitle}>Corporate Tournament</Text>
-                  <Text style={styles.corporateBadgeDesc}>Restricted to authorized employees only</Text>
+                  <Text style={styles.corporateBadgeDesc}>
+                    Restricted to authorized employees only
+                  </Text>
                 </View>
                 {isVerified && (
                   <View style={styles.verifiedChip}>
@@ -356,171 +630,169 @@ const TournamentDetails = ({ route, navigation }) => {
               </View>
             )}
 
-            {/* Quick Info Grid */}
-            <View style={styles.infoGrid}>
-              <View style={styles.infoItem}>
-                <View style={[styles.infoIconBg, { backgroundColor: '#E3F2FD' }]}>
-                  <Ionicons name="calendar" size={20} color="#1976D2" />
-                </View>
-                <Text style={styles.infoLabel}>Starts</Text>
-                <Text style={styles.infoValue}>{formatDate(tournament.rawData?.startDate)}</Text>
-              </View>
-              <View style={styles.infoItem}>
-                <View style={[styles.infoIconBg, { backgroundColor: '#F3E5F5' }]}>
-                  <Ionicons name="time" size={20} color="#7B1FA2" />
-                </View>
-                <Text style={styles.infoLabel}>Time</Text>
-                <Text style={styles.infoValue}>{formatTime(tournament.rawData?.selectedTime)}</Text>
-              </View>
-              <View style={styles.infoItem}>
-                <View style={[styles.infoIconBg, { backgroundColor: '#E8F5E9' }]}>
-                  <Ionicons name="location" size={20} color="#388E3C" />
-                </View>
-                <Text style={styles.infoLabel}>Venue</Text>
-                <Text style={styles.infoValue} numberOfLines={1}>{location.split(',')[0]}</Text>
-              </View>
+            {/* Venue Details */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Venue Details</Text>
+              <Text style={styles.venueText}>{location}</Text>
+              <TouchableOpacity onPress={handleOpenMap} style={styles.seeOnMapWrap}>
+                <Text style={styles.seeOnMapText}>See on map</Text>
+                <Ionicons name="chevron-forward" size={14} color="#0088FF" />
+              </TouchableOpacity>
             </View>
 
-            {/* Description Section */}
-            <View style={styles.sectionCard}>
+            {/* About Tournament */}
+            <View style={styles.section}>
               <Text style={styles.sectionTitle}>About Tournament</Text>
               <Text style={styles.descText} numberOfLines={showMore ? undefined : 4}>
                 {desc}
               </Text>
-              <TouchableOpacity onPress={() => setShowMore(!showMore)} style={styles.readMoreBtn}>
-                <Text style={styles.readMoreTxt}>{showMore ? "Show Less" : "Read Full Description"}</Text>
-                <Ionicons name={showMore ? "chevron-up" : "chevron-down"} size={16} color="#FF6A00" />
-              </TouchableOpacity>
+              {descNeedsToggle && (
+                <TouchableOpacity
+                  onPress={() => setShowMore(!showMore)}
+                  style={styles.readMoreBtn}
+                >
+                  <Text style={styles.readMoreTxt}>
+                    {showMore ? "Show Less" : "Read more"}
+                  </Text>
+                  <Ionicons
+                    name={showMore ? "chevron-up" : "chevron-down"}
+                    size={14}
+                    color="#15A765"
+                  />
+                </TouchableOpacity>
+              )}
             </View>
 
-            {/* Venue Full Section */}
-            <View style={styles.sectionCard}>
-              <View style={styles.secHeaderRow}>
-                <Text style={styles.sectionTitle}>Venue Details</Text>
-              </View>
-              <View style={styles.locationRow}>
-                <View style={styles.locIconWrapper}>
-                  <Ionicons name="navigate-circle" size={24} color="#FF6A00" />
-                </View>
-                <Text style={styles.fullLocText}>{location}</Text>
-              </View>
-            </View>
-
-            {/* Categories Section */}
-            {categories.length > 0 && (
-              <View style={styles.sectionCard}>
+            {/* Tournament Categories (sport → format → categories) */}
+            {sportFormatSections.length > 0 && (
+              <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Tournament Categories</Text>
-                <View style={styles.catList}>
-                  {categories.map((cat, i) => (
-                    <View key={i} style={styles.catItem}>
-                      <View style={styles.catInfo}>
-                        <View style={styles.catDot} />
-                        <Text style={styles.catName}>{cat.name}</Text>
+                {sportFormatSections.map((sport, sIdx) => (
+                  <View
+                    key={sport.sportId || sport.sportName || sIdx}
+                    style={styles.categoryCard}
+                  >
+                    <Text style={styles.catSportName}>{sport.sportName}</Text>
+                    {sport.formatGroups.map((fmt, fIdx) => (
+                      <View key={`${fmt.formatName}-${fIdx}`} style={styles.formatGroup}>
+                        <Text style={styles.formatName}>{fmt.formatName}</Text>
+                        <View style={styles.formatTable}>
+                          {fmt.categories.map((cat) => (
+                            <View key={cat._id} style={styles.catRow}>
+                              <Text style={styles.catRowName}>{cat.name}</Text>
+                              <Text style={styles.catRowFee}>₹{cat.fee}/-</Text>
+                            </View>
+                          ))}
+                        </View>
                       </View>
-                      <Text style={styles.catFee}>₹{cat.fee}</Text>
-                    </View>
-                  ))}
+                    ))}
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* Amenities */}
+            {amenitiesList.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Amenities</Text>
+                <View style={styles.amenitiesGrid}>
+                  {amenitiesList.map((a, i) => {
+                    const { Icon, iconName } = getAmenityIcon(a);
+                    return (
+                      <View key={`${a}-${i}`} style={styles.amenityTile}>
+                        <Icon name={iconName} size={22} color="#15A765" />
+                        <Text style={styles.amenityLabel}>{a}</Text>
+                      </View>
+                    );
+                  })}
                 </View>
               </View>
             )}
 
-            {/* Terms & Amenities Summary */}
-            <View style={styles.doubleSecRow}>
-              <View style={[styles.halfCard, { marginRight: 12 }]}>
-                <Ionicons name="shield-checkmark" size={22} color="#4CAF50" />
-                <Text style={styles.halfTitle}>Safe Play</Text>
-                <Text style={styles.halfDesc}>Verified Rules</Text>
+            {/* Rules & info — collapsed by default */}
+            {rulesList.length > 0 && (
+              <View style={styles.section}>
+                <TouchableOpacity
+                  style={styles.rulesHeaderRow}
+                  onPress={() => setShowRules(!showRules)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.sectionTitle}>Rules & info</Text>
+                  <MaterialIcons
+                    name={showRules ? "expand-less" : "expand-more"}
+                    size={24}
+                    color="#666"
+                  />
+                </TouchableOpacity>
+                {showRules && (
+                  <View style={styles.rulesBody}>
+                    {rulesList.map((r, i) => (
+                      <Text key={i} style={styles.ruleLine}>
+                        {r}
+                      </Text>
+                    ))}
+                  </View>
+                )}
               </View>
-              <View style={styles.halfCard}>
-                <Ionicons name="water" size={22} color="#03A9F4" />
-                <Text style={styles.halfTitle}>Amenities</Text>
-                <Text style={styles.halfDesc}>Basic Facilities</Text>
-              </View>
-            </View>
-
+            )}
           </View>
         )}
-        {/* Invite Players Button */}
-        {tournament && (
-          <TouchableOpacity
-            style={{
-              flexDirection: "row", alignItems: "center", justifyContent: "center",
-              backgroundColor: "#EEF2FF", marginHorizontal: 16, marginTop: 12,
-              paddingVertical: 12, borderRadius: 12, gap: 8,
-              borderWidth: 1, borderColor: "#C7D2FE",
-            }}
-            onPress={() => navigation.navigate("InvitePlayer", {
-              tournamentId: tournament._id || tournament.id || tournamentId,
-              tournamentName: tournament.title,
-            })}
-          >
-            <Ionicons name="paper-plane" size={18} color="#4F46E5" />
-            <Text style={{ color: "#4F46E5", fontWeight: "700", fontSize: 14 }}>
-              Invite Players
-            </Text>
-          </TouchableOpacity>
-        )}
 
-        <View style={{ height: 120 }} />
+        {/* Bottom spacer so content isn't hidden behind the action bar */}
+        <View style={{ height: isPastTournament ? 40 : 180 }} />
       </ScrollView>
 
-      {/* Apply as Staff Banner — only for users with service roles (not plain Player) */}
-      {!loading && !isPastTournament && isAuthenticated && user?.role && user.role !== "Player" && (
-        <TouchableOpacity
-          style={{
-            position: 'absolute', bottom: 90 + (insets.bottom || 0), left: 16, right: 16,
-            flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-            backgroundColor: '#1E3A5F', borderRadius: 14, paddingVertical: 12, paddingHorizontal: 16, gap: 8,
-            shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 6, elevation: 4,
-          }}
-          onPress={() => navigation.navigate('BrowseTournamentJobsHome', {
-            preSelectedTournament: {
-              _id: tournament._id || tournament.id || tournamentId,
-              title: tournament.title || tournament.name,
-              sportsType: tournament.sportsType,
-            }
-          })}
-          activeOpacity={0.8}
-        >
-          <MaterialCommunityIcons name="briefcase-plus" size={18} color="#FF6A00" />
-          <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700' }}>Apply as Trainer / Referee / Staff</Text>
-          <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.5)" />
-        </TouchableOpacity>
-      )}
-
-      {/* Floating Action Dock */}
+      {/* Floating action bar */}
       {!loading && !isPastTournament && (
-        <View style={[styles.actionDock, { paddingBottom: insets.bottom + 12 }]}>
-          <View style={styles.priceCol}>
-            <Text style={styles.priceLabel}>Entry Fee</Text>
-            <Text style={styles.priceValue}>
-              {categories.length > 0 ? `₹${Math.min(...categories.map(c => c.fee))}` : "Free"}
-              {categories.length > 1 && <Text style={styles.onward}> onward</Text>}
-            </Text>
+        <View style={[styles.actionBar, { paddingBottom: insets.bottom + 12 }]}>
+          <View style={styles.actionTopRow}>
+            <TouchableOpacity
+              style={styles.outlinePill}
+              onPress={handleInvite}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="add" size={16} color="#15A765" />
+              <Text style={styles.outlinePillText}>Invite</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.outlinePill}
+              onPress={handleExploreJobs}
+              activeOpacity={0.85}
+            >
+              <MaterialCommunityIcons name="briefcase-outline" size={16} color="#15A765" />
+              <Text style={styles.outlinePillText}>Explore Jobs</Text>
+            </TouchableOpacity>
           </View>
 
           {bookingChecking ? (
-            <View style={styles.loadingBtn}>
-              <ActivityIndicator size="small" color="#FFF" />
+            <View style={[styles.registerBtn, { opacity: 0.6 }]}>
+              <ActivityIndicator color="#fff" />
             </View>
-          ) : isBooked ? (
-            <View style={styles.bookedBtn}>
-              <Ionicons name="checkmark-circle" size={20} color="#4CAF50" style={{ marginRight: 6 }} />
-              <Text style={styles.bookedBtnText}>Registered</Text>
-            </View>
-          ) : (
-            <TouchableOpacity style={styles.bookBtn} onPress={handleRegistration}>
-              <Text style={styles.bookBtnText}>Registration</Text>
-              <Ionicons name="arrow-forward" size={18} color="#FFF" style={{ marginLeft: 6 }} />
+          ) : !isBooked ? (
+            <TouchableOpacity
+              style={styles.registerBtn}
+              onPress={handleRegistration}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.registerBtnText}>Register</Text>
+              <Ionicons name="arrow-forward" size={18} color="#FFF" />
             </TouchableOpacity>
-          )}
+          ) : null}
         </View>
       )}
 
-      {/* Modern Category Selection Bottom Sheet */}
-      <Modal visible={showCategoryPopup} transparent animationType="slide" onRequestClose={() => setShowCategoryPopup(false)}>
+      {/* Modern Category Selection Bottom Sheet (legacy fallback) */}
+      <Modal
+        visible={showCategoryPopup}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowCategoryPopup(false)}
+      >
         <View style={styles.sheetOverlay}>
-          <TouchableOpacity style={{ flex: 1 }} onPress={() => setShowCategoryPopup(false)} />
+          <TouchableOpacity
+            style={{ flex: 1 }}
+            onPress={() => setShowCategoryPopup(false)}
+          />
           <View style={styles.sheetContent}>
             <View style={styles.sheetHandle} />
             <View style={styles.sheetHeader}>
@@ -528,35 +800,86 @@ const TournamentDetails = ({ route, navigation }) => {
                 <Text style={styles.sheetTitle}>Select Categories</Text>
                 <Text style={styles.sheetSubtitle}>Choose one or more to register</Text>
               </View>
-              <TouchableOpacity onPress={() => setShowCategoryPopup(false)} style={styles.closeBtn}>
+              <TouchableOpacity
+                onPress={() => setShowCategoryPopup(false)}
+                style={styles.closeBtn}
+              >
                 <Ionicons name="close" size={24} color="#90A4AE" />
               </TouchableOpacity>
             </View>
 
             <ScrollView style={styles.sheetList} showsVerticalScrollIndicator={false}>
-              {categories.map((cat, i) => {
-                const isSel = selectedCategories.some(sc => sc._id === cat._id);
-                return (
-                  <TouchableOpacity
-                    key={i}
-                    style={[styles.sheetItem, isSel && styles.sheetItemSel]}
-                    onPress={() => {
-                      if (isSel) setSelectedCategories(prev => prev.filter(s => s._id !== cat._id));
-                      else setSelectedCategories(prev => [...prev, cat]);
-                    }}
-                  >
-                    <View style={styles.sheetItemMain}>
-                      <View style={[styles.checkCircle, isSel && styles.checkCircleSel]}>
-                        {isSel && <Ionicons name="checkmark" size={14} color="#FFF" />}
-                      </View>
-                      <View style={{ marginLeft: 15 }}>
-                        <Text style={[styles.sheetItemName, isSel && styles.textPrimary]}>{cat.name}</Text>
-                        <Text style={styles.sheetItemFee}>Registration: ₹{cat.fee}</Text>
-                      </View>
+              {sportSections.map((section, sIdx) => (
+                <View key={section.sportId || section.sportName || sIdx}>
+                  {sportSections.length > 1 && (
+                    <View
+                      style={{
+                        paddingVertical: 8,
+                        paddingHorizontal: 4,
+                        marginTop: sIdx === 0 ? 0 : 12,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 13,
+                          fontWeight: "700",
+                          color: "#455A64",
+                          textTransform: "uppercase",
+                          letterSpacing: 0.5,
+                        }}
+                      >
+                        {section.sportName}
+                      </Text>
+                      <Text style={{ fontSize: 11, color: "#90A4AE", marginTop: 2 }}>
+                        {section.categories.length}{" "}
+                        categor{section.categories.length === 1 ? "y" : "ies"}
+                      </Text>
                     </View>
-                  </TouchableOpacity>
-                );
-              })}
+                  )}
+                  {section.categories.map((cat, i) => {
+                    const isSel = selectedCategories.some((sc) => sc._id === cat._id);
+                    return (
+                      <TouchableOpacity
+                        key={cat._id || `${section.sportId}-${i}`}
+                        style={[styles.sheetItem, isSel && styles.sheetItemSel]}
+                        onPress={() => {
+                          if (isSel)
+                            setSelectedCategories((prev) =>
+                              prev.filter((s) => s._id !== cat._id)
+                            );
+                          else setSelectedCategories((prev) => [...prev, cat]);
+                        }}
+                      >
+                        <View style={styles.sheetItemMain}>
+                          <View
+                            style={[
+                              styles.checkCircle,
+                              isSel && styles.checkCircleSel,
+                            ]}
+                          >
+                            {isSel && <Ionicons name="checkmark" size={14} color="#FFF" />}
+                          </View>
+                          <View style={{ marginLeft: 15, flex: 1 }}>
+                            <Text
+                              style={[
+                                styles.sheetItemName,
+                                isSel && styles.textPrimary,
+                              ]}
+                            >
+                              {cat.name}
+                            </Text>
+                            <Text style={styles.sheetItemFee}>
+                              {Number(cat.fee || 0) === 0
+                                ? "Free entry"
+                                : `Registration: ₹${cat.fee}`}
+                            </Text>
+                          </View>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ))}
             </ScrollView>
 
             <View style={styles.sheetFooter}>
@@ -565,11 +888,25 @@ const TournamentDetails = ({ route, navigation }) => {
                 <Text style={styles.totalVal}>₹{totalPrice}</Text>
               </View>
               <TouchableOpacity
-                style={[styles.confirmBtn, selectedCategories.length === 0 && styles.disabledBtn]}
+                style={[
+                  styles.confirmBtn,
+                  selectedCategories.length === 0 && styles.disabledBtn,
+                ]}
                 disabled={selectedCategories.length === 0}
                 onPress={() => {
                   setShowCategoryPopup(false);
-                  navigation.navigate("Booking Screen", { tournament, selectedCategory: selectedCategories, employeeId: verifiedEmployeeId });
+                  const sportSelections = selectedCategories.map((c) => ({
+                    sportId: c.sportId || null,
+                    sportName: c.sportName || null,
+                    categoryName: c.name,
+                    fee: Number(c.fee || 0),
+                  }));
+                  navigation.navigate("Booking Screen", {
+                    tournament,
+                    selectedCategory: selectedCategories,
+                    sportSelections,
+                    employeeId: verifiedEmployeeId,
+                  });
                 }}
               >
                 <Text style={styles.confirmBtnText}>Proceed to Payment</Text>
@@ -579,19 +916,55 @@ const TournamentDetails = ({ route, navigation }) => {
         </View>
       </Modal>
 
+      {/* DOB / Gender gate */}
+      <DOBGateModal
+        visible={showDOBGate}
+        onClose={() => setShowDOBGate(false)}
+        onSaved={() => {
+          setShowDOBGate(false);
+          if (categories.length > 0) {
+            navigation.navigate("TournamentBookingWizard", {
+              tournament,
+              employeeId: verifiedEmployeeId,
+            });
+          } else {
+            navigation.navigate("Booking Screen", {
+              tournament,
+              selectedCategory: null,
+              employeeId: verifiedEmployeeId,
+            });
+          }
+        }}
+      />
+
       {/* Employee Verification Modal */}
-      <Modal visible={showVerifyModal} transparent animationType="slide" onRequestClose={() => { setShowVerifyModal(false); setVerifyError(""); }}>
+      <Modal
+        visible={showVerifyModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          setShowVerifyModal(false);
+          setVerifyError("");
+        }}
+      >
         <View style={styles.sheetOverlay}>
-          <TouchableOpacity style={{ flex: 1 }} onPress={() => { setShowVerifyModal(false); setVerifyError(""); }} />
+          <TouchableOpacity
+            style={{ flex: 1 }}
+            onPress={() => {
+              setShowVerifyModal(false);
+              setVerifyError("");
+            }}
+          />
           <View style={styles.verifySheet}>
             <View style={styles.sheetHandle} />
             <View style={styles.verifyHeader}>
               <View style={styles.verifyIconCircle}>
-                <MaterialIcons name="verified-user" size={28} color="#FF6A00" />
+                <MaterialIcons name="verified-user" size={28} color="#15A765" />
               </View>
               <Text style={styles.verifyTitle}>Employee Verification</Text>
               <Text style={styles.verifySubtitle}>
-                This is a corporate tournament. Please enter your Employee ID to verify your eligibility.
+                This is a corporate tournament. Please enter your Employee ID to verify
+                your eligibility.
               </Text>
             </View>
 
@@ -602,7 +975,10 @@ const TournamentDetails = ({ route, navigation }) => {
                 placeholder="Enter your Employee ID"
                 placeholderTextColor="#B0BEC5"
                 value={empIdInput}
-                onChangeText={(text) => { setEmpIdInput(text); setVerifyError(""); }}
+                onChangeText={(text) => {
+                  setEmpIdInput(text);
+                  setVerifyError("");
+                }}
                 autoCapitalize="characters"
                 returnKeyType="done"
                 onSubmitEditing={handleVerifyEmployee}
@@ -617,7 +993,8 @@ const TournamentDetails = ({ route, navigation }) => {
             ) : null}
 
             <Text style={styles.verifyHint}>
-              Your Employee ID or registered mobile number will be matched against the company's approved list.
+              Your Employee ID or registered mobile number will be matched against the
+              company's approved list.
             </Text>
 
             <TouchableOpacity style={styles.verifyBtn} onPress={handleVerifyEmployee}>
@@ -627,7 +1004,10 @@ const TournamentDetails = ({ route, navigation }) => {
 
             <TouchableOpacity
               style={styles.verifyCancelBtn}
-              onPress={() => { setShowVerifyModal(false); setVerifyError(""); }}
+              onPress={() => {
+                setShowVerifyModal(false);
+                setVerifyError("");
+              }}
             >
               <Text style={styles.verifyCancelText}>Cancel</Text>
             </TouchableOpacity>
@@ -638,122 +1018,493 @@ const TournamentDetails = ({ route, navigation }) => {
   );
 };
 
+const AMENITY_TILE_WIDTH = (width - 32 - 16) / 3; // 16px padding × 2, 8px gap × 2
+
 const styles = StyleSheet.create({
-  mainWrapper: { flex: 1, backgroundColor: '#FFF' },
-  container: { flex: 1, backgroundColor: '#F8F9FA' },
-  customHeader: {
-    position: 'absolute',
+  mainWrapper: { flex: 1, backgroundColor: "#FFF" },
+  container: { flex: 1, backgroundColor: "#FFF" },
+
+  // Banner
+  bannerContainer: { height: 280, width: "100%", backgroundColor: "#eee" },
+  bannerImg: { width: "100%", height: "100%" },
+
+  loadingBox: { padding: 50, alignItems: "center" },
+  loadText: { marginTop: 15, color: "#90A4AE", fontWeight: "600" },
+
+  // Content
+  detailsContent: {
+    paddingHorizontal: 16,
+    marginTop: -24,
+  },
+
+  // Title card (overlaps banner bottom)
+  titleCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#EFEFEF",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+  titleText: {
+    fontSize: 22,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: "#1A181B",
+    marginBottom: 6,
+  },
+  locRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  locText: {
+    fontSize: 13,
+    fontFamily: "Poppins_400Regular",
+    color: "#645E66",
+    flexShrink: 1,
+  },
+  shareSquare: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: "#F4F4F5",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dateTimeRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 16,
+  },
+  dateTimeCard: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: "#EFEFEF",
+    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+  },
+  dateTimeText: {
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular",
+    color: "#645E66",
+    flexShrink: 1,
+  },
+
+  // Corporate badge
+  corporateBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F0FBF4",
+    borderRadius: 16,
+    padding: 14,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: "#BBF0CB",
+    gap: 12,
+  },
+  corporateBadgeIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: "#15A765",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  corporateBadgeTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#15A765",
+  },
+  corporateBadgeDesc: {
+    fontSize: 12,
+    color: "#388E3C",
+    fontWeight: "500",
+    marginTop: 2,
+  },
+  verifiedChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#DCFCE7",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    gap: 4,
+  },
+  verifiedChipText: { fontSize: 11, fontWeight: "700", color: "#16A34A" },
+
+  // Generic section
+  section: {
+    marginTop: 24,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: "#1A181B",
+    marginBottom: 10,
+  },
+
+  // Venue
+  venueText: {
+    fontSize: 14,
+    fontFamily: "Poppins_400Regular",
+    color: "#645E66",
+    lineHeight: 22,
+  },
+  seeOnMapWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-end",
+    gap: 2,
+    marginTop: 8,
+  },
+  seeOnMapText: {
+    fontSize: 13,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "600",
+    color: "#0088FF",
+  },
+
+  // About
+  descText: {
+    fontSize: 14,
+    fontFamily: "Poppins_400Regular",
+    color: "#645E66",
+    lineHeight: 22,
+  },
+  readMoreBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 8,
+  },
+  readMoreTxt: {
+    fontSize: 13,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "600",
+    color: "#15A765",
+  },
+
+  // Categories
+  categoryCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#EFEFEF",
+    padding: 14,
+    marginBottom: 12,
+  },
+  catSportName: {
+    fontSize: 16,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: "#1A181B",
+    marginBottom: 4,
+  },
+  formatGroup: {
+    marginTop: 10,
+  },
+  formatName: {
+    fontSize: 13,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "500",
+    color: "#645E66",
+    marginBottom: 8,
+  },
+  formatTable: {
+    backgroundColor: "#F7F7F7",
+    borderRadius: 10,
+    overflow: "hidden",
+  },
+  catRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(0,0,0,0.04)",
+  },
+  catRowName: {
+    fontSize: 13,
+    fontFamily: "Poppins_400Regular",
+    color: "#1A181B",
+  },
+  catRowFee: {
+    fontSize: 13,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "600",
+    color: "#1A181B",
+  },
+
+  // Amenities
+  amenitiesGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  amenityTile: {
+    width: AMENITY_TILE_WIDTH,
+    height: 84,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#EFEFEF",
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  amenityLabel: {
+    fontSize: 12,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "500",
+    color: "#1A181B",
+  },
+
+  // Rules
+  rulesHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  rulesBody: {
+    marginTop: 10,
+    gap: 6,
+  },
+  ruleLine: {
+    fontSize: 13,
+    fontFamily: "Poppins_400Regular",
+    color: "#645E66",
+    lineHeight: 20,
+  },
+
+  // Action bar
+  actionBar: {
+    position: "absolute",
+    bottom: 0,
     left: 0,
     right: 0,
-    height: 100,
-    zIndex: 100,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#EFEFEF",
+    gap: 10,
   },
-  headerBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    justifyContent: 'center',
-    alignItems: 'center',
+  actionTopRow: {
+    flexDirection: "row",
+    gap: 10,
   },
-  headerActions: { flexDirection: 'row', alignItems: 'center' },
-  bannerContainer: { height: 320, width: '100%', position: 'relative' },
-  bannerImg: { width: '100%', height: '100%' },
-  bannerOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end', padding: 25 },
-  bannerContent: { marginBottom: 10 },
-  typeTag: { backgroundColor: '#FF6A00', alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 8, marginBottom: 12 },
-  typeText: { color: '#FFF', fontSize: 12, fontWeight: '800', textTransform: 'uppercase' },
-  tourName: { fontSize: 26, fontWeight: '900', color: '#FFF', marginBottom: 8, textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 10 },
-  hostRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  hostName: { color: 'rgba(255,255,255,0.9)', fontSize: 14, fontWeight: '600' },
-  loadingBox: { padding: 50, alignItems: 'center' },
-  loadText: { marginTop: 15, color: '#90A4AE', fontWeight: '600' },
-  detailsContent: { paddingHorizontal: 20, marginTop: -30 },
-  infoGrid: { flexDirection: 'row', backgroundColor: '#FFF', borderRadius: 25, padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.1, shadowRadius: 15, elevation: 8 },
-  infoItem: { flex: 1, alignItems: 'center' },
-  infoIconBg: { width: 44, height: 44, borderRadius: 15, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
-  infoLabel: { fontSize: 12, color: '#90A4AE', fontWeight: '700', marginBottom: 2 },
-  infoValue: { fontSize: 14, fontWeight: '800', color: '#263238' },
-  sectionCard: { backgroundColor: '#FFF', borderRadius: 25, padding: 20, marginTop: 20, borderBottomWidth: 1, borderBottomColor: '#F1F3F5' },
-  sectionTitle: { fontSize: 18, fontWeight: '800', color: '#263238', marginBottom: 15 },
-  descText: { fontSize: 15, color: '#546E7A', lineHeight: 24 },
-  readMoreBtn: { flexDirection: 'row', alignItems: 'center', marginTop: 12, gap: 5 },
-  readMoreTxt: { fontSize: 14, color: '#FF6A00', fontWeight: '700' },
-  secHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
-  mapBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, backgroundColor: '#F0F7FF' },
-  mapBtnTxt: { fontSize: 12, color: '#007AFF', fontWeight: '800' },
-  locationRow: { flexDirection: 'row', gap: 15, alignItems: 'center' },
-  locIconWrapper: { width: 44, height: 44, borderRadius: 15, backgroundColor: '#FFF5F0', justifyContent: 'center', alignItems: 'center' },
-  fullLocText: { flex: 1, fontSize: 14, color: '#546E7A', fontWeight: '600', lineHeight: 20 },
-  catList: { marginTop: 5 },
-  catItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F8F9FA' },
-  catInfo: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  catDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#CFD8DC' },
-  catName: { fontSize: 15, color: '#455A64', fontWeight: '700' },
-  catFee: { fontSize: 16, fontWeight: '800', color: '#263238' },
-  doubleSecRow: { flexDirection: 'row', marginTop: 20 },
-  halfCard: { flex: 1, backgroundColor: '#FFF', borderRadius: 25, padding: 20, alignItems: 'center' },
-  halfTitle: { fontSize: 15, fontWeight: '800', color: '#263238', marginTop: 10 },
-  halfDesc: { fontSize: 12, color: '#90A4AE', marginTop: 4 },
-  actionDock: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#FFF', paddingHorizontal: 25, paddingTop: 15, flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#ECEFF1', shadowColor: '#000', shadowOffset: { width: 0, height: -10 }, shadowOpacity: 0.05, shadowRadius: 10 },
-  priceCol: { flex: 1 },
-  priceLabel: { fontSize: 12, color: '#90A4AE', fontWeight: '700' },
-  priceValue: { fontSize: 22, fontWeight: '900', color: '#263238' },
-  onward: { fontSize: 14, color: '#B0BEC5', fontWeight: '500' },
-  bookBtn: { backgroundColor: '#FF6A00', height: 56, borderRadius: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 30, shadowColor: '#FF6A00', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.25, shadowRadius: 15, elevation: 8 },
-  bookBtnText: { color: '#FFF', fontSize: 18, fontWeight: '800' },
-  loadingBtn: { backgroundColor: '#ECEFF1', height: 56, borderRadius: 18, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
-  bookedBtn: { backgroundColor: '#E8F5E9', height: 56, borderRadius: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 25, borderWidth: 1, borderColor: '#C8E6C9' },
-  bookedBtnText: { color: '#2E7D32', fontSize: 16, fontWeight: '800' },
-  sheetOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  sheetContent: { backgroundColor: '#FFF', borderTopLeftRadius: 35, borderTopRightRadius: 35, maxHeight: '85%', paddingBottom: 20 },
-  sheetHandle: { width: 40, height: 5, borderRadius: 3, backgroundColor: '#ECEFF1', alignSelf: 'center', marginTop: 15 },
-  sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 25, paddingTop: 25, paddingBottom: 15 },
-  sheetTitle: { fontSize: 22, fontWeight: '900', color: '#263238' },
-  sheetSubtitle: { fontSize: 14, color: '#90A4AE', fontWeight: '500', marginTop: 4 },
-  closeBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#F5F7F8', justifyContent: 'center', alignItems: 'center' },
+  outlinePill: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#BBF0CB",
+    backgroundColor: "#F4FBF6",
+    gap: 6,
+  },
+  outlinePillText: {
+    color: "#15A765",
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "600",
+    fontSize: 13,
+  },
+  registerBtn: {
+    backgroundColor: "#15A765",
+    borderRadius: 16,
+    paddingVertical: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  registerBtnText: {
+    color: "#FFFFFF",
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "700",
+    fontSize: 15,
+  },
+
+  // Legacy modals (preserved)
+  sheetOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "flex-end",
+  },
+  sheetContent: {
+    backgroundColor: "#FFF",
+    borderTopLeftRadius: 35,
+    borderTopRightRadius: 35,
+    maxHeight: "85%",
+    paddingBottom: 20,
+  },
+  sheetHandle: {
+    width: 40,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: "#ECEFF1",
+    alignSelf: "center",
+    marginTop: 15,
+  },
+  sheetHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 25,
+    paddingTop: 25,
+    paddingBottom: 15,
+  },
+  sheetTitle: { fontSize: 22, fontWeight: "900", color: "#263238" },
+  sheetSubtitle: { fontSize: 14, color: "#90A4AE", fontWeight: "500", marginTop: 4 },
+  closeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#F5F7F8",
+    justifyContent: "center",
+    alignItems: "center",
+  },
   sheetList: { paddingHorizontal: 25, maxHeight: 400 },
-  sheetItem: { padding: 18, borderRadius: 20, backgroundColor: '#F8F9FA', marginBottom: 12, borderWidth: 1, borderColor: '#F1F3F5' },
-  sheetItemSel: { backgroundColor: '#FFF9F5', borderColor: '#FF6A00', borderWidth: 1.5 },
-  sheetItemMain: { flexDirection: 'row', alignItems: 'center' },
-  checkCircle: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: '#CFD8DC', justifyContent: 'center', alignItems: 'center' },
-  checkCircleSel: { backgroundColor: '#FF6A00', borderColor: '#FF6A00' },
-  sheetItemName: { fontSize: 16, fontWeight: '800', color: '#455A64' },
-  textPrimary: { color: '#FF6A00' },
-  sheetItemFee: { fontSize: 13, color: '#90A4AE', marginTop: 4, fontWeight: '600' },
-  sheetFooter: { padding: 25, borderTopWidth: 1, borderTopColor: '#F5F7F8' },
-  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  totalLabel: { fontSize: 16, color: '#90A4AE', fontWeight: '700' },
-  totalVal: { fontSize: 24, fontWeight: '900', color: '#263238' },
-  confirmBtn: { backgroundColor: '#FF6A00', height: 60, borderRadius: 20, justifyContent: 'center', alignItems: 'center', shadowColor: '#FF6A00', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.3, shadowRadius: 15, elevation: 10 },
-  confirmBtnText: { color: '#FFF', fontSize: 18, fontWeight: '800' },
-  disabledBtn: { backgroundColor: '#ECEFF1', shadowOpacity: 0, elevation: 0 },
-  // Corporate Badge
-  corporateBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF7ED', borderRadius: 16, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: '#FED7AA', gap: 12 },
-  corporateBadgeIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#FF6A00', justifyContent: 'center', alignItems: 'center' },
-  corporateBadgeTitle: { fontSize: 14, fontWeight: '800', color: '#9A3412' },
-  corporateBadgeDesc: { fontSize: 12, color: '#C2410C', fontWeight: '500', marginTop: 2 },
-  verifiedChip: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#DCFCE7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, gap: 4 },
-  verifiedChipText: { fontSize: 11, fontWeight: '700', color: '#16A34A' },
+  sheetItem: {
+    padding: 18,
+    borderRadius: 20,
+    backgroundColor: "#F8F9FA",
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#F1F3F5",
+  },
+  sheetItemSel: {
+    backgroundColor: "#F0FBF4",
+    borderColor: "#15A765",
+    borderWidth: 1.5,
+  },
+  sheetItemMain: { flexDirection: "row", alignItems: "center" },
+  checkCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: "#CFD8DC",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  checkCircleSel: { backgroundColor: "#15A765", borderColor: "#15A765" },
+  sheetItemName: { fontSize: 16, fontWeight: "800", color: "#455A64" },
+  textPrimary: { color: "#15A765" },
+  sheetItemFee: { fontSize: 13, color: "#90A4AE", marginTop: 4, fontWeight: "600" },
+  sheetFooter: { padding: 25, borderTopWidth: 1, borderTopColor: "#F5F7F8" },
+  totalRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  totalLabel: { fontSize: 16, color: "#90A4AE", fontWeight: "700" },
+  totalVal: { fontSize: 24, fontWeight: "900", color: "#263238" },
+  confirmBtn: {
+    backgroundColor: "#15A765",
+    height: 60,
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  confirmBtnText: { color: "#FFF", fontSize: 18, fontWeight: "800" },
+  disabledBtn: { backgroundColor: "#ECEFF1" },
+
   // Verification Modal
-  verifySheet: { backgroundColor: '#FFF', borderTopLeftRadius: 35, borderTopRightRadius: 35, paddingHorizontal: 25, paddingBottom: 30 },
-  verifyHeader: { alignItems: 'center', paddingTop: 20, paddingBottom: 10 },
-  verifyIconCircle: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#FFF7ED', justifyContent: 'center', alignItems: 'center', marginBottom: 15, borderWidth: 2, borderColor: '#FED7AA' },
-  verifyTitle: { fontSize: 22, fontWeight: '900', color: '#263238', marginBottom: 8 },
-  verifySubtitle: { fontSize: 14, color: '#78909C', fontWeight: '500', textAlign: 'center', lineHeight: 20, paddingHorizontal: 10 },
-  verifyInputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8F9FA', borderRadius: 18, paddingHorizontal: 16, height: 60, marginTop: 20, borderWidth: 1.5, borderColor: '#E0E0E0', gap: 12 },
-  verifyInput: { flex: 1, fontSize: 16, fontWeight: '700', color: '#263238', letterSpacing: 1 },
-  verifyErrorRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10, gap: 6, paddingHorizontal: 4 },
-  verifyErrorText: { fontSize: 13, color: '#EF4444', fontWeight: '600', flex: 1 },
-  verifyHint: { fontSize: 12, color: '#B0BEC5', fontWeight: '500', marginTop: 12, textAlign: 'center', lineHeight: 18 },
-  verifyBtn: { backgroundColor: '#FF6A00', height: 56, borderRadius: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 20, gap: 8, shadowColor: '#FF6A00', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.25, shadowRadius: 15, elevation: 8 },
-  verifyBtnText: { color: '#FFF', fontSize: 17, fontWeight: '800' },
-  verifyCancelBtn: { alignItems: 'center', marginTop: 15 },
-  verifyCancelText: { fontSize: 15, fontWeight: '700', color: '#90A4AE' },
+  verifySheet: {
+    backgroundColor: "#FFF",
+    borderTopLeftRadius: 35,
+    borderTopRightRadius: 35,
+    paddingHorizontal: 25,
+    paddingBottom: 30,
+  },
+  verifyHeader: { alignItems: "center", paddingTop: 20, paddingBottom: 10 },
+  verifyIconCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "#F0FBF4",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 15,
+    borderWidth: 2,
+    borderColor: "#BBF0CB",
+  },
+  verifyTitle: { fontSize: 22, fontWeight: "900", color: "#263238", marginBottom: 8 },
+  verifySubtitle: {
+    fontSize: 14,
+    color: "#78909C",
+    fontWeight: "500",
+    textAlign: "center",
+    lineHeight: 20,
+    paddingHorizontal: 10,
+  },
+  verifyInputWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F8F9FA",
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    height: 60,
+    marginTop: 20,
+    borderWidth: 1.5,
+    borderColor: "#E0E0E0",
+    gap: 12,
+  },
+  verifyInput: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#263238",
+    letterSpacing: 1,
+  },
+  verifyErrorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 10,
+    gap: 6,
+    paddingHorizontal: 4,
+  },
+  verifyErrorText: { fontSize: 13, color: "#EF4444", fontWeight: "600", flex: 1 },
+  verifyHint: {
+    fontSize: 12,
+    color: "#B0BEC5",
+    fontWeight: "500",
+    marginTop: 12,
+    textAlign: "center",
+    lineHeight: 18,
+  },
+  verifyBtn: {
+    backgroundColor: "#15A765",
+    height: 56,
+    borderRadius: 18,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 20,
+    gap: 8,
+  },
+  verifyBtnText: { color: "#FFF", fontSize: 17, fontWeight: "800" },
+  verifyCancelBtn: { alignItems: "center", marginTop: 15 },
+  verifyCancelText: { fontSize: 15, fontWeight: "700", color: "#90A4AE" },
 });
 
 export default TournamentDetails;

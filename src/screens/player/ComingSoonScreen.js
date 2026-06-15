@@ -13,10 +13,10 @@ const ComingSoonScreen = ({ navigation }) => {
       </TouchableOpacity>
 
       <View style={styles.content}>
-        <MaterialIcons name="notifications-none" size={80} color="#ccc" />
+        <MaterialIcons name="people-outline" size={80} color="#ccc" />
         <Text style={styles.title}>Coming Soon</Text>
         <Text style={styles.subtitle}>
-          Notifications feature is under development
+          Social features coming soon
         </Text>
       </View>
     </View>

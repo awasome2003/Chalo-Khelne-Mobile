@@ -1,799 +1,820 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useCallback } from "react";
 import {
-    View,
-    Text,
-    ImageBackground,
-    Switch,
-    ScrollView,
-    TouchableOpacity,
-    StyleSheet,
-    Image,
-    ActivityIndicator,
-    Alert,
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Image,
+  TouchableOpacity,
+  ActivityIndicator,
+  RefreshControl,
+  Alert,
 } from "react-native";
-import MaterialIcons from "react-native-vector-icons/MaterialIcons";
-import { useNavigation, useRoute } from "@react-navigation/native";
-import { BlurView } from "expo-blur";
-import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
-import { useAuth } from "../../context/AuthContext";
-import AUTH from "../../api/auth";
+import { Ionicons } from "@expo/vector-icons";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as ImagePicker from "expo-image-picker";
-import { Ionicons } from '@expo/vector-icons';
-import API from '../../api/api'
-import { LinearGradient } from "expo-linear-gradient";
+import { useAuth } from "../../context/AuthContext";
+import API from "../../api/api";
+import { assetUrl } from "../../utils/assetUrl";
+import AUTH from "../../api/auth";
+import POSTS from "../../api/posts";
+import PLAYER_STATS from "../../api/playerStats";
 
-const Profile = () => {
-    const navigation = useNavigation();
-    const route = useRoute();
-    const { user, updateUser, logout } = useAuth();
-    const [isTrainer, setIsTrainer] = useState(false);
-    const [availableRoles, setAvailableRoles] = useState(["Player"]);
-    const [currentRole, setCurrentRole] = useState("Player");
-    const [loading, setLoading] = useState(true);
-    const [uploadingImage, setUploadingImage] = useState(false);
-    const [imageError, setImageError] = useState(false);
-    const [canSwitchRole, setCanSwitchRole] = useState(false);
-    const SERVER_URL = API.SERVER_URL;
+const GREEN = "#15A765";
+const GREEN_DARK = "#0F8A55";
+const ORANGE = "#F59E0B";
+const BLUE = "#2563EB";
+const TEXT_DARK = "#1A181B";
+const TEXT_MUTED = "#6B7280";
+const FIELD_BG = "#F4F4F5";
 
-    // Default profile data
-    const [profileData, setProfileData] = useState({
-        name: "",
-        dob: "",
-        gender: "",
-        clubName: "",
-        contactNumber: "",
-        emergencyContact: "",
-        email: "",
-        address: "",
-        achievements: [],
-        profileImage: null,
-    });
+const COVER_FALLBACK = require("../../../assets/TurnImageNew.jpg");
+const AVATAR_FALLBACK = require("../../../assets/ProfilePlaceholder.png");
 
-    const normalizeProfileImage = (imgPath) => {
-        // Handle null or undefined image paths
-        if (!imgPath) {
-            return null;
-        }
+const ROLE_OPTIONS = ["Player", "Trainer", "Umpire", "Manager", "Referee"];
 
-        // Fix backslashes
-        const img = imgPath.replace(/\\/g, "/");
+const titleCase = (s) =>
+  s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : "";
 
-        // Remove any leading "uploads/" or "./uploads/"
-        const relativeAfterUploads = img.replace(/^\.?\/?(uploads\/)/i, "");
-
-        // Return the final absolute URL
-        return `${SERVER_URL}/uploads/${relativeAfterUploads}`;
-    };
-
-
-
-    // Stats data for different sports
-    const [sportsStats, setSportsStats] = useState({
-        Cricket: { win: 0, lose: 0, draw: 0, total: 0 },
-        Football: { win: 0, lose: 0, draw: 0, total: 0 },
-        TableTennis: { win: 0, lose: 0, draw: 0, total: 0 },
-        Swimming: { win: 0, lose: 0, draw: 0, total: 0 },
-    });
-
-    const [availableSports, setAvailableSports] = useState([
-        "Cricket",
-        "Football",
-        "TableTennis",
-        "Swimming",
-    ]);
-    const [activeTab, setActiveTab] = useState("Cricket");
-
-    useEffect(() => {
-        fetchProfileData();
-        checkRoleSwitchAvailability();
-    }, []);
-
-    // Update profile data when route params change
-    useEffect(() => {
-        if (route.params) {
-            setProfileData({
-                name: route.params.name || profileData.name,
-                dob: route.params.dob || profileData.dob,
-                gender: route.params.gender || profileData.gender,
-                clubName: route.params.clubName || profileData.clubName,
-                contactNumber: route.params.contactNumber || profileData.contactNumber,
-                emergencyContact:
-                    route.params.emergencyContact || profileData.emergencyContact,
-                email: route.params.email || profileData.email,
-                address: route.params.address || profileData.address,
-                achievements: route.params.achievements || profileData.achievements,
-                profileImage: route.params.profileImage || profileData.profileImage,
-            });
-        }
-    }, [route.params]);
-
-    // Set default active tab when sports change
-    useEffect(() => {
-        if (availableSports.length > 0 && !activeTab) {
-            setActiveTab(availableSports[0]);
-        }
-    }, [availableSports]);
-
-    const getToken = async () => {
-        try {
-            return await AsyncStorage.getItem("auth_token");
-        } catch (error) {
-            console.error("Error getting token:", error);
-            return null;
-        }
-    };
-
-    const checkRoleSwitchAvailability = async () => {
-        const userId = user?._id || user?.id;
-        if (!userId) return;
-
-        try {
-            const token = await getToken();
-            const response = await fetch(
-                AUTH.ENDPOINTS.USER.CAN_SWITCH_ROLE(userId),
-                {
-                    headers: {
-                        Authorization: `Bearer ${token}`,
-                    },
-                }
-            );
-            const data = await response.json();
-            setCanSwitchRole(data.canSwitch);
-            if (data.availableRoles) setAvailableRoles(data.availableRoles);
-            if (data.currentRole) setCurrentRole(data.currentRole);
-        } catch (error) {
-            console.error("Error checking role switch availability:", error);
-            setCanSwitchRole(false);
-        }
-    };
-
-    const fetchProfileData = async () => {
-        if (!user) {
-            setLoading(false);
-            return;
-        }
-
-        setLoading(true);
-        try {
-            const token = await getToken();
-            // Use the new endpoint to get complete user data
-            const response = await fetch(AUTH.ENDPOINTS.CURRENT_USER, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            const data = await response.json();
-
-            // ✅ Normalize profile image just like QR handler
-            const normalizedProfileImage = normalizeProfileImage(data.profileImage);
-            setProfileData({
-                name: data.name || "NA",
-                dob: formatDateOfBirth(data.dateOfBirth) || "NA",
-                gender: data.sex
-                    ? data.sex.charAt(0).toUpperCase() + data.sex.slice(1)
-                    : "NA",
-                clubName:
-                    data.clubNames && data.clubNames.length > 0
-                        ? data.clubNames.join(", ")
-                        : "NA",
-                contactNumber: data.mobile || "NA",
-                emergencyContact: data.emergencyContact || "NA",
-                email: data.email || "NA",
-                address: data.address || "NA",
-                achievements: data.achievements
-                    ? data.achievements.split("\n").filter((a) => a.trim())
-                    : [],
-                profileImage: normalizedProfileImage, // ✅ normalized
-            });
-
-            setIsTrainer(data.role === "Trainer");
-
-            // Sports + stats handling same as before...
-        } catch (error) {
-            console.error("Error fetching profile data:", error);
-            Alert.alert("Error", "Failed to load profile data. Please check your internet connection.");
-        } finally {
-            setLoading(false);
-        }
-    };
-
-
-    const toggleSwitch = async () => {
-        const userId = user?._id || user?.id;
-        if (!userId) return;
-
-        try {
-            const token = await getToken();
-            const response = await fetch(AUTH.ENDPOINTS.USER.SWITCH_ROLE(userId), {
-                method: "POST",
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    "Content-Type": "application/json",
-                },
-            });
-
-            const data = await response.json();
-
-            if (response.ok && data.success) {
-                // Store new token and user data
-                await AsyncStorage.setItem("auth_token", data.token);
-                await AsyncStorage.setItem("auth_user", JSON.stringify(data.user));
-
-                // Update AuthContext with new user and token - this triggers dashboard switch
-                await updateUser(data.user, data.token);
-
-                // Update local state
-                setIsTrainer(data.user.role === "Trainer");
-
-                Alert.alert("Success", data.message);
-                // AppNavigator will automatically switch based on new user role
-            } else {
-                Alert.alert("Error", data.message || "Failed to switch account role");
-            }
-        } catch (error) {
-            console.error("Error switching role:", error);
-            Alert.alert("Error", "An error occurred while switching roles");
-        }
-    };
-
-    const switchToRole = async (targetRole) => {
-        const userId = user?._id || user?.id;
-        if (!userId) return;
-
-        try {
-            const token = await getToken();
-            const response = await fetch(AUTH.ENDPOINTS.USER.SWITCH_ROLE(userId), {
-                method: "POST",
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ targetRole }),
-            });
-
-            const data = await response.json();
-
-            if (response.ok && data.success) {
-                await AsyncStorage.setItem("auth_token", data.token);
-                await AsyncStorage.setItem("auth_user", JSON.stringify(data.user));
-                await updateUser(data.user, data.token);
-
-                setCurrentRole(targetRole);
-                setIsTrainer(targetRole === "Trainer");
-
-                Alert.alert("Success", data.message);
-            } else {
-                Alert.alert("Error", data.message || "Failed to switch role");
-            }
-        } catch (error) {
-            console.error("Error switching role:", error);
-            Alert.alert("Error", "An error occurred while switching roles");
-        }
-    };
-
-    const handleRoleSwitch = () => {
-        const targetRole = isTrainer ? "Player" : "Trainer";
-        Alert.alert("Switch Role", `Switch to ${targetRole} mode?`, [
-            { text: "Cancel", style: "cancel" },
-            { text: "Confirm", onPress: () => switchToRole(targetRole) },
-        ]);
-    };
-
-
-    const formatDateOfBirth = (dateString) => {
-        if (!dateString) return "NA";
-        const date = new Date(dateString);
-        const options = { year: "numeric", month: "long", day: "numeric" };
-        return date.toLocaleDateString(undefined, options);
-    };
-
-    if (loading) {
-        return (
-            <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#1B89FF" />
-                <Text style={styles.loadingText}>Loading profile...</Text>
-            </View>
-        );
-    }
-
-    return (
-        <ScrollView showsVerticalScrollIndicator={false} style={styles.container}>
-            <View style={styles.headerContainer}>
-                <LinearGradient
-                    colors={["#004E93", "#00b4db"]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.headerGradient}
-                >
-                    <View style={styles.topActions}>
-                        {/* <TouchableOpacity
-                            style={styles.iconButton}
-                            onPress={() => navigation.goBack()}
-                        >
-                            <MaterialIcons name="arrow-back" size={24} color="#fff" />
-                        </TouchableOpacity> */}
-                        <TouchableOpacity
-                            style={styles.iconButton}
-                            onPress={() => navigation.navigate("EditProfile")}
-                        >
-                            <MaterialIcons name="edit" size={24} color="#fff" />
-                        </TouchableOpacity>
-                    </View>
-                </LinearGradient>
-            </View>
-
-            <View style={styles.profileSection}>
-                <View style={styles.profileImageWrapper}>
-                    <Image
-                        source={
-                            profileData.profileImage && !imageError
-                                ? { uri: profileData.profileImage }
-                                : require("../../../assets/profile.jpg")
-                        }
-                        style={styles.profileImage}
-                        onError={() => setImageError(true)}
-                    />
-                    {uploadingImage && (
-                        <View style={styles.uploadingOverlay}>
-                            <ActivityIndicator size="large" color="#ffffff" />
-                        </View>
-                    )}
-                </View>
-                <Text style={styles.profileName}>{profileData.name || "NA"}</Text>
-                <View style={[styles.badgeContainer, { flexDirection: 'row', gap: 6, flexWrap: 'wrap', justifyContent: 'center' }]}>
-                    {availableRoles.map((role) => {
-                        const isActive = currentRole === role;
-                        const colors = role === "Trainer" ? ["#FF6A00", "#EE0979"]
-                            : role === "Referee" ? ["#3B82F6", "#6366F1"]
-                            : ["#004E93", "#00b4db"];
-                        return (
-                            <LinearGradient
-                                key={role}
-                                colors={isActive ? colors : ["#E5E7EB", "#D1D5DB"]}
-                                style={[styles.roleBadge, { marginHorizontal: 0 }]}
-                            >
-                                <Text style={[styles.roleText, !isActive && { color: '#6B7280' }]}>
-                                    {role === "Referee" ? "Umpire" : role}
-                                    {isActive ? " ★" : ""}
-                                </Text>
-                            </LinearGradient>
-                        );
-                    })}
-                </View>
-            </View>
-
-            {/* <View style={styles.statsCard}>
-                <Text style={styles.statsTitle}>Sports Statistics</Text>
-                <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    style={styles.tabContainer}
-                >
-                    {availableSports.map((sport) => (
-                        <TouchableOpacity
-                            key={sport}
-                            style={[
-                                styles.tabButton,
-                                activeTab === sport && styles.activeTab
-                            ]}
-                            onPress={() => setActiveTab(sport)}
-                        >
-                            <Text style={[
-                                styles.tabText,
-                                activeTab === sport && styles.activeTabText
-                            ]}>
-                                {sport}
-                            </Text>
-                        </TouchableOpacity>
-                    ))}
-                </ScrollView>
-
-                <View style={styles.statsContainer}>
-                    <View style={styles.statItem}>
-                        <Text style={styles.statLabel}>Total</Text>
-                        <Text style={styles.statValue}>{sportsStats[activeTab]?.total || 0}</Text>
-                    </View>
-                    <View style={styles.divider} />
-                    <View style={styles.statItem}>
-                        <Text style={[styles.statLabel, { color: '#4CAF50' }]}>Win</Text>
-                        <Text style={[styles.statValue, { color: '#4CAF50' }]}>{sportsStats[activeTab]?.win || 0}</Text>
-                    </View>
-                    <View style={styles.divider} />
-                    <View style={styles.statItem}>
-                        <Text style={[styles.statLabel, { color: '#F44336' }]}>Lose</Text>
-                        <Text style={[styles.statValue, { color: '#F44336' }]}>{sportsStats[activeTab]?.lose || 0}</Text>
-                    </View>
-                </View>
-            </View> */}
-
-            <View style={styles.card1}>
-                <Text style={styles.sectionTitle}>About Us</Text>
-                <View style={styles.row}>
-                    <MaterialIcons name="person-outline" size={20} color="#666" />
-                    <Text style={styles.label}>Player Name:</Text>
-                    <Text style={styles.value}>{profileData.name || "NA"}</Text>
-                </View>
-                <View style={styles.row}>
-                    <MaterialCommunityIcons
-                        name="calendar-outline"
-                        size={20}
-                        color="#666"
-                    />
-                    <Text style={styles.label}>Date of Birth:</Text>
-                    <Text style={styles.value}>{profileData.dob || "NA"}</Text>
-                </View>
-                <View style={styles.row}>
-                    <MaterialIcons name="wc" size={20} color="#666" />
-                    <Text style={styles.label}>Gender:</Text>
-                    <Text style={styles.value}>{profileData.gender || "NA"}</Text>
-                </View>
-                {profileData.clubName && (
-                    <View style={styles.row}>
-                        <MaterialCommunityIcons
-                            name="account-group"
-                            size={20}
-                            color="#666"
-                        />
-                        <Text style={styles.label}>Club Name:</Text>
-                        <Text style={styles.value}>{profileData.clubName}</Text>
-                    </View>
-                )}
-            </View>
-
-            <View style={styles.card1}>
-                <Text style={styles.sectionTitle}>Contact</Text>
-                <View style={styles.row}>
-                    <MaterialCommunityIcons name="phone-outline" size={20} color="#666" />
-                    <Text style={styles.label}>Contact Number:</Text>
-                    <Text style={styles.value}>{profileData.contactNumber || "NA"}</Text>
-                </View>
-                {profileData.emergencyContact && (
-                    <View style={styles.row}>
-                        <MaterialCommunityIcons
-                            name="phone-outline"
-                            size={20}
-                            color="#666"
-                        />
-                        <Text style={styles.label}>Emergency Contact:</Text>
-                        <Text style={styles.value}>{profileData.emergencyContact}</Text>
-                    </View>
-                )}
-                <View style={styles.row}>
-                    <MaterialCommunityIcons name="email-outline" size={20} color="#666" />
-                    <Text style={styles.label}>Email:</Text>
-                    <Text style={styles.value}>{profileData.email || "NA"}</Text>
-                </View>
-                {profileData.address && (
-                    <View style={styles.row1}>
-                        <MaterialCommunityIcons
-                            name="map-marker-outline"
-                            size={20}
-                            color="#666"
-                        />
-                        <View style={styles.column1}>
-                            <Text style={styles.label1}>Address:</Text>
-                            <Text style={styles.value1}>{profileData.address}</Text>
-                        </View>
-                    </View>
-                )}
-            </View>
-
-            {profileData.achievements && profileData.achievements.length > 0 ? (
-                <View style={styles.card1}>
-                    <Text style={styles.sectionTitle}>Achievements</Text>
-                    {profileData.achievements.map((achievement, index) => (
-                        <View key={index} style={styles.row}>
-                            <MaterialIcons name="workspace-premium" size={20} color="#666" />
-                            <Text style={styles.value}>{achievement}</Text>
-                        </View>
-                    ))}
-                </View>
-            ) : (
-                <View style={styles.card1}>
-                    <Text style={styles.sectionTitle}>Achievements</Text>
-                    <View style={styles.row}>
-                        <MaterialIcons name="workspace-premium" size={20} color="#666" />
-                        <Text style={styles.value}>NA</Text>
-                    </View>
-                </View>
-            )}
-
-            {canSwitchRole && availableRoles.length > 1 && (
-                <View style={styles.card1}>
-                    <Text style={styles.sectionTitle}>Switch Account Role</Text>
-                    <Text style={{ fontSize: 11, color: '#999', marginBottom: 12, marginTop: -4 }}>
-                        Tap a role to switch your active mode
-                    </Text>
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                        {availableRoles.map((role) => {
-                            const isActive = currentRole === role;
-                            const icon = role === "Trainer" ? "school"
-                                : role === "Referee" ? "sports"
-                                : "person";
-                            return (
-                                <TouchableOpacity
-                                    key={role}
-                                    style={{
-                                        flex: 1, minWidth: 90, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-                                        paddingVertical: 12, paddingHorizontal: 14, borderRadius: 14, gap: 6,
-                                        backgroundColor: isActive ? '#004E93' : '#F3F4F6',
-                                        borderWidth: isActive ? 0 : 1, borderColor: '#E5E7EB',
-                                    }}
-                                    onPress={() => {
-                                        if (isActive) return;
-                                        Alert.alert(
-                                            "Switch Role",
-                                            `Switch to ${role === "Referee" ? "Umpire" : role} mode?`,
-                                            [
-                                                { text: "Cancel", style: "cancel" },
-                                                { text: "Switch", onPress: () => switchToRole(role) },
-                                            ]
-                                        );
-                                    }}
-                                    activeOpacity={isActive ? 1 : 0.7}
-                                >
-                                    <MaterialIcons name={icon} size={18} color={isActive ? '#FFF' : '#666'} />
-                                    <Text style={{
-                                        fontSize: 13, fontWeight: '800',
-                                        color: isActive ? '#FFF' : '#374151',
-                                    }}>
-                                        {role === "Referee" ? "Umpire" : role}
-                                    </Text>
-                                </TouchableOpacity>
-                            );
-                        })}
-                    </View>
-                </View>
-            )}
-            {/* <View style={styles.menuContainer}>
-                <TouchableOpacity style={styles.menuItem} onPress={logout}>
-                    <Ionicons name="person-outline" size={20} color="#666666" />
-                    <Text style={styles.menuText}>Log Out</Text>
-                </TouchableOpacity>
-            </View> */}
-        </ScrollView>
-    );
+const resolveAvatar = (user) => {
+  if (!user?.profileImage) return null;
+  const img = user.profileImage;
+  return assetUrl(img);
 };
 
-// Keep all the styles from the original component
+const formatDOB = (iso) => {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleDateString("en-IN", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+  } catch {
+    return "—";
+  }
+};
+
+const PlayerProfileScreen = () => {
+  const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
+  const { user: authUser, updateUser, logout } = useAuth();
+
+  const [profile, setProfile] = useState(authUser || null);
+  const [loading, setLoading] = useState(!authUser);
+  const [refreshing, setRefreshing] = useState(false);
+  const [postsCount, setPostsCount] = useState(0);
+  const [careerStats, setCareerStats] = useState(null);
+  const [activeSport, setActiveSport] = useState(null);
+
+  const fetchProfile = async () => {
+    try {
+      const token = await AsyncStorage.getItem("auth_token");
+      if (!token) return;
+      const res = await fetch(AUTH.ENDPOINTS.CURRENT_USER, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setProfile(data);
+        updateUser?.(data);
+      }
+    } catch (e) {
+      console.error("Profile fetch failed:", e);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const fetchPostsCount = async () => {
+    try {
+      const res = await fetch(POSTS.ENDPOINTS.GET_ALL);
+      const data = await res.json();
+      const list = data?.posts || data || [];
+      const uid = authUser?.id || authUser?._id || profile?.id || profile?._id;
+      const mine = list.filter(
+        (p) => p.user?._id === uid || p.user === uid || p.userId === uid
+      );
+      setPostsCount(mine.length);
+    } catch (e) {
+      console.warn("Posts count fetch failed:", e?.message);
+    }
+  };
+
+  const fetchCareerStats = async () => {
+    try {
+      const uid = authUser?.id || authUser?._id || profile?.id || profile?._id;
+      if (!uid) return;
+      const res = await fetch(PLAYER_STATS.ENDPOINTS.CAREER(uid));
+      const data = await res.json();
+      if (data?.success) {
+        setCareerStats(data);
+        // Default the sport-filter chip to the user's most-played sport
+        const top = (data.sportStats || []).slice().sort(
+          (a, b) => (b.matches || 0) - (a.matches || 0)
+        )[0];
+        if (top?.sport) setActiveSport(top.sport);
+      }
+    } catch (e) {
+      console.warn("Career stats fetch failed:", e?.message);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchProfile();
+      fetchPostsCount();
+      fetchCareerStats();
+    }, [])
+  );
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchProfile();
+    fetchPostsCount();
+    fetchCareerStats();
+  }, []);
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={GREEN} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <View style={styles.center}>
+          <Text style={styles.errorText}>Could not load profile.</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const avatarUri = resolveAvatar(profile);
+  const userRoles =
+    Array.isArray(profile.roles) && profile.roles.length > 0
+      ? profile.roles
+      : profile.role
+      ? [profile.role]
+      : [];
+  const currentRole = profile.role || userRoles[0] || "Player";
+
+  const achievements = (profile.achievements || "")
+    .split(/\n+/)
+    .map((a) => a.trim())
+    .filter(Boolean);
+
+  // Real performance — derived from /api/player-stats/:userId aggregation
+  const sportStats = careerStats?.sportStats || [];
+  const sportNames = sportStats.map((s) => s.sport);
+  const activeStat =
+    sportStats.find((s) => s.sport === activeSport) ||
+    sportStats[0] ||
+    null;
+  const perf = activeStat
+    ? {
+        win: activeStat.wins || 0,
+        lose: activeStat.losses || 0,
+        draw: activeStat.draws || 0,
+        rate: activeStat.winRate || 0,
+      }
+    : { win: 0, lose: 0, draw: 0, rate: 0 };
+  const totalMatches = perf.win + perf.lose + perf.draw;
+  const hasAnyStats = sportStats.length > 0;
+
+  const handleAddRole = () => {
+    const remaining = ROLE_OPTIONS.filter(
+      (r) =>
+        ![...userRoles, currentRole]
+          .map((x) => x.toLowerCase())
+          .includes(r.toLowerCase())
+    );
+    if (remaining.length === 0) {
+      Alert.alert("All roles added", "You already have every available role.");
+      return;
+    }
+    Alert.alert("Add a role", "Multi-role assignment coming soon.");
+  };
+
+  const handleLogout = () => {
+    Alert.alert("Log Out", "Are you sure you want to log out?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Log Out", style: "destructive", onPress: () => logout() },
+    ]);
+  };
+
+  return (
+    <SafeAreaView style={styles.container} edges={["top"]}>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backBtn}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="chevron-back" size={22} color={TEXT_DARK} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>My Profile</Text>
+      </View>
+
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={{ paddingBottom: 110 + insets.bottom }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[GREEN]}
+            tintColor={GREEN}
+          />
+        }
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Hero cover + avatar */}
+        <View style={styles.heroWrap}>
+          <Image source={COVER_FALLBACK} style={styles.coverImage} />
+          <TouchableOpacity
+            style={styles.coverEditBtn}
+            onPress={() => navigation.navigate("EditProfile")}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+          >
+            <Ionicons name="pencil" size={16} color="#FFFFFF" />
+          </TouchableOpacity>
+          <View style={styles.avatarRing}>
+            <Image
+              source={avatarUri ? { uri: avatarUri } : AVATAR_FALLBACK}
+              style={styles.avatar}
+            />
+          </View>
+        </View>
+
+        {/* Name + tagline */}
+        <Text style={styles.name}>{profile.name || "Player"}</Text>
+        <Text style={styles.bio}>
+          {profile.bio || "Football lover & weekend player ⚽"}
+        </Text>
+
+        {/* Stats */}
+        <View style={styles.statsCard}>
+          <View style={styles.statCol}>
+            <Text style={styles.statLabel}>Posts</Text>
+            <Text style={styles.statNum}>{postsCount}</Text>
+          </View>
+          <View style={styles.statCol}>
+            <Text style={styles.statLabel}>Followers</Text>
+            <Text style={styles.statNum}>0</Text>
+          </View>
+          <View style={styles.statCol}>
+            <Text style={styles.statLabel}>Following</Text>
+            <Text style={styles.statNum}>0</Text>
+          </View>
+        </View>
+
+        {/* Role chips */}
+        <View style={styles.rolesRow}>
+          <TouchableOpacity
+            style={styles.roleAdd}
+            onPress={handleAddRole}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="add" size={18} color={GREEN} />
+          </TouchableOpacity>
+          {[...new Set([currentRole, ...userRoles, ...ROLE_OPTIONS])]
+            .slice(0, 4)
+            .map((r) => {
+              const active =
+                r.toLowerCase() === (currentRole || "").toLowerCase();
+              return (
+                <View
+                  key={r}
+                  style={[styles.roleChip, active && styles.roleChipActive]}
+                >
+                  <Text
+                    style={[
+                      styles.roleChipText,
+                      active && styles.roleChipTextActive,
+                    ]}
+                  >
+                    {titleCase(r)}
+                  </Text>
+                </View>
+              );
+            })}
+        </View>
+
+        {/* Performance card */}
+        <View style={styles.perfCard}>
+          <Text style={styles.perfTitle}>My Performance</Text>
+
+          {hasAnyStats ? (
+            <>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 8, paddingVertical: 10 }}
+              >
+                {sportNames.map((s) => {
+                  const active = s === activeSport;
+                  return (
+                    <TouchableOpacity
+                      key={s}
+                      style={[
+                        styles.perfSport,
+                        active && styles.perfSportActive,
+                      ]}
+                      onPress={() => setActiveSport(s)}
+                      activeOpacity={0.85}
+                    >
+                      <Text
+                        style={[
+                          styles.perfSportText,
+                          active && styles.perfSportTextActive,
+                        ]}
+                      >
+                        {s}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+
+              <View style={styles.winRateRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.winRateLabel}>Overall Win Rate</Text>
+                  <Text style={styles.winRateValue}>{perf.rate}%</Text>
+                </View>
+                <View style={styles.winRateChart}>
+                  <View style={styles.winRateChartInner}>
+                    <Ionicons name="trending-up" size={20} color={BLUE} />
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.perfStatsRow}>
+                <View style={styles.perfStatCol}>
+                  <View
+                    style={[styles.perfStatBar, { backgroundColor: GREEN }]}
+                  />
+                  <Text style={styles.perfStatLabel}>Win</Text>
+                  <Text style={styles.perfStatNum}>{perf.win}</Text>
+                </View>
+                <View style={styles.perfStatCol}>
+                  <View
+                    style={[styles.perfStatBar, { backgroundColor: "#EF4444" }]}
+                  />
+                  <Text style={styles.perfStatLabel}>Lose</Text>
+                  <Text style={styles.perfStatNum}>{perf.lose}</Text>
+                </View>
+                <View style={styles.perfStatCol}>
+                  <View
+                    style={[styles.perfStatBar, { backgroundColor: "#9CA3AF" }]}
+                  />
+                  <Text style={styles.perfStatLabel}>Draw</Text>
+                  <Text style={styles.perfStatNum}>{perf.draw}</Text>
+                </View>
+              </View>
+
+              <Text style={styles.perfTotal}>
+                Played total{" "}
+                <Text style={{ fontWeight: "800" }}>{totalMatches}</Text> matches
+              </Text>
+            </>
+          ) : (
+            <View style={styles.perfEmpty}>
+              <Ionicons name="trophy-outline" size={36} color="#D1D5DB" />
+              <Text style={styles.perfEmptyTitle}>No matches played yet</Text>
+              <Text style={styles.perfEmptyDesc}>
+                Your win rate and per-sport stats will appear here once you
+                play tournament matches.
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* Basic Details card */}
+        <View style={styles.detailsCard}>
+          <Text style={styles.detailsTitle}>Basic Details</Text>
+
+          <Text style={styles.detailsSection}>Basic Details</Text>
+          <DetailRow label="Player name:" value={profile.name} />
+          <DetailRow label="DOB:" value={formatDOB(profile.dateOfBirth)} />
+          <DetailRow label="Gender:" value={titleCase(profile.sex)} />
+          <DetailRow
+            label="Club name:"
+            value={
+              profile.clubName ||
+              (Array.isArray(profile.clubNames) && profile.clubNames[0]) ||
+              "—"
+            }
+          />
+
+          <View style={styles.detailsDivider} />
+
+          <Text style={styles.detailsSection}>Contact</Text>
+          <DetailRow label="Contact number:" value={profile.mobile} />
+          <DetailRow
+            label="Emergency contact:"
+            value={profile.emergencyContact}
+          />
+          <DetailRow label="Email:" value={profile.email} />
+          <DetailRow label="Address:" value={profile.address} />
+
+          <View style={styles.detailsDivider} />
+
+          <Text style={styles.detailsSection}>Achievements</Text>
+          {achievements.length > 0 ? (
+            achievements.map((a, i) => (
+              <View key={`${a}-${i}`} style={styles.achievementRow}>
+                <View style={styles.achievementIcon}>
+                  <Ionicons name="medal" size={14} color={ORANGE} />
+                </View>
+                <Text style={styles.achievementText}>{a}</Text>
+              </View>
+            ))
+          ) : (
+            <Text
+              style={[styles.detailValue, { textAlign: "left", marginTop: 4 }]}
+            >
+              No achievements added yet.
+            </Text>
+          )}
+        </View>
+
+        {/* Log out */}
+        <TouchableOpacity
+          style={styles.logoutBtn}
+          onPress={handleLogout}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="log-out-outline" size={18} color="#EF4444" />
+          <Text style={styles.logoutText}>Log Out</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </SafeAreaView>
+  );
+};
+
+const DetailRow = ({ label, value }) => (
+  <View style={styles.detailRow}>
+    <Text style={styles.detailLabel}>{label}</Text>
+    <Text style={styles.detailValue} numberOfLines={2}>
+      {value || "—"}
+    </Text>
+  </View>
+);
+
+const AVATAR_SIZE = 110;
+const COVER_HEIGHT = 160;
+
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: "#F8F9FB",
-    },
-    loadingContainer: {
-        flex: 1,
-        justifyContent: "center",
-        alignItems: "center",
-        backgroundColor: "#F8F9FB",
-    },
-    loadingText: {
-        marginTop: 10,
-        fontSize: 16,
-        color: "#666",
-    },
-    headerContainer: {
-        height: 120,
-        overflow: "hidden",
-    },
-    headerGradient: {
-        flex: 1,
-        paddingTop: 40,
-        paddingHorizontal: 16,
-    },
-    topActions: {
-        flexDirection: "row",
-        justifyContent: "flex-end",
-        alignItems: "center",
-    },
-    iconButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: "rgba(255, 255, 255, 0.2)",
-        justifyContent: "center",
-        alignItems: "center",
-    },
-    profileSection: {
-        alignItems: "center",
-        marginTop: -70,
-        marginBottom: 20,
-    },
-    profileImageWrapper: {
-        width: 150,
-        height: 150,
-        borderRadius: 55,
-        borderWidth: 4,
-        borderColor: "#fff",
-        elevation: 8,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
-        shadowRadius: 8,
-        backgroundColor: "#fff",
-        overflow: "visible",
-    },
-    profileImage: {
-        width: "100%",
-        height: "100%",
-        borderRadius: 55,
-    },
-    profileName: {
-        fontSize: 24,
-        fontWeight: "bold",
-        color: "#333",
-        marginTop: 12,
-    },
-    badgeContainer: {
-        marginTop: 8,
-    },
-    roleBadge: {
-        paddingHorizontal: 16,
-        paddingVertical: 4,
-        borderRadius: 20,
-    },
-    roleText: {
-        color: "#fff",
-        fontSize: 14,
-        fontWeight: "600",
-    },
-    statsCard: {
-        backgroundColor: "#fff",
-        marginHorizontal: 16,
-        borderRadius: 20,
-        padding: 20,
-        elevation: 4,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 10,
-        marginBottom: 20,
-    },
-    statsTitle: {
-        fontSize: 18,
-        fontWeight: "bold",
-        color: "#333",
-        marginBottom: 16,
-    },
-    tabContainer: {
-        flexDirection: "row",
-        marginBottom: 20,
-    },
-    tabButton: {
-        paddingHorizontal: 20,
-        paddingVertical: 8,
-        borderRadius: 20,
-        backgroundColor: "#F0F2F5",
-        marginRight: 10,
-    },
-    activeTab: {
-        backgroundColor: "#004E93",
-    },
-    tabText: {
-        color: "#666",
-        fontWeight: "600",
-    },
-    activeTabText: {
-        color: "#fff",
-    },
-    statsContainer: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-    },
-    statItem: {
-        flex: 1,
-        alignItems: "center",
-    },
-    statLabel: {
-        fontSize: 12,
-        color: "#666",
-        marginBottom: 4,
-        fontWeight: "600",
-    },
-    statValue: {
-        fontSize: 20,
-        fontWeight: "bold",
-        color: "#004E93",
-    },
-    divider: {
-        width: 1,
-        height: 30,
-        backgroundColor: "#EEE",
-    },
-    card1: {
-        backgroundColor: "#fff",
-        borderRadius: 20,
-        padding: 20,
-        marginHorizontal: 16,
-        marginBottom: 16,
-        elevation: 2,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 5,
-    },
-    sectionTitle: {
-        fontSize: 18,
-        fontWeight: "bold",
-        color: "#004E93",
-        marginBottom: 16,
-    },
-    row: {
-        flexDirection: "row",
-        alignItems: "center",
-        marginBottom: 12,
-    },
-    label: {
-        fontSize: 14,
-        fontWeight: "600",
-        color: "#666",
-        marginLeft: 10,
-        flex: 1,
-    },
-    value: {
-        fontSize: 14,
-        color: "#333",
-        fontWeight: "500",
-    },
-    row1: {
-        flexDirection: "row",
-        alignItems: "flex-start",
-        marginBottom: 12,
-    },
-    column1: {
-        flex: 1,
-        marginLeft: 10,
-    },
-    label1: {
-        fontSize: 14,
-        fontWeight: "600",
-        color: "#666",
-    },
-    value1: {
-        fontSize: 14,
-        color: "#333",
-        fontWeight: "500",
-        marginTop: 2,
-    },
-    switchRoleContainer: {
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-        backgroundColor: "#F0F7FF",
-        padding: 15,
-        borderRadius: 15,
-    },
-    roleInfo: {
-        flexDirection: "row",
-        alignItems: "center",
-    },
-    roleTextContainer: {
-        marginLeft: 12,
-    },
-    currentRoleLabel: {
-        fontSize: 12,
-        color: "#666",
-    },
-    currentRoleValue: {
-        fontSize: 16,
-        fontWeight: "bold",
-        color: "#004E93",
-    },
-    switchButton: {
-        backgroundColor: "#FF6A00",
-        flexDirection: "row",
-        alignItems: "center",
-        paddingVertical: 10,
-        paddingHorizontal: 16,
-        borderRadius: 25,
-        elevation: 3,
-    },
-    switchButtonText: {
-        color: "#fff",
-        fontWeight: "bold",
-        fontSize: 12,
-        marginLeft: 4,
-    },
+  container: { flex: 1, backgroundColor: "#FFFFFF" },
+  scroll: { flex: 1 },
+  center: { flex: 1, justifyContent: "center", alignItems: "center" },
+  errorText: { fontSize: 14, color: TEXT_MUTED },
+
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  backBtn: { width: 28, height: 28, justifyContent: "center" },
+  headerTitle: {
+    fontSize: 16,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "600",
+    color: TEXT_DARK,
+  },
+
+  // Hero
+  heroWrap: {
+    marginHorizontal: 16,
+    marginTop: 4,
+    marginBottom: AVATAR_SIZE / 2 + 16,
+  },
+  coverImage: {
+    width: "100%",
+    height: COVER_HEIGHT,
+    borderRadius: 16,
+    backgroundColor: FIELD_BG,
+  },
+  coverEditBtn: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    backgroundColor: "rgba(21,167,101,0.85)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  avatarRing: {
+    position: "absolute",
+    bottom: -AVATAR_SIZE / 2,
+    alignSelf: "center",
+    width: AVATAR_SIZE + 6,
+    height: AVATAR_SIZE + 6,
+    borderRadius: (AVATAR_SIZE + 6) / 2,
+    backgroundColor: ORANGE,
+    padding: 3,
+  },
+  avatar: {
+    width: AVATAR_SIZE,
+    height: AVATAR_SIZE,
+    borderRadius: AVATAR_SIZE / 2,
+    backgroundColor: FIELD_BG,
+  },
+
+  name: {
+    fontSize: 18,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "800",
+    color: TEXT_DARK,
+    textAlign: "center",
+  },
+  bio: {
+    fontSize: 13,
+    fontFamily: "Poppins_400Regular",
+    color: TEXT_MUTED,
+    textAlign: "center",
+    marginTop: 4,
+    marginBottom: 16,
+    paddingHorizontal: 24,
+  },
+
+  // Stats
+  statsCard: {
+    flexDirection: "row",
+    backgroundColor: FIELD_BG,
+    borderRadius: 14,
+    marginHorizontal: 16,
+    paddingVertical: 14,
+    marginBottom: 16,
+  },
+  statCol: { flex: 1, alignItems: "center" },
+  statLabel: {
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular",
+    color: TEXT_MUTED,
+  },
+  statNum: {
+    fontSize: 18,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "800",
+    color: TEXT_DARK,
+    marginTop: 4,
+  },
+
+  // Roles
+  rolesRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 16,
+    marginBottom: 16,
+  },
+  roleAdd: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: GREEN,
+    backgroundColor: "#E8F7F0",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  roleChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 18,
+    backgroundColor: FIELD_BG,
+  },
+  roleChipActive: { backgroundColor: GREEN },
+  roleChipText: {
+    fontSize: 12,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "600",
+    color: TEXT_MUTED,
+  },
+  roleChipTextActive: { color: "#FFFFFF", fontWeight: "700" },
+
+  // Performance
+  perfCard: {
+    marginHorizontal: 16,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: GREEN,
+    padding: 14,
+    marginBottom: 16,
+  },
+  perfTitle: {
+    fontSize: 15,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: GREEN_DARK,
+  },
+  perfSport: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: FIELD_BG,
+  },
+  perfSportActive: { backgroundColor: "#E8F7F0" },
+  perfSportText: {
+    fontSize: 12,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "600",
+    color: TEXT_MUTED,
+  },
+  perfSportTextActive: { color: GREEN_DARK, fontWeight: "700" },
+
+  winRateRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: FIELD_BG,
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 4,
+  },
+  winRateLabel: {
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular",
+    color: TEXT_MUTED,
+  },
+  winRateValue: {
+    fontSize: 28,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "800",
+    color: BLUE,
+    marginTop: 2,
+  },
+  winRateChart: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 4,
+    borderColor: BLUE,
+    borderRightColor: "#E5E7EB",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  winRateChartInner: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#FFFFFF",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  perfStatsRow: {
+    flexDirection: "row",
+    backgroundColor: FIELD_BG,
+    borderRadius: 12,
+    paddingVertical: 10,
+    marginTop: 10,
+  },
+  perfStatCol: { flex: 1, alignItems: "flex-start", paddingHorizontal: 14 },
+  perfStatBar: { width: 24, height: 2, borderRadius: 1, marginBottom: 4 },
+  perfStatLabel: {
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular",
+    color: TEXT_MUTED,
+  },
+  perfStatNum: {
+    fontSize: 16,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "800",
+    color: TEXT_DARK,
+    marginTop: 2,
+  },
+  perfTotal: {
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular",
+    color: TEXT_MUTED,
+    textAlign: "center",
+    marginTop: 10,
+  },
+  perfEmpty: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 28,
+    paddingHorizontal: 16,
+  },
+  perfEmptyTitle: {
+    fontSize: 14,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "700",
+    color: TEXT_MUTED,
+    marginTop: 10,
+  },
+  perfEmptyDesc: {
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular",
+    color: "#9CA3AF",
+    textAlign: "center",
+    marginTop: 4,
+    lineHeight: 17,
+  },
+
+  // Details card
+  detailsCard: {
+    marginHorizontal: 16,
+    backgroundColor: FIELD_BG,
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 16,
+  },
+  detailsTitle: {
+    fontSize: 16,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "800",
+    color: TEXT_DARK,
+    marginBottom: 10,
+  },
+  detailsSection: {
+    fontSize: 15,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: TEXT_DARK,
+    marginTop: 12,
+    marginBottom: 10,
+  },
+  detailRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingVertical: 5,
+    gap: 12,
+  },
+  detailLabel: {
+    fontSize: 13,
+    fontFamily: "Poppins_400Regular",
+    color: TEXT_MUTED,
+  },
+  detailValue: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "500",
+    color: TEXT_DARK,
+    textAlign: "right",
+  },
+  detailsDivider: { height: 1, backgroundColor: "#E5E7EB", marginTop: 14 },
+
+  achievementRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    paddingVertical: 5,
+  },
+  achievementIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "#FFFBEB",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 2,
+  },
+  achievementText: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: "Poppins_400Regular",
+    color: TEXT_DARK,
+    lineHeight: 19,
+  },
+
+  logoutBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#FCA5A5",
+    backgroundColor: "#FEF2F2",
+  },
+  logoutText: {
+    fontSize: 14,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: "#EF4444",
+  },
 });
 
-export default Profile;
+export default PlayerProfileScreen;

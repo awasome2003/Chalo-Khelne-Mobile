@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialIcons } from "@expo/vector-icons";
 import tournamentConfig from "../../api/tournaments";
+import { getTournamentType } from "../../utils/sportTrack";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const AllTournamentsScreen = ({ navigation }) => {
@@ -88,7 +89,7 @@ const AllTournamentsScreen = ({ navigation }) => {
   // Add this new function to navigate directly to specific tournament types
   // Update the handleDirectNavigation function
   const handleDirectNavigation = (tournament) => {
-    const t = tournament.type?.toLowerCase() || "";
+    const t = getTournamentType(tournament)?.toLowerCase() || "";
     if (t.includes("group stage")) {
       navigation.navigate("GroupStage", {
         tournamentId: tournament._id,

@@ -14,6 +14,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import CHAT from "../../api/chat";
 import API from "../../api/api";
+import { assetUrl } from "../../utils/assetUrl";
 import groupChatApi from "../../api/groupChat";
 
 /**
@@ -313,8 +314,7 @@ const ChatConversationScreen = () => {
 
   const getProfileImage = (u) => {
     if (!u?.profileImage) return null;
-    const img = u.profileImage.replace(/\\/g, "/").replace(/^\.?\/?uploads\//i, "");
-    return `${API.SERVER_URL}/uploads/${img}`;
+    return assetUrl(u.profileImage);
   };
 
   const formatTime = (d) => new Date(d).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -369,7 +369,7 @@ const ChatConversationScreen = () => {
             )}
             {item.text ? <Text style={[styles.msgText, mine && styles.msgTextMine]}>{item.text}</Text> : null}
             {item.attachments?.map((att, i) => (
-              <Image key={i} source={{ uri: att.url?.startsWith("http") ? att.url : `${API.SERVER_URL}/${att.url}` }}
+              <Image key={i} source={{ uri: assetUrl(att.url) }}
                 style={styles.attachImg} resizeMode="cover" />
             ))}
             <Text style={[styles.msgTime, mine && styles.msgTimeMine]}>{formatTime(item.createdAt)}</Text>

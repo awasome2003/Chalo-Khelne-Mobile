@@ -19,10 +19,14 @@ export const NotificationProvider = ({ children }) => {
   const socketRef = useRef(null);
 
   const userId = user?._id || user?.id;
+  // Club-staff (Manager / trainer / coach) accounts aren't in the User
+  // collection and have no player notifications — skip the whole flow for them
+  // (the User-scoped endpoints would 401).
+  const isStaff = String(user?.role || "") === "Manager";
 
   // ── Connect socket + listen for real-time notifications ──
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || isStaff) return;
 
     // Get token from AsyncStorage (more reliable than context state on app start)
     const connectSocket = async () => {
@@ -62,16 +66,15 @@ export const NotificationProvider = ({ children }) => {
         socketRef.current = null;
       }
     };
-  }, [userId, token]);
+  }, [userId, token, isStaff]);
 
   // ── Fetch notifications from API ──
+  // Use bare axios so it carries the global Authorization header set on login;
+  // AsyncStorage("auth_token") is null (the token lives in SecureStore).
   const fetchNotifications = useCallback(async () => {
-    if (!userId) return;
+    if (!userId || isStaff) return;
     try {
-      const authToken = await AsyncStorage.getItem("auth_token");
-      const res = await axios.get(NOTIFICATIONS.GET_ALL(userId), {
-        headers: { Authorization: `Bearer ${authToken}` },
-      });
+      const res = await axios.get(NOTIFICATIONS.GET_ALL(userId));
       if (res.data.success) {
         setNotifications(res.data.notifications || []);
         setUnreadCount(res.data.unreadCount || 0);
@@ -79,21 +82,18 @@ export const NotificationProvider = ({ children }) => {
     } catch (err) {
       console.error("[NOTIF] Fetch error:", err.message);
     }
-  }, [userId]);
+  }, [userId, isStaff]);
 
   // ── Fetch unread count ──
   const fetchUnreadCount = useCallback(async () => {
-    if (!userId) return;
+    if (!userId || isStaff) return;
     try {
-      const authToken = await AsyncStorage.getItem("auth_token");
-      const res = await axios.get(NOTIFICATIONS.UNREAD_COUNT(userId), {
-        headers: { Authorization: `Bearer ${authToken}` },
-      });
+      const res = await axios.get(NOTIFICATIONS.UNREAD_COUNT(userId));
       if (res.data.success) {
         setUnreadCount(res.data.count);
       }
     } catch {}
-  }, [userId]);
+  }, [userId, isStaff]);
 
   // ── Initial fetch + polling ──
   useEffect(() => {

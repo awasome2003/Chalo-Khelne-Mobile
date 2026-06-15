@@ -16,6 +16,8 @@ const ENDPOINTS = {
   RESET_PASSWORD: `${BASE_URL}/reset-password`,
   GOOGLE_LOGIN: `${BASE_URL}/google-login`,
   REGISTER_DEVICE: `${BASE_URL}/register-device`,
+  REFRESH: `${BASE_URL}/auth/refresh`,
+  LOGOUT: `${BASE_URL}/auth/logout`,
 
   // User profile management
   USER: {

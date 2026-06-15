@@ -1,21 +1,39 @@
 import React, { useState, useCallback } from "react";
 import {
-  View, Text, StyleSheet, TouchableOpacity, FlatList, Image,
-  ActivityIndicator, RefreshControl, Platform, TextInput, Alert,
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  FlatList,
+  Image,
+  ActivityIndicator,
+  RefreshControl,
+  TextInput,
+  ScrollView,
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import { useAuth } from "../../context/AuthContext";
 import API from "../../api/api";
+import { assetUrl } from "../../utils/assetUrl";
+import {
+  getCart,
+  addToCart as addToCartStorage,
+  removeFromCart as removeFromCartStorage,
+} from "../../api/cart";
 
-const TABS = [
-  { key: "browse", label: "Browse", icon: "search" },
-  { key: "listings", label: "My Listings", icon: "pricetag" },
-  { key: "claims", label: "My Claims", icon: "bag-handle" },
-];
+const GREEN = "#15A765";
+const TEXT_DARK = "#1A181B";
+const TEXT_MUTED = "#6B7280";
+const BORDER = "#EEF1FA";
 
 const BASE = `${API.BASE_URL}/donations`;
 
@@ -23,294 +41,688 @@ export default function EquipmentHubScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const userId = user?._id || user?.id;
 
-  const [activeTab, setActiveTab] = useState("browse");
-  const [browseItems, setBrowseItems] = useState([]);
-  const [myListings, setMyListings] = useState([]);
-  const [myClaims, setMyClaims] = useState([]);
+  const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState("");
+  const [activeSport, setActiveSport] = useState("All");
+  const [favorites, setFavorites] = useState(() => new Set());
+  const [cartIds, setCartIds] = useState(() => new Set());
 
   const fetchData = async () => {
     try {
       const token = await AsyncStorage.getItem("auth_token");
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
-
-      const [browseRes, listingsRes, claimsRes] = await Promise.allSettled([
-        axios.get(`${BASE}/listings`),
-        axios.get(`${BASE}/my-listings`, { headers }),
-        axios.get(`${BASE}/my-claims`, { headers }),
-      ]);
-
-      if (browseRes.status === "fulfilled") setBrowseItems(browseRes.value.data?.data || []);
-      if (listingsRes.status === "fulfilled") setMyListings(listingsRes.value.data?.data || []);
-      if (claimsRes.status === "fulfilled") setMyClaims(claimsRes.value.data?.data || []);
+      const res = await axios.get(`${BASE}/listings`, { headers });
+      setItems(res.data?.data || []);
     } catch (err) {
-      console.error("Error fetching equipment data:", err);
+      console.error("Error fetching equipment listings:", err);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  useFocusEffect(useCallback(() => { fetchData(); }, []));
+  const syncCart = async () => {
+    const cart = await getCart();
+    setCartIds(new Set(cart.map((c) => c.listingId)));
+  };
 
-  const getItems = () => {
-    let items = [];
-    if (activeTab === "browse") items = browseItems;
-    else if (activeTab === "listings") items = myListings;
-    else items = myClaims;
+  useFocusEffect(
+    useCallback(() => {
+      fetchData();
+      syncCart();
+    }, [])
+  );
 
-    if (search.trim() && activeTab === "browse") {
-      items = items.filter((i) =>
-        (i.itemName || i.name || "").toLowerCase().includes(search.toLowerCase()) ||
-        (i.sport || "").toLowerCase().includes(search.toLowerCase())
+  // ─── Sport chips: All + unique sports from listings ─────────────────
+  const sportChips = React.useMemo(() => {
+    const sports = new Set();
+    items.forEach((i) => {
+      if (i.sport) sports.add(i.sport);
+    });
+    return ["All", ...Array.from(sports)];
+  }, [items]);
+
+  // ─── Filtering ──────────────────────────────────────────────────────
+  const visibleItems = React.useMemo(() => {
+    let list = items;
+    if (activeSport !== "All") {
+      list = list.filter(
+        (i) => (i.sport || "").toLowerCase() === activeSport.toLowerCase()
       );
     }
-    return items;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(
+        (i) =>
+          (i.itemName || i.name || "").toLowerCase().includes(q) ||
+          (i.sport || "").toLowerCase().includes(q) ||
+          (i.description || "").toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [items, activeSport, search]);
+
+  // ─── Card actions ───────────────────────────────────────────────────
+  const toggleFavorite = (id) => {
+    setFavorites((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
 
-  const getStatusColor = (status) => {
-    const s = (status || "").toLowerCase();
-    if (s === "active" || s === "available") return { bg: "#ECFDF5", text: "#059669" };
-    if (s === "sold" || s === "completed") return { bg: "#FEF2F2", text: "#DC2626" };
-    if (s === "reserved" || s === "pending") return { bg: "#FFF7ED", text: "#EA580C" };
-    return { bg: "#F3F4F6", text: "#6B7280" };
+  const toggleCart = async (item) => {
+    const id = item._id;
+    if (cartIds.has(id)) {
+      const next = await removeFromCartStorage(id);
+      setCartIds(new Set(next.map((c) => c.listingId)));
+    } else {
+      const imageUrl = assetUrl(item.images?.[0]);
+      const next = await addToCartStorage({
+        listingId: id,
+        itemName: item.itemName || item.name || "Equipment",
+        description: item.description || "",
+        condition: item.condition || "",
+        sport: item.sport || "",
+        askingPrice: item.askingPrice || item.price || 0,
+        originalPrice: item.originalPrice || 0,
+        isDonation: !!item.isDonation,
+        image: imageUrl,
+        features: item.features || item.tags || [],
+        quantity: item.quantity || 1,
+        qty: 1,
+      });
+      setCartIds(new Set(next.map((c) => c.listingId)));
+    }
   };
 
+  const openMenu = () => {
+    Alert.alert("Your Equipment", "Manage your listings and claims", [
+      {
+        text: "My Listings",
+        onPress: () => navigation.navigate("MyListings"),
+      },
+      {
+        text: "My Claims",
+        onPress: () => navigation.navigate("MyClaims"),
+      },
+      { text: "Cancel", style: "cancel" },
+    ]);
+  };
+
+  // ─── Renderers ──────────────────────────────────────────────────────
   const renderItem = ({ item }) => {
-    const statusColor = getStatusColor(item.status);
     const isFree = item.isDonation || item.askingPrice === 0;
-    const imageUrl = item.images?.[0]
-      ? (item.images[0].startsWith("http") ? item.images[0] : `${API.SERVER_URL}/${item.images[0]}`)
-      : null;
+    const imageUrl = assetUrl(item.images?.[0]);
+    const isFav = favorites.has(item._id);
+    const inCart = cartIds.has(item._id);
+
+    const conditionPills = [];
+    if (item.condition) conditionPills.push(item.condition);
+    if (item.isDonation) conditionPills.push("For Donation");
 
     return (
       <TouchableOpacity
         style={styles.card}
-        activeOpacity={0.7}
-        onPress={() => navigation.navigate("DonationDetail", { listingId: item._id })}
+        activeOpacity={0.85}
+        onPress={() =>
+          navigation.navigate("DonationDetail", { listingId: item._id })
+        }
       >
-        {/* Image */}
         {imageUrl ? (
           <Image source={{ uri: imageUrl }} style={styles.cardImage} />
         ) : (
-          <View style={styles.cardImagePlaceholder}>
+          <View style={[styles.cardImage, styles.cardImagePlaceholder]}>
             <Ionicons name="basketball-outline" size={28} color="#D1D5DB" />
           </View>
         )}
 
-        {/* Content */}
         <View style={styles.cardContent}>
-          <Text style={styles.cardName} numberOfLines={1}>{item.itemName || item.name || "Equipment"}</Text>
-
-          <View style={styles.cardMeta}>
-            {item.sport && (
-              <View style={styles.sportBadge}>
-                <Text style={styles.sportBadgeText}>{item.sport}</Text>
-              </View>
-            )}
-            {item.condition && (
-              <Text style={styles.conditionText}>{item.condition}</Text>
-            )}
+          <View style={styles.cardTopRow}>
+            <Text style={styles.cardName} numberOfLines={1}>
+              {item.itemName || item.name || "Equipment"}
+            </Text>
+            <TouchableOpacity
+              onPress={() => toggleFavorite(item._id)}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            >
+              <Ionicons
+                name={isFav ? "heart" : "heart-outline"}
+                size={20}
+                color={isFav ? "#E11D48" : "#D1D5DB"}
+              />
+            </TouchableOpacity>
           </View>
+
+          {item.description ? (
+            <Text style={styles.cardDesc} numberOfLines={1}>
+              {item.description}
+            </Text>
+          ) : null}
+
+          {conditionPills.length > 0 && (
+            <View style={styles.pillRow}>
+              {conditionPills.map((p) => (
+                <View key={p} style={styles.condPill}>
+                  <Text style={styles.condPillText}>{p}</Text>
+                </View>
+              ))}
+            </View>
+          )}
 
           <View style={styles.cardFooter}>
-            {isFree ? (
-              <Text style={styles.freeTag}>FREE</Text>
-            ) : (
-              <Text style={styles.priceText}>₹{item.askingPrice || item.price || 0}</Text>
-            )}
-            <View style={[styles.statusBadge, { backgroundColor: statusColor.bg }]}>
-              <Text style={[styles.statusText, { color: statusColor.text }]}>
-                {(item.status || "Active").charAt(0).toUpperCase() + (item.status || "active").slice(1)}
-              </Text>
+            <View style={styles.priceWrap}>
+              {isFree ? (
+                <Text style={styles.freeText}>Free</Text>
+              ) : (
+                <>
+                  {item.originalPrice ? (
+                    <Text style={styles.strikePrice}>₹{item.originalPrice}</Text>
+                  ) : null}
+                  <Text style={styles.priceText}>
+                    ₹{item.askingPrice || item.price || 0}/-
+                  </Text>
+                </>
+              )}
             </View>
+            <TouchableOpacity
+              style={[styles.addBtn, inCart && styles.addBtnAdded]}
+              onPress={() => toggleCart(item)}
+              activeOpacity={0.85}
+            >
+              <Ionicons
+                name={inCart ? "checkmark" : "add"}
+                size={14}
+                color="#FFFFFF"
+              />
+              <Text style={styles.addBtnText}>
+                {inCart ? "Added" : "Add"}
+              </Text>
+            </TouchableOpacity>
           </View>
-
-          {/* Seller info for browse */}
-          {activeTab === "browse" && item.sellerName && (
-            <Text style={styles.sellerText}>by {item.sellerName} · {item.sellerLevel}</Text>
-          )}
-
-          {/* Claim info */}
-          {activeTab === "claims" && item.paymentStatus && (
-            <Text style={styles.sellerText}>Payment: {item.paymentStatus}</Text>
-          )}
         </View>
       </TouchableOpacity>
     );
   };
 
-  const items = getItems();
+  // ─── Hero banner ────────────────────────────────────────────────────
+  const Hero = () => (
+    <LinearGradient
+      colors={["#B89DE3", "#8A6FD6"]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={styles.hero}
+    >
+      <View style={styles.heroDecor}>
+        <Ionicons name="tennisball" size={42} color="rgba(255,255,255,0.9)" />
+        <Ionicons name="football" size={48} color="rgba(255,255,255,0.85)" />
+        <Ionicons name="basketball" size={42} color="rgba(255,255,255,0.9)" />
+      </View>
+      <View style={styles.heroBody}>
+        <Text style={styles.heroTitle}>Sell What You Don't Use.</Text>
+        <Text style={styles.heroSub}>
+          Turn unused sports gear into cash. List items in seconds.
+        </Text>
+        <TouchableOpacity
+          style={styles.heroCta}
+          onPress={() => navigation.navigate("SellGearIntro")}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.heroCtaText}>Sell Now</Text>
+        </TouchableOpacity>
+      </View>
+    </LinearGradient>
+  );
+
+  // ─── Header ─────────────────────────────────────────────────────────
+  const Header = () => (
+    <View style={styles.header}>
+      <Text style={styles.headerTitle}>Equipment Store</Text>
+      <TouchableOpacity
+        onPress={openMenu}
+        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+      >
+        <Ionicons name="person-circle-outline" size={24} color={TEXT_DARK} />
+      </TouchableOpacity>
+    </View>
+  );
+
+  // ─── Search ─────────────────────────────────────────────────────────
+  const SearchBar = () => (
+    <View style={styles.searchBar}>
+      <Ionicons name="search" size={18} color={TEXT_MUTED} />
+      <TextInput
+        style={styles.searchInput}
+        value={search}
+        onChangeText={setSearch}
+        placeholder="Search sports, turfs or players"
+        placeholderTextColor={TEXT_MUTED}
+      />
+      <View style={styles.searchDivider} />
+      <TouchableOpacity hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+        <Ionicons name="mic-outline" size={18} color={TEXT_MUTED} />
+      </TouchableOpacity>
+    </View>
+  );
+
+  // ─── Sport chips ────────────────────────────────────────────────────
+  const Chips = () => (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.chipRow}
+    >
+      {sportChips.map((s) => {
+        const active = activeSport === s;
+        return (
+          <TouchableOpacity
+            key={s}
+            style={[styles.chip, active && styles.chipActive]}
+            onPress={() => setActiveSport(s)}
+            activeOpacity={0.85}
+          >
+            <Text style={[styles.chipText, active && styles.chipTextActive]}>
+              {s}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </ScrollView>
+  );
+
+  // ─── Empty / loading ────────────────────────────────────────────────
+  const ListEmpty = () => {
+    if (loading) {
+      return (
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={GREEN} />
+        </View>
+      );
+    }
+    return (
+      <View style={styles.center}>
+        <Ionicons name="basketball-outline" size={56} color="#D1D5DB" />
+        <Text style={styles.emptyTitle}>No equipment found</Text>
+        <Text style={styles.emptyDesc}>
+          {search.trim() || activeSport !== "All"
+            ? "Try a different search or filter"
+            : "Check back later for new items"}
+        </Text>
+      </View>
+    );
+  };
+
+  const openCart = () => navigation.navigate("Cart");
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color="#1F2937" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Equipment Exchange</Text>
+    <SafeAreaView style={styles.container} edges={["top"]}>
+      <FlatList
+        data={visibleItems}
+        keyExtractor={(item) => item._id}
+        renderItem={renderItem}
+        ListHeaderComponent={
+          <>
+            <Header />
+            <View style={{ paddingHorizontal: 16 }}>
+              <Hero />
+              <SearchBar />
+            </View>
+            <Chips />
+          </>
+        }
+        ListEmptyComponent={ListEmpty}
+        contentContainerStyle={{
+          paddingHorizontal: 16,
+          paddingBottom: (cartIds.size > 0 ? 160 : 100) + insets.bottom,
+        }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              fetchData();
+            }}
+            colors={[GREEN]}
+            tintColor={GREEN}
+          />
+        }
+        showsVerticalScrollIndicator={false}
+      />
+
+      {/* Floating cart toast */}
+      {cartIds.size > 0 && (
         <TouchableOpacity
-          style={styles.addBtn}
-          onPress={() => navigation.navigate("CreateListing")}
+          activeOpacity={0.9}
+          onPress={openCart}
+          style={[styles.cartToast, { bottom: 92 + insets.bottom }]}
         >
-          <Ionicons name="add" size={22} color="#FFF" />
-        </TouchableOpacity>
-      </View>
-
-      {/* Tabs */}
-      <View style={styles.tabBar}>
-        {TABS.map((tab) => (
-          <TouchableOpacity
-            key={tab.key}
-            style={[styles.tab, activeTab === tab.key && styles.tabActive]}
-            onPress={() => setActiveTab(tab.key)}
-          >
-            <Ionicons
-              name={tab.icon}
-              size={16}
-              color={activeTab === tab.key ? "#004E93" : "#9CA3AF"}
-            />
-            <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>
-              {tab.label}
+          <View style={styles.cartToastLeft}>
+            <Ionicons name="cart-outline" size={20} color="#FFFFFF" />
+            <Text style={styles.cartToastText}>
+              {cartIds.size} {cartIds.size === 1 ? "Item" : "Items"} added
             </Text>
-            {tab.key === "listings" && myListings.length > 0 && (
-              <View style={styles.tabBadge}>
-                <Text style={styles.tabBadgeText}>{myListings.length}</Text>
-              </View>
-            )}
-            {tab.key === "claims" && myClaims.length > 0 && (
-              <View style={styles.tabBadge}>
-                <Text style={styles.tabBadgeText}>{myClaims.length}</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      {/* Search (browse only) */}
-      {activeTab === "browse" && (
-        <View style={styles.searchBar}>
-          <Ionicons name="search" size={18} color="#9CA3AF" />
-          <TextInput
-            style={styles.searchInput}
-            value={search}
-            onChangeText={setSearch}
-            placeholder="Search equipment..."
-            placeholderTextColor="#9CA3AF"
-          />
-          {search.length > 0 && (
-            <TouchableOpacity onPress={() => setSearch("")}>
-              <Ionicons name="close-circle" size={18} color="#9CA3AF" />
-            </TouchableOpacity>
-          )}
-        </View>
+          </View>
+          <View style={styles.cartToastRight}>
+            <Text style={styles.cartToastCta}>View Cart</Text>
+            <Ionicons name="chevron-forward" size={16} color="#FFFFFF" />
+          </View>
+        </TouchableOpacity>
       )}
-
-      {/* List */}
-      {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color="#004E93" />
-        </View>
-      ) : items.length === 0 ? (
-        <View style={styles.center}>
-          <Ionicons
-            name={activeTab === "browse" ? "search" : activeTab === "listings" ? "pricetag-outline" : "bag-outline"}
-            size={48} color="#D1D5DB"
-          />
-          <Text style={styles.emptyTitle}>
-            {activeTab === "browse" ? "No equipment available" : activeTab === "listings" ? "No listings yet" : "No claims yet"}
-          </Text>
-          <Text style={styles.emptyDesc}>
-            {activeTab === "browse"
-              ? "Check back later for new items"
-              : activeTab === "listings"
-              ? "List your equipment for sale or donation"
-              : "Claim items from the marketplace"}
-          </Text>
-          {activeTab === "listings" && (
-            <TouchableOpacity style={styles.emptyBtn} onPress={() => navigation.navigate("CreateListing")}>
-              <Ionicons name="add-circle" size={18} color="#FFF" />
-              <Text style={styles.emptyBtnText}>List Equipment</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      ) : (
-        <FlatList
-          data={items}
-          keyExtractor={(item) => item._id}
-          renderItem={renderItem}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(); }} colors={["#004E93"]} />
-          }
-          showsVerticalScrollIndicator={false}
-        />
-      )}
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F5F7FA" },
+  container: { flex: 1, backgroundColor: "#FFFFFF" },
+
+  // Header
   header: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: 16, paddingBottom: 12, backgroundColor: "#FFF",
-    borderBottomWidth: 1, borderBottomColor: "#E5E7EB",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginHorizontal: -16,
   },
-  backBtn: { padding: 8 },
-  headerTitle: { fontSize: 18, fontWeight: "800", color: "#1F2937" },
-  addBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: "#FF6A00", justifyContent: "center", alignItems: "center" },
-  tabBar: {
-    flexDirection: "row", backgroundColor: "#FFF", paddingHorizontal: 12,
-    borderBottomWidth: 1, borderBottomColor: "#E5E7EB",
+  headerTitle: {
+    fontSize: 16,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "600",
+    color: TEXT_DARK,
   },
-  tab: {
-    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center",
-    gap: 5, paddingVertical: 12,
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 14 },
+  cartBtn: { position: "relative" },
+  cartBadge: {
+    position: "absolute",
+    top: -4,
+    right: -6,
+    backgroundColor: GREEN,
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 4,
   },
-  tabActive: { borderBottomWidth: 2, borderBottomColor: "#004E93" },
-  tabText: { fontSize: 12, fontWeight: "600", color: "#9CA3AF" },
-  tabTextActive: { color: "#004E93", fontWeight: "700" },
-  tabBadge: { backgroundColor: "#004E93", borderRadius: 8, minWidth: 18, height: 18, justifyContent: "center", alignItems: "center", paddingHorizontal: 4 },
-  tabBadgeText: { color: "#FFF", fontSize: 9, fontWeight: "800" },
+  cartBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 9,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+  },
+
+  // Hero
+  hero: {
+    borderRadius: 18,
+    padding: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    minHeight: 130,
+    marginTop: 4,
+    marginBottom: 14,
+    overflow: "hidden",
+  },
+  heroDecor: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 110,
+    height: 90,
+    gap: -8,
+  },
+  heroBody: { flex: 1, paddingLeft: 8, alignItems: "flex-end" },
+  heroTitle: {
+    fontSize: 16,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: "#FFFFFF",
+    marginBottom: 4,
+    textAlign: "right",
+  },
+  heroSub: {
+    fontSize: 11,
+    fontFamily: "Poppins_400Regular",
+    color: "rgba(255,255,255,0.92)",
+    lineHeight: 15,
+    marginBottom: 10,
+    textAlign: "right",
+  },
+  heroCta: {
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 18,
+  },
+  heroCtaText: {
+    fontSize: 12,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "700",
+    color: TEXT_DARK,
+  },
+
+  // Search
   searchBar: {
-    flexDirection: "row", alignItems: "center", backgroundColor: "#FFF",
-    marginHorizontal: 16, marginTop: 12, paddingHorizontal: 14, paddingVertical: 10,
-    borderRadius: 14, borderWidth: 1, borderColor: "#E5E7EB", gap: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: BORDER,
+    gap: 10,
+    marginBottom: 14,
   },
-  searchInput: { flex: 1, fontSize: 14, color: "#1F2937" },
-  center: { flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 40 },
-  emptyTitle: { fontSize: 16, fontWeight: "700", color: "#6B7280", marginTop: 12 },
-  emptyDesc: { fontSize: 12, color: "#9CA3AF", marginTop: 4, textAlign: "center" },
-  emptyBtn: {
-    flexDirection: "row", alignItems: "center", gap: 6, marginTop: 16,
-    backgroundColor: "#004E93", paddingHorizontal: 18, paddingVertical: 10, borderRadius: 12,
+  searchInput: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: "Poppins_400Regular",
+    color: TEXT_DARK,
+    padding: 0,
   },
-  emptyBtnText: { color: "#FFF", fontSize: 13, fontWeight: "700" },
+  searchDivider: {
+    width: 1,
+    height: 18,
+    backgroundColor: "#E5E7EB",
+  },
+
+  // Chips
+  chipRow: {
+    paddingHorizontal: 16,
+    gap: 8,
+    paddingBottom: 14,
+  },
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: "#FFFFFF",
+  },
+  chipActive: {
+    backgroundColor: "#E8F7F0",
+    borderColor: GREEN,
+  },
+  chipText: {
+    fontSize: 12,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "500",
+    color: TEXT_MUTED,
+  },
+  chipTextActive: { color: GREEN, fontWeight: "700" },
+
+  // Card
   card: {
-    flexDirection: "row", backgroundColor: "#FFF", borderRadius: 16,
-    marginTop: 10, overflow: "hidden", borderWidth: 1, borderColor: "#F3F4F6",
+    flexDirection: "row",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: BORDER,
+    padding: 10,
+    gap: 12,
+    marginBottom: 12,
   },
-  cardImage: { width: 100, height: 100 },
+  cardImage: {
+    width: 96,
+    height: 110,
+    borderRadius: 10,
+    backgroundColor: "#F4F4F5",
+  },
   cardImagePlaceholder: {
-    width: 100, height: 100, backgroundColor: "#F9FAFB",
-    justifyContent: "center", alignItems: "center",
+    justifyContent: "center",
+    alignItems: "center",
   },
-  cardContent: { flex: 1, padding: 12, justifyContent: "center" },
-  cardName: { fontSize: 14, fontWeight: "700", color: "#1F2937", marginBottom: 4 },
-  cardMeta: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 },
-  sportBadge: { backgroundColor: "#EFF6FF", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
-  sportBadgeText: { fontSize: 10, fontWeight: "700", color: "#004E93" },
-  conditionText: { fontSize: 10, color: "#9CA3AF", fontWeight: "600" },
-  cardFooter: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  freeTag: { fontSize: 13, fontWeight: "800", color: "#059669" },
-  priceText: { fontSize: 14, fontWeight: "800", color: "#1F2937" },
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
-  statusText: { fontSize: 10, fontWeight: "700" },
-  sellerText: { fontSize: 10, color: "#9CA3AF", marginTop: 3 },
+  cardContent: { flex: 1, justifyContent: "space-between" },
+  cardTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  cardName: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: TEXT_DARK,
+  },
+  cardDesc: {
+    fontSize: 11,
+    fontFamily: "Poppins_400Regular",
+    color: TEXT_MUTED,
+    marginTop: 2,
+  },
+  pillRow: {
+    flexDirection: "row",
+    gap: 6,
+    marginTop: 6,
+    flexWrap: "wrap",
+  },
+  condPill: {
+    backgroundColor: "#E8F7F0",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  condPillText: {
+    fontSize: 10,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "600",
+    color: "#0F8A55",
+  },
+  cardFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 8,
+  },
+  priceWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flex: 1,
+  },
+  strikePrice: {
+    fontSize: 11,
+    color: "#9CA3AF",
+    textDecorationLine: "line-through",
+    fontFamily: "Poppins_400Regular",
+  },
+  priceText: {
+    fontSize: 14,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: TEXT_DARK,
+  },
+  freeText: {
+    fontSize: 14,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: TEXT_DARK,
+  },
+  addBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: GREEN,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  addBtnAdded: { backgroundColor: "#0F8A55" },
+  addBtnText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "700",
+  },
+
+  // Floating cart toast
+  cartToast: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: GREEN,
+    borderRadius: 28,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  cartToastLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  cartToastText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "600",
+  },
+  cartToastRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  cartToastCta: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+  },
+
+  // States
+  center: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 40,
+    paddingVertical: 60,
+  },
+  emptyTitle: {
+    fontSize: 15,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "700",
+    color: TEXT_MUTED,
+    marginTop: 12,
+  },
+  emptyDesc: {
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular",
+    color: "#9CA3AF",
+    marginTop: 4,
+    textAlign: "center",
+  },
 });

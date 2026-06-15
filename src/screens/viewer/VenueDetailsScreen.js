@@ -6,17 +6,34 @@ import {
   Image,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView,
   FlatList,
   ActivityIndicator,
   Alert,
+  Dimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
 import API from "../../api/api";
 import useBottomInset from "../../hooks/useBottomInset";
+import { assetUrl } from "../../utils/assetUrl";
+
+// ─── Green design system tokens ──────────────────────────────────────────
+const GREEN = "#15A765"; // primary brand — buttons, active states, accents
+const GREEN_DARK = "#0F8A55"; // gradients, emphasis text
+const GREEN_TINT = "#E8F7F0"; // active chip bg, soft fills
+const AMBER = "#F59E0B"; // SPARING accent only (badges/medals/highlights)
+const TEXT_DARK = "#1A181B"; // headings / primary text
+const TEXT_MUTED = "#6B7280"; // secondary text, labels, placeholders
+const BORDER = "#EEEEFF"; // card/search borders
+const FIELD_BG = "#F4F4F5"; // input/track/inactive-chip bg
+const SCREEN_BG = "#FFFFFF"; // screen background
+
+const SCREEN_WIDTH = Dimensions.get("window").width;
 
 const VenueDetailsScreen = ({ route, navigation }) => {
   const bottom = useBottomInset();
+  const insets = useSafeAreaInsets();
   const { venueId } = route.params || {};
   const [activeTab, setActiveTab] = useState("About");
   const [venue, setVenue] = useState(null);
@@ -52,7 +69,7 @@ const VenueDetailsScreen = ({ route, navigation }) => {
           distance: "Distance not available", // Would need to calculate based on user location
           rating: data.ratings?.average || 0,
           ratingCount: data.ratings?.count || 0,
-          images: data.images?.map((img) => `${API.UPLOADS_URL}/${img}`) || [],
+          images: data.images?.map((img) => assetUrl(img)) || [],
           discount: data.discount || null,
           sports: Array.isArray(data.sports)
             ? data.sports.map((sport) =>
@@ -162,37 +179,39 @@ const VenueDetailsScreen = ({ route, navigation }) => {
 
   const renderAmenityItem = ({ item }) => (
     <View style={styles.amenityItem}>
-      <Ionicons
-        name={
-          item === "Changing Rooms"
-            ? "shirt-outline"
-            : item === "Parking"
-            ? "car-outline"
-            : item === "Refreshments"
-            ? "fast-food-outline"
-            : item === "Wifi"
-            ? "wifi-outline"
-            : item === "Floodlights"
-            ? "flashlight-outline"
-            : item === "Shower"
-            ? "water-outline"
-            : item === "Restrooms"
-            ? "water-outline"
-            : item === "CCTV Surveillance"
-            ? "videocam-outline"
-            : item === "First Aid Kit"
-            ? "medkit-outline"
-            : item === "Artificial Turf"
-            ? "leaf-outline"
-            : item === "Drinking Water"
-            ? "water-outline"
-            : item === "Lounge Area"
-            ? "home-outline"
-            : "checkmark-circle-outline"
-        }
-        size={20}
-        color="#555"
-      />
+      <View style={styles.amenityIconWrap}>
+        <Ionicons
+          name={
+            item === "Changing Rooms"
+              ? "shirt-outline"
+              : item === "Parking"
+              ? "car-outline"
+              : item === "Refreshments"
+              ? "fast-food-outline"
+              : item === "Wifi"
+              ? "wifi-outline"
+              : item === "Floodlights"
+              ? "flashlight-outline"
+              : item === "Shower"
+              ? "water-outline"
+              : item === "Restrooms"
+              ? "water-outline"
+              : item === "CCTV Surveillance"
+              ? "videocam-outline"
+              : item === "First Aid Kit"
+              ? "medkit-outline"
+              : item === "Artificial Turf"
+              ? "leaf-outline"
+              : item === "Drinking Water"
+              ? "water-outline"
+              : item === "Lounge Area"
+              ? "home-outline"
+              : "checkmark-circle-outline"
+          }
+          size={20}
+          color={GREEN}
+        />
+      </View>
       <Text style={styles.amenityText}>{item}</Text>
     </View>
   );
@@ -201,6 +220,7 @@ const VenueDetailsScreen = ({ route, navigation }) => {
     <TouchableOpacity
       style={[styles.slotItem, !item.available && styles.slotItemUnavailable]}
       disabled={!item.available}
+      activeOpacity={0.85}
       onPress={() =>
         Alert.alert("Booking", "Please sign in to access booking features")
       }
@@ -218,14 +238,21 @@ const VenueDetailsScreen = ({ route, navigation }) => {
       >
         {item.price}
       </Text>
-      <Text
+      <View
         style={[
-          styles.slotStatus,
-          !item.available && styles.slotTextUnavailable,
+          styles.slotStatusPill,
+          item.available ? styles.slotStatusPillOpen : styles.slotStatusPillBusy,
         ]}
       >
-        {item.available ? "Available" : "Booked"}
-      </Text>
+        <Text
+          style={[
+            styles.slotStatus,
+            !item.available && styles.slotStatusBusyText,
+          ]}
+        >
+          {item.available ? "Available" : "Booked"}
+        </Text>
+      </View>
     </TouchableOpacity>
   );
 
@@ -249,7 +276,7 @@ const VenueDetailsScreen = ({ route, navigation }) => {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#ff5722" />
+        <ActivityIndicator size="large" color={GREEN} />
         <Text style={styles.loadingText}>Loading venue details...</Text>
       </View>
     );
@@ -259,7 +286,7 @@ const VenueDetailsScreen = ({ route, navigation }) => {
   if (error) {
     return (
       <View style={styles.errorContainer}>
-        <Ionicons name="alert-circle-outline" size={60} color="#f44336" />
+        <Ionicons name="alert-circle-outline" size={56} color="#D1D5DB" />
         <Text style={styles.errorText}>{error}</Text>
         <TouchableOpacity
           style={styles.retryButton}
@@ -275,7 +302,7 @@ const VenueDetailsScreen = ({ route, navigation }) => {
   if (!venue) {
     return (
       <View style={styles.errorContainer}>
-        <Ionicons name="search-outline" size={60} color="#666" />
+        <Ionicons name="search-outline" size={56} color="#D1D5DB" />
         <Text style={styles.errorText}>Venue not found</Text>
         <TouchableOpacity
           style={styles.retryButton}
@@ -288,9 +315,13 @@ const VenueDetailsScreen = ({ route, navigation }) => {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Venue Images */}
+    <View style={styles.container}>
+      <ScrollView
+        style={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 40 }}
+      >
+        {/* Hero image gallery */}
         <View style={styles.imageContainer}>
           {venue.images && venue.images.length > 0 ? (
             <FlatList
@@ -308,21 +339,40 @@ const VenueDetailsScreen = ({ route, navigation }) => {
               resizeMode="cover"
             />
           )}
+
+          {/* Gradient overlay for legibility of floating controls */}
+          <LinearGradient
+            colors={["rgba(0,0,0,0.45)", "transparent", "rgba(0,0,0,0.25)"]}
+            locations={[0, 0.4, 1]}
+            style={StyleSheet.absoluteFill}
+            pointerEvents="none"
+          />
+
+          {/* Floating circular back button */}
+          <TouchableOpacity
+            style={[styles.backButton, { top: insets.top + 8 }]}
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.8}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="chevron-back" size={22} color={TEXT_DARK} />
+          </TouchableOpacity>
+
           {venue.discount && (
-            <View style={styles.discountBadge}>
+            <View style={[styles.discountBadge, { top: insets.top + 8 }]}>
               <Ionicons name="pricetag" size={14} color="#fff" />
               <Text style={styles.discountText}>{venue.discount}</Text>
             </View>
           )}
         </View>
 
-        {/* Venue Info */}
+        {/* Venue Info — content sheet overlapping the hero */}
         <View style={styles.infoContainer}>
           <View style={styles.venueHeader}>
-            <View>
+            <View style={{ flex: 1, paddingRight: 12 }}>
               <Text style={styles.venueName}>{venue.name}</Text>
               <View style={styles.ratingContainer}>
-                <Ionicons name="star" size={18} color="#FFC107" />
+                <Ionicons name="star" size={16} color={AMBER} />
                 <Text style={styles.ratingText}>{venue.rating.toFixed(1)}</Text>
                 <Text style={styles.ratingCount}>
                   ({venue.ratingCount}{" "}
@@ -333,19 +383,22 @@ const VenueDetailsScreen = ({ route, navigation }) => {
             <TouchableOpacity
               style={styles.favoriteButton}
               onPress={toggleFavorite}
+              activeOpacity={0.8}
             >
               <Ionicons
                 name={venue.favorite ? "heart" : "heart-outline"}
-                size={24}
-                color={venue.favorite ? "#f44336" : "#666"}
+                size={22}
+                color={venue.favorite ? GREEN : TEXT_MUTED}
               />
             </TouchableOpacity>
           </View>
 
-          <Text style={styles.venueLocation}>
-            <Ionicons name="location-outline" size={16} color="#666" />{" "}
-            {venue.location}
-          </Text>
+          <View style={styles.venueLocationRow}>
+            <Ionicons name="location-outline" size={16} color={TEXT_MUTED} />
+            <Text style={styles.venueLocation} numberOfLines={2}>
+              {venue.location}
+            </Text>
+          </View>
 
           <View style={styles.sportsList}>
             {venue.sports.map((sport, index) => (
@@ -360,6 +413,7 @@ const VenueDetailsScreen = ({ route, navigation }) => {
             <TouchableOpacity
               style={[styles.tab, activeTab === "About" && styles.activeTab]}
               onPress={() => setActiveTab("About")}
+              activeOpacity={0.8}
             >
               <Text
                 style={[
@@ -373,6 +427,7 @@ const VenueDetailsScreen = ({ route, navigation }) => {
             <TouchableOpacity
               style={[styles.tab, activeTab === "Slots" && styles.activeTab]}
               onPress={() => setActiveTab("Slots")}
+              activeOpacity={0.8}
             >
               <Text
                 style={[
@@ -386,6 +441,7 @@ const VenueDetailsScreen = ({ route, navigation }) => {
             <TouchableOpacity
               style={[styles.tab, activeTab === "Reviews" && styles.activeTab]}
               onPress={() => setActiveTab("Reviews")}
+              activeOpacity={0.8}
             >
               <Text
                 style={[
@@ -401,25 +457,35 @@ const VenueDetailsScreen = ({ route, navigation }) => {
           {/* Tab Content */}
           {activeTab === "About" && (
             <View style={styles.tabContent}>
-              <View style={styles.infoRow}>
-                <View style={styles.infoItem}>
-                  <Ionicons name="call-outline" size={18} color="#666" />
-                  <Text style={styles.infoText}>{venue.phone}</Text>
+              <View style={styles.aboutCard}>
+                <View style={styles.infoRow}>
+                  <View style={styles.infoItem}>
+                    <Ionicons name="call-outline" size={18} color={GREEN} />
+                    <Text style={styles.infoText} numberOfLines={1}>
+                      {venue.phone}
+                    </Text>
+                  </View>
+                  <View style={styles.infoItem}>
+                    <Ionicons name="mail-outline" size={18} color={GREEN} />
+                    <Text style={styles.infoText} numberOfLines={1}>
+                      {venue.email}
+                    </Text>
+                  </View>
                 </View>
-                <View style={styles.infoItem}>
-                  <Ionicons name="mail-outline" size={18} color="#666" />
-                  <Text style={styles.infoText}>{venue.email}</Text>
-                </View>
-              </View>
 
-              <View style={styles.infoRow}>
-                <View style={styles.infoItem}>
-                  <Ionicons name="globe-outline" size={18} color="#666" />
-                  <Text style={styles.infoText}>{venue.website}</Text>
-                </View>
-                <View style={styles.infoItem}>
-                  <Ionicons name="time-outline" size={18} color="#666" />
-                  <Text style={styles.infoText}>{venue.openingHours}</Text>
+                <View style={[styles.infoRow, { marginBottom: 0 }]}>
+                  <View style={styles.infoItem}>
+                    <Ionicons name="globe-outline" size={18} color={GREEN} />
+                    <Text style={styles.infoText} numberOfLines={1}>
+                      {venue.website}
+                    </Text>
+                  </View>
+                  <View style={styles.infoItem}>
+                    <Ionicons name="time-outline" size={18} color={GREEN} />
+                    <Text style={styles.infoText} numberOfLines={1}>
+                      {venue.openingHours}
+                    </Text>
+                  </View>
                 </View>
               </View>
 
@@ -444,8 +510,8 @@ const VenueDetailsScreen = ({ route, navigation }) => {
           {activeTab === "Slots" && (
             <View style={styles.tabContent}>
               <Text style={styles.sectionTitle}>Available Slots for Today</Text>
-              <TouchableOpacity style={styles.dateSelectorButton}>
-                <Ionicons name="calendar-outline" size={18} color="#666" />
+              <TouchableOpacity style={styles.dateSelectorButton} activeOpacity={0.8}>
+                <Ionicons name="calendar-outline" size={18} color={GREEN} />
                 <Text style={styles.dateSelectorText}>
                   {new Date().toLocaleDateString("en-US", {
                     weekday: "long",
@@ -454,7 +520,7 @@ const VenueDetailsScreen = ({ route, navigation }) => {
                     day: "numeric",
                   })}
                 </Text>
-                <Ionicons name="chevron-down" size={18} color="#666" />
+                <Ionicons name="chevron-down" size={18} color={TEXT_MUTED} />
               </TouchableOpacity>
 
               <FlatList
@@ -491,7 +557,7 @@ const VenueDetailsScreen = ({ route, navigation }) => {
                             : "star-outline"
                         }
                         size={16}
-                        color="#FFC107"
+                        color={AMBER}
                       />
                     ))}
                   </View>
@@ -511,6 +577,7 @@ const VenueDetailsScreen = ({ route, navigation }) => {
                 />
               ) : (
                 <View style={styles.noReviewsContainer}>
+                  <Ionicons name="chatbubble-ellipses-outline" size={48} color="#D1D5DB" />
                   <Text style={styles.noReviewsText}>No reviews yet</Text>
                   <Text style={styles.noReviewsSubtext}>
                     Be the first to review this venue
@@ -520,10 +587,12 @@ const VenueDetailsScreen = ({ route, navigation }) => {
 
               <TouchableOpacity
                 style={styles.writeReviewButton}
+                activeOpacity={0.85}
                 onPress={() =>
                   Alert.alert("Review", "Please sign in to write a review")
                 }
               >
+                <Ionicons name="create-outline" size={18} color={GREEN_DARK} />
                 <Text style={styles.writeReviewText}>Write a Review</Text>
               </TouchableOpacity>
             </View>
@@ -531,10 +600,13 @@ const VenueDetailsScreen = ({ route, navigation }) => {
         </View>
       </ScrollView>
 
-      {/* Book Now Button */}
-      <View style={[styles.bookButtonContainer, { paddingBottom: 15 + bottom }]}>
+      {/* Sticky Book Now Button */}
+      <View
+        style={[styles.bookButtonContainer, { paddingBottom: bottom + 12 }]}
+      >
         <TouchableOpacity
           style={styles.bookButton}
+          activeOpacity={0.9}
           onPress={() =>
             Alert.alert("Booking", "Please sign in to access booking features")
           }
@@ -542,104 +614,112 @@ const VenueDetailsScreen = ({ route, navigation }) => {
           <Text style={styles.bookButtonText}>Book Now</Text>
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f5f5f5",
+    backgroundColor: SCREEN_BG,
+  },
+  scroll: {
+    flex: 1,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#f5f5f5",
+    backgroundColor: SCREEN_BG,
   },
   loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: "#666",
+    marginTop: 12,
+    fontSize: 14,
+    color: TEXT_MUTED,
+    fontFamily: "Poppins_400Regular",
   },
   errorContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     padding: 20,
-    backgroundColor: "#f5f5f5",
+    backgroundColor: SCREEN_BG,
   },
   errorText: {
-    fontSize: 18,
-    color: "#666",
+    fontSize: 16,
+    color: TEXT_MUTED,
     textAlign: "center",
-    marginTop: 10,
+    marginTop: 12,
     marginBottom: 20,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
   },
   retryButton: {
-    backgroundColor: "#ff5722",
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 8,
+    backgroundColor: GREEN,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 14,
   },
   retryButtonText: {
     color: "#fff",
-    fontSize: 16,
-    fontWeight: "500",
+    fontSize: 14,
+    fontWeight: "700",
+    fontFamily: "Montserrat_700Bold",
   },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    backgroundColor: "#fff",
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
-  },
-  backButton: {
-    padding: 5,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#333",
-  },
-  shareButton: {
-    padding: 5,
-  },
+
+  // Hero gallery
   imageContainer: {
     position: "relative",
-    height: 220,
+    height: 290,
   },
   venueImage: {
-    width: 435, // Adjust based on your screen width
-    height: 220,
+    width: SCREEN_WIDTH,
+    height: 290,
+  },
+  backButton: {
+    position: "absolute",
+    left: 16,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#FFFFFF",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    elevation: 3,
   },
   discountBadge: {
     position: "absolute",
-    top: 15,
-    right: 15,
-    backgroundColor: "#ff5722",
+    right: 16,
+    backgroundColor: GREEN,
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    zIndex: 10,
   },
   discountText: {
     color: "#fff",
     fontSize: 12,
-    fontWeight: "bold",
-    marginLeft: 3,
+    fontWeight: "700",
+    fontFamily: "Montserrat_600SemiBold",
+    marginLeft: 4,
   },
+
+  // Content sheet
   infoContainer: {
-    backgroundColor: "#fff",
+    backgroundColor: SCREEN_BG,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     marginTop: -20,
-    padding: 20,
-    paddingBottom: 100,
+    paddingHorizontal: 16,
+    paddingTop: 20,
+    paddingBottom: 110,
   },
   venueHeader: {
     flexDirection: "row",
@@ -647,81 +727,106 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
   },
   venueName: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#333",
-    marginBottom: 5,
+    fontSize: 22,
+    fontWeight: "800",
+    color: TEXT_DARK,
+    marginBottom: 6,
+    fontFamily: "Montserrat_700Bold",
   },
   ratingContainer: {
     flexDirection: "row",
     alignItems: "center",
   },
   ratingText: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#333",
+    fontSize: 15,
+    fontWeight: "700",
+    color: TEXT_DARK,
     marginLeft: 5,
+    fontFamily: "Montserrat_600SemiBold",
   },
   ratingCount: {
-    fontSize: 14,
-    color: "#777",
+    fontSize: 13,
+    color: TEXT_MUTED,
     marginLeft: 5,
+    fontFamily: "Poppins_400Regular",
   },
   favoriteButton: {
-    padding: 5,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: FIELD_BG,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  venueLocationRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginTop: 10,
+    marginBottom: 16,
+    gap: 4,
   },
   venueLocation: {
-    fontSize: 14,
-    color: "#666",
-    marginTop: 10,
-    marginBottom: 15,
+    flex: 1,
+    fontSize: 13,
+    color: TEXT_MUTED,
+    fontFamily: "Poppins_400Regular",
+    lineHeight: 18,
   },
   sportsList: {
     flexDirection: "row",
     flexWrap: "wrap",
     marginBottom: 20,
+    gap: 8,
   },
   sportTag: {
-    backgroundColor: "#f0f0f0",
+    backgroundColor: GREEN_TINT,
     paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 15,
-    marginRight: 10,
-    marginBottom: 10,
+    paddingHorizontal: 14,
+    borderRadius: 999,
   },
   sportText: {
     fontSize: 13,
-    color: "#555",
+    color: GREEN_DARK,
+    fontWeight: "600",
+    fontFamily: "Montserrat_600SemiBold",
   },
   tabContainer: {
     flexDirection: "row",
     borderBottomWidth: 1,
-    borderBottomColor: "#eee",
+    borderBottomColor: BORDER,
     marginBottom: 20,
   },
   tab: {
     paddingVertical: 12,
-    marginRight: 20,
+    marginRight: 22,
     borderBottomWidth: 2,
     borderBottomColor: "transparent",
   },
   activeTab: {
-    borderBottomColor: "#ff5722",
+    borderBottomColor: GREEN,
   },
   tabText: {
-    fontSize: 15,
-    fontWeight: "500",
-    color: "#999",
+    fontSize: 14,
+    fontWeight: "600",
+    color: TEXT_MUTED,
+    fontFamily: "Montserrat_600SemiBold",
   },
   activeTabText: {
-    color: "#ff5722",
+    color: GREEN,
   },
   tabContent: {
     marginBottom: 20,
   },
+  aboutCard: {
+    backgroundColor: "#FFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: BORDER,
+    padding: 14,
+  },
   infoRow: {
     flexDirection: "row",
-    marginBottom: 15,
+    marginBottom: 14,
   },
   infoItem: {
     flex: 1,
@@ -729,21 +834,25 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   infoText: {
-    fontSize: 14,
-    color: "#666",
+    flex: 1,
+    fontSize: 13,
+    color: TEXT_DARK,
     marginLeft: 8,
+    fontFamily: "Poppins_400Regular",
   },
   sectionTitle: {
     fontSize: 16,
-    fontWeight: "bold",
-    color: "#333",
+    fontWeight: "700",
+    color: TEXT_DARK,
     marginTop: 20,
-    marginBottom: 10,
+    marginBottom: 12,
+    fontFamily: "Montserrat_600SemiBold",
   },
   descriptionText: {
-    fontSize: 14,
-    color: "#666",
+    fontSize: 13,
+    color: TEXT_MUTED,
     lineHeight: 20,
+    fontFamily: "Poppins_400Regular",
   },
   amenityItem: {
     flexDirection: "row",
@@ -751,65 +860,95 @@ const styles = StyleSheet.create({
     width: "50%",
     paddingVertical: 8,
   },
+  amenityIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: GREEN_TINT,
+    justifyContent: "center",
+    alignItems: "center",
+  },
   amenityText: {
-    fontSize: 14,
-    color: "#666",
-    marginLeft: 8,
+    flex: 1,
+    fontSize: 13,
+    color: TEXT_DARK,
+    marginLeft: 10,
+    fontFamily: "Poppins_400Regular",
   },
   dateSelectorButton: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#f5f5f5",
-    padding: 10,
-    borderRadius: 8,
-    marginBottom: 15,
+    backgroundColor: FIELD_BG,
+    padding: 12,
+    borderRadius: 14,
+    marginBottom: 16,
   },
   dateSelectorText: {
     flex: 1,
-    fontSize: 14,
-    color: "#666",
+    fontSize: 13,
+    color: TEXT_DARK,
     marginLeft: 8,
+    fontFamily: "Poppins_400Regular",
   },
   slotItem: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    backgroundColor: "#f9f9f9",
-    padding: 15,
-    borderRadius: 8,
+    backgroundColor: "#FFF",
+    padding: 14,
+    borderRadius: 14,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: "#e0e0e0",
+    borderColor: BORDER,
   },
   slotItemUnavailable: {
-    backgroundColor: "#f0f0f0",
-    borderColor: "#e0e0e0",
+    backgroundColor: FIELD_BG,
+    borderColor: FIELD_BG,
   },
   slotTime: {
     fontSize: 14,
-    fontWeight: "500",
-    color: "#333",
+    fontWeight: "600",
+    color: TEXT_DARK,
     flex: 1,
+    fontFamily: "Montserrat_600SemiBold",
   },
   slotPrice: {
     fontSize: 14,
-    color: "#ff5722",
-    fontWeight: "bold",
+    color: GREEN_DARK,
+    fontWeight: "700",
     marginHorizontal: 10,
+    fontFamily: "Montserrat_600SemiBold",
+  },
+  slotStatusPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  slotStatusPillOpen: {
+    backgroundColor: GREEN_TINT,
+  },
+  slotStatusPillBusy: {
+    backgroundColor: "#F0F0F0",
   },
   slotStatus: {
-    fontSize: 13,
-    color: "#4CAF50",
+    fontSize: 12,
+    fontWeight: "600",
+    color: GREEN_DARK,
+    fontFamily: "Montserrat_600SemiBold",
+  },
+  slotStatusBusyText: {
+    color: TEXT_MUTED,
   },
   slotTextUnavailable: {
-    color: "#999",
+    color: TEXT_MUTED,
   },
   slotInfoText: {
-    fontSize: 13,
-    color: "#666",
+    fontSize: 12,
+    color: TEXT_MUTED,
     fontStyle: "italic",
     marginTop: 10,
     textAlign: "center",
+    fontFamily: "Poppins_400Regular",
   },
   reviewSummary: {
     alignItems: "center",
@@ -820,22 +959,26 @@ const styles = StyleSheet.create({
   },
   reviewRatingLargeText: {
     fontSize: 36,
-    fontWeight: "bold",
-    color: "#333",
+    fontWeight: "800",
+    color: TEXT_DARK,
+    fontFamily: "Montserrat_700Bold",
   },
   reviewRatingStars: {
     flexDirection: "row",
     marginVertical: 8,
   },
   reviewCountText: {
-    fontSize: 14,
-    color: "#666",
+    fontSize: 13,
+    color: TEXT_MUTED,
+    fontFamily: "Poppins_400Regular",
   },
   reviewItem: {
-    backgroundColor: "#f9f9f9",
-    padding: 15,
-    borderRadius: 8,
-    marginBottom: 15,
+    backgroundColor: "#FFF",
+    padding: 14,
+    borderRadius: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: BORDER,
   },
   reviewHeader: {
     flexDirection: "row",
@@ -844,32 +987,36 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   reviewUser: {
-    fontSize: 15,
-    fontWeight: "500",
-    color: "#333",
+    fontSize: 14,
+    fontWeight: "700",
+    color: TEXT_DARK,
+    fontFamily: "Montserrat_600SemiBold",
   },
   reviewDate: {
-    fontSize: 13,
-    color: "#999",
+    fontSize: 12,
+    color: TEXT_MUTED,
+    fontFamily: "Poppins_400Regular",
   },
   reviewRating: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#4CAF50",
+    backgroundColor: GREEN,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
   },
   reviewRatingText: {
     fontSize: 12,
-    fontWeight: "bold",
+    fontWeight: "700",
     color: "#fff",
     marginRight: 3,
+    fontFamily: "Montserrat_600SemiBold",
   },
   reviewComment: {
-    fontSize: 14,
-    color: "#666",
+    fontSize: 13,
+    color: TEXT_MUTED,
     lineHeight: 20,
+    fontFamily: "Poppins_400Regular",
   },
   noReviewsContainer: {
     alignItems: "center",
@@ -877,47 +1024,55 @@ const styles = StyleSheet.create({
   },
   noReviewsText: {
     fontSize: 16,
-    fontWeight: "500",
-    color: "#666",
+    fontWeight: "700",
+    color: TEXT_MUTED,
+    marginTop: 12,
+    fontFamily: "Montserrat_600SemiBold",
   },
   noReviewsSubtext: {
-    fontSize: 14,
-    color: "#999",
+    fontSize: 13,
+    color: TEXT_MUTED,
     marginTop: 5,
+    fontFamily: "Poppins_400Regular",
   },
   writeReviewButton: {
-    backgroundColor: "#f0f0f0",
-    paddingVertical: 12,
-    borderRadius: 8,
+    flexDirection: "row",
+    backgroundColor: GREEN_TINT,
+    paddingVertical: 14,
+    borderRadius: 14,
     alignItems: "center",
-    marginTop: 10,
+    justifyContent: "center",
+    marginTop: 12,
+    gap: 6,
   },
   writeReviewText: {
     fontSize: 14,
-    fontWeight: "500",
-    color: "#666",
+    fontWeight: "700",
+    color: GREEN_DARK,
+    fontFamily: "Montserrat_600SemiBold",
   },
   bookButtonContainer: {
     position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: "#fff",
-    paddingVertical: 15,
-    paddingHorizontal: 20,
+    backgroundColor: SCREEN_BG,
+    paddingTop: 12,
+    paddingHorizontal: 16,
     borderTopWidth: 1,
-    borderTopColor: "#eee",
+    borderTopColor: BORDER,
   },
   bookButton: {
-    backgroundColor: "#ff5722",
-    paddingVertical: 15,
-    borderRadius: 8,
+    backgroundColor: GREEN,
+    paddingVertical: 14,
+    borderRadius: 14,
     alignItems: "center",
   },
   bookButtonText: {
     fontSize: 16,
-    fontWeight: "bold",
+    fontWeight: "700",
     color: "#fff",
+    fontFamily: "Montserrat_600SemiBold",
   },
 });
 

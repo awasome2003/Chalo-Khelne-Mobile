@@ -9,6 +9,7 @@
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import API from "../api/api";
+import tokenStore from "./tokenStore";
 
 // Global logout callback — set by AuthContext
 let _onTokenExpired = null;
@@ -47,7 +48,8 @@ function isTokenExpired(token) {
  */
 async function handleExpiry() {
   try {
-    await AsyncStorage.multiRemove(["auth_token", "auth_user"]);
+    await tokenStore.clearToken();
+    await AsyncStorage.removeItem("auth_user");
   } catch {}
   if (_onTokenExpired) _onTokenExpired();
 }
@@ -66,7 +68,7 @@ const apiClient = axios.create({
 apiClient.interceptors.request.use(
   async (config) => {
     try {
-      const token = await AsyncStorage.getItem("auth_token");
+      const token = await tokenStore.getToken();
       if (token) {
         // Check expiry before sending
         if (isTokenExpired(token)) {

@@ -10,7 +10,10 @@
 
 const ENVIRONMENTS = {
   development: {
-    SERVER_URL: "http://192.168.1.35:3003",
+    // Laptop LAN IP, captured 2026-05-21 via `ipconfig`. Re-check whenever
+    // you change networks — DHCP can hand you a different address.
+    // Both phone and laptop must be on the same Wi-Fi for this to work.
+    SERVER_URL: "http://10.88.83.245:3003",
   },
   staging: {
     SERVER_URL: "https://chalo-khelne-backend-hp3z.onrender.com",
@@ -23,7 +26,7 @@ const ENVIRONMENTS = {
 // ──────────────────────────────────────────
 // SET ACTIVE ENVIRONMENT HERE
 // ──────────────────────────────────────────
-const ACTIVE_ENV = "production"; // change to "development" for local testing
+const ACTIVE_ENV = "development"; // change to "production" before shipping
 // ──────────────────────────────────────────
 
 const config = ENVIRONMENTS[ACTIVE_ENV] || ENVIRONMENTS.development;
