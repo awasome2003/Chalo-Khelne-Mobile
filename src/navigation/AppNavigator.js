@@ -71,6 +71,10 @@ const AppNavigator = () => {
     if (user.role === "Manager" && (user.staffRole === "trainer" || user.staffRole === "coach")) {
       return <TrainerStaffNavigator />;
     }
+    // A substitute stands in for a coach — same tabs, data scoped to that coach.
+    if (user.role === "Substitute") {
+      return <TrainerStaffNavigator />;
+    }
     switch (user.role) {
       case "Player":
         return <PlayerNavigator />;

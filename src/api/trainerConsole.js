@@ -20,6 +20,9 @@ const TRAINER = {
 
   CLUBS: `${BASE_URL}/trainer-console/clubs`,
   APPLY_CLUB: `${BASE_URL}/trainer-console/clubs/apply`,
+
+  // Calendar / Schedule feed (User, Manager, or Substitute).
+  CALENDAR: (userId) => `${BASE_URL}/trainer-console/calendar/${userId}`,
 };
 
 export default TRAINER;

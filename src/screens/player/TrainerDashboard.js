@@ -97,7 +97,7 @@ const TrainerDashboard = () => {
   const quick = [
     // { label: "Session", icon: "add", solid: true, onPress: () => navigation.navigate("TrainerMySessions") },
     { label: "Batches", icon: "people", bg: "#EAF1FF", color: "#2563EB", onPress: () => navigation.navigate("TrainerBatches") },
-    { label: "Calendar", icon: "calendar", bg: "#FFF4E5", color: "#F59E0B", onPress: () => navigation.navigate("Planner") },
+    { label: "Schedule", icon: "calendar", bg: "#FFF4E5", color: "#F59E0B", onPress: () => navigation.navigate("Planner", { mode: "trainer" }) },
     { label: "Earnings", icon: "cash", bg: "#F6ECFF", color: "#8200DB", onPress: () => navigation.navigate("TrainerEarnings") },
   ];
 

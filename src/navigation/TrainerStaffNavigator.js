@@ -3,6 +3,8 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
 import TrainerStaffHome from "../screens/trainerStaff/TrainerStaffHome";
 import TrainerSchedule from "../screens/trainerStaff/TrainerSchedule";
+import TrainerSyllabus from "../screens/trainerStaff/TrainerSyllabus";
+import TrainerProgress from "../screens/trainerStaff/TrainerProgress";
 import TrainerAttendance from "../screens/trainerStaff/TrainerAttendance";
 import TrainerProfile from "../screens/trainerStaff/TrainerProfile";
 import { colors } from "../theme";
@@ -23,6 +25,8 @@ export default function TrainerStaffNavigator() {
         tabBarIcon: ({ color, size }) => {
           const name =
             route.name === "Schedule" ? "calendar"
+            : route.name === "Syllabus" ? "book"
+            : route.name === "Progress" ? "trending-up"
             : route.name === "Attendance" ? "checkmark-done-circle"
             : route.name === "Profile" ? "person"
             : "home";
@@ -32,6 +36,8 @@ export default function TrainerStaffNavigator() {
     >
       <Tab.Screen name="Home" component={TrainerStaffHome} />
       <Tab.Screen name="Schedule" component={TrainerSchedule} />
+      <Tab.Screen name="Syllabus" component={TrainerSyllabus} />
+      <Tab.Screen name="Progress" component={TrainerProgress} />
       <Tab.Screen name="Attendance" component={TrainerAttendance} />
       <Tab.Screen name="Profile" component={TrainerProfile} />
     </Tab.Navigator>

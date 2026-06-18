@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Alert,
+  ActivityIndicator, Alert, TextInput,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -19,6 +19,7 @@ export default function TrainerAttendance() {
   const [sessionKey, setSessionKey] = useState(null); // `${sport}|${standard}`
   const [students, setStudents] = useState([]);       // school roster for the standard
   const [self, setSelf] = useState(null);             // "present" | "absent" | null
+  const [selfReason, setSelfReason] = useState("");   // required when self === "absent"
   const [marks, setMarks] = useState({});             // { studentId: "present"|"absent" }
   const [loadingSched, setLoadingSched] = useState(true);
   const [loadingSession, setLoadingSession] = useState(false);
@@ -56,7 +57,7 @@ export default function TrainerAttendance() {
 
   // Load the standard's students + existing attendance for this session/date.
   const loadSession = useCallback(async () => {
-    if (!session) { setStudents([]); setSelf(null); setMarks({}); return; }
+    if (!session) { setStudents([]); setSelf(null); setSelfReason(""); setMarks({}); return; }
     setLoadingSession(true);
     try {
       const [stu, att] = await Promise.all([
@@ -65,9 +66,10 @@ export default function TrainerAttendance() {
       ]);
       setStudents(stu.data?.students || []);
       setSelf(att.data?.self || null);
+      setSelfReason(att.data?.selfReason || "");
       setMarks(att.data?.students || {});
     } catch {
-      setStudents([]); setSelf(null); setMarks({});
+      setStudents([]); setSelf(null); setSelfReason(""); setMarks({});
     } finally {
       setLoadingSession(false);
     }
@@ -83,6 +85,10 @@ export default function TrainerAttendance() {
 
   const save = async () => {
     if (!session) return;
+    if (self === "absent" && !selfReason.trim()) {
+      Alert.alert("Reason required", "Please provide a reason for your absence.");
+      return;
+    }
     setSaving(true);
     try {
       await axios.post(`${API.BASE_URL}/attendance`, {
@@ -90,6 +96,7 @@ export default function TrainerAttendance() {
         sport: session.sport,
         standard: session.standard,
         self,
+        selfReason: self === "absent" ? selfReason.trim() : "",
         students: students.map((s) => ({ studentId: s._id, status: marks[s._id] })).filter((x) => x.status),
       });
       Alert.alert("Saved", "Attendance saved.");
@@ -157,6 +164,20 @@ export default function TrainerAttendance() {
                     <Toggle label="Absent" active={self === "absent"} tone="absent" onPress={() => setSelf("absent")} />
                   </View>
                 </View>
+
+                {self === "absent" && (
+                  <View style={styles.reasonBox}>
+                    <Text style={styles.reasonLabel}>Reason for your absence *</Text>
+                    <TextInput
+                      value={selfReason}
+                      onChangeText={setSelfReason}
+                      placeholder="e.g. on leave, unwell, family emergency…"
+                      placeholderTextColor={colors.textSub}
+                      style={styles.reasonInput}
+                      multiline
+                    />
+                  </View>
+                )}
 
                 {/* Students */}
                 <View style={styles.studentsHeader}>
@@ -232,6 +253,9 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 15, fontFamily: "Montserrat_600SemiBold", fontWeight: "800", color: colors.text, marginTop: 18 },
   selfCard: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: colors.white, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: colors.border, marginTop: 8 },
   selfLabel: { fontSize: 14, fontFamily: "Montserrat_500Medium", fontWeight: "600", color: colors.text },
+  reasonBox: { marginTop: 10 },
+  reasonLabel: { fontSize: 12, fontFamily: "Montserrat_600SemiBold", fontWeight: "700", color: colors.error, marginBottom: 6 },
+  reasonInput: { minHeight: 64, backgroundColor: colors.white, borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingTop: 10, paddingBottom: 10, fontSize: 14, fontFamily: "Montserrat_400Regular", color: colors.text, textAlignVertical: "top" },
   studentsHeader: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between" },
   countText: { fontSize: 12, fontFamily: "Montserrat_600SemiBold", fontWeight: "700", color: "#15A765", marginBottom: 2 },
   allPresentBtn: { flexDirection: "row", alignItems: "center", gap: 5, alignSelf: "flex-start", marginTop: 12, marginBottom: 2 },

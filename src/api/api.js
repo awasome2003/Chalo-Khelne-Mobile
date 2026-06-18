@@ -4,7 +4,7 @@
 // Auto-selects by build: production bundles (__DEV__ === false) use the live
 // HTTPS server; Metro/dev builds use the LAN IP. No manual toggle before APK build.
 const Wbsite_SERVER_URL = __DEV__
-  ? "http://10.88.83.245:3003" // local development
+  ? "http://192.168.1.55:3003" // local development
   : "https://chalokhelne.com"; // production
 
 const SERVER_URL = Wbsite_SERVER_URL;

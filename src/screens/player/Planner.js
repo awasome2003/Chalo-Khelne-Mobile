@@ -18,6 +18,7 @@ import { Calendar } from "react-native-calendars";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "../../context/AuthContext";
 import PLANNER from "../../api/planner";
+import TRAINER from "../../api/trainerConsole";
 
 const { width } = Dimensions.get("window");
 
@@ -26,6 +27,16 @@ const Planner = ({ navigation }) => {
   const route = useRoute();
   const { user } = useAuth();
   const userId = user?.id || user?._id;
+
+  // Trainer/coach/substitute mode pulls from /api/trainer-console/calendar/...
+  // (Sessions + Batches + School schedule + Notes). Player mode pulls from the
+  // existing /api/planner/feed. Role auto-detected for Manager/Substitute;
+  // for an independent trainer (User role) the navigator passes mode:"trainer".
+  const trainerMode =
+    user?.role === "Manager" ||
+    user?.role === "Substitute" ||
+    route.params?.mode === "trainer";
+  const feedUrl = trainerMode ? TRAINER.CALENDAR(userId) : PLANNER.ENDPOINTS.FEED(userId);
 
   const [activeRole, setActiveRole] = useState("All");
   const [activeView, setActiveView] = useState("Month"); // List, Week, Month
@@ -50,7 +61,7 @@ const Planner = ({ navigation }) => {
       if (showSpinner) setLoading(true);
       try {
         const token = await AsyncStorage.getItem("auth_token");
-        const res = await fetch(PLANNER.ENDPOINTS.FEED(userId), {
+        const res = await fetch(feedUrl, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
         const data = await res.json();

@@ -13,6 +13,7 @@ import { colors } from "../../theme";
 export default function TrainerProfile() {
   const { user, logout } = useAuth();
   const id = user?.id || user?._id;
+  const isSubstitute = String(user?.role || "") === "Substitute";
 
   const [profile, setProfile] = useState(null);
   const [name, setName] = useState("");
@@ -29,24 +30,32 @@ export default function TrainerProfile() {
 
   const load = useCallback(async () => {
     try {
-      const [prof, hist] = await Promise.all([
-        axios.get(`${API.BASE_URL}/manager/managers/${id}/profile`),
-        axios.get(`${API.BASE_URL}/attendance/history`),
-      ]);
-      const m = prof.data?.manager;
-      if (m) { setProfile(m); setName(m.name || ""); setEmail(m.email || ""); }
-      setHistory(hist.data?.sessions || []);
+      // A substitute isn't a Manager — skip the manager-profile fetch (it'd 404);
+      // just load the (coach's) attendance history.
+      if (isSubstitute) {
+        setName(user?.name || "");
+        const hist = await axios.get(`${API.BASE_URL}/attendance/history`);
+        setHistory(hist.data?.sessions || []);
+      } else {
+        const [prof, hist] = await Promise.all([
+          axios.get(`${API.BASE_URL}/manager/managers/${id}/profile`),
+          axios.get(`${API.BASE_URL}/attendance/history`),
+        ]);
+        const m = prof.data?.manager;
+        if (m) { setProfile(m); setName(m.name || ""); setEmail(m.email || ""); }
+        setHistory(hist.data?.sessions || []);
+      }
     } catch (e) {
       console.warn("Profile load failed:", e?.message);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [id]);
+  }, [id, isSubstitute]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { if (id) load(); else setLoading(false); }, [id, load]);
 
-  const roleLabel = profile?.staffRole === "coach" ? "Coach" : "Trainer";
+  const roleLabel = isSubstitute ? "Substitute" : profile?.staffRole === "coach" ? "Coach" : "Trainer";
   const initial = (name || user?.name || "T").charAt(0).toUpperCase();
 
   const saveProfile = async () => {
@@ -114,25 +123,33 @@ export default function TrainerProfile() {
             </TouchableOpacity>
           </View>
 
-          {/* Edit profile */}
-          <Text style={styles.sectionTitle}>Profile</Text>
-          <View style={styles.card}>
-            <Field label="Name" value={name} onChangeText={setName} placeholder="Your name" />
-            <Field label="Email" value={email} onChangeText={setEmail} placeholder="you@example.com" keyboardType="email-address" autoCapitalize="none" />
-            <TouchableOpacity onPress={saveProfile} disabled={savingProfile} style={styles.primaryBtn}>
-              {savingProfile ? <ActivityIndicator color={colors.white} /> : <Text style={styles.primaryBtnText}>Save profile</Text>}
-            </TouchableOpacity>
-          </View>
+          {isSubstitute ? (
+            <View style={styles.card}>
+              <Text style={styles.subNote}>You're standing in for <Text style={{ fontWeight: "800", color: colors.text }}>{user?.coachName || "a coach"}</Text>. You can see their sports, schedule and mark attendance until your access ends.</Text>
+            </View>
+          ) : (
+            <>
+              {/* Edit profile */}
+              <Text style={styles.sectionTitle}>Profile</Text>
+              <View style={styles.card}>
+                <Field label="Name" value={name} onChangeText={setName} placeholder="Your name" />
+                <Field label="Email" value={email} onChangeText={setEmail} placeholder="you@example.com" keyboardType="email-address" autoCapitalize="none" />
+                <TouchableOpacity onPress={saveProfile} disabled={savingProfile} style={styles.primaryBtn}>
+                  {savingProfile ? <ActivityIndicator color={colors.white} /> : <Text style={styles.primaryBtnText}>Save profile</Text>}
+                </TouchableOpacity>
+              </View>
 
-          {/* Change password */}
-          <Text style={styles.sectionTitle}>Change password</Text>
-          <View style={styles.card}>
-            <Field label="Current password" value={curPw} onChangeText={setCurPw} placeholder="Current password" secureTextEntry />
-            <Field label="New password" value={newPw} onChangeText={setNewPw} placeholder="At least 6 characters" secureTextEntry />
-            <TouchableOpacity onPress={changePassword} disabled={savingPw} style={styles.primaryBtn}>
-              {savingPw ? <ActivityIndicator color={colors.white} /> : <Text style={styles.primaryBtnText}>Update password</Text>}
-            </TouchableOpacity>
-          </View>
+              {/* Change password */}
+              <Text style={styles.sectionTitle}>Change password</Text>
+              <View style={styles.card}>
+                <Field label="Current password" value={curPw} onChangeText={setCurPw} placeholder="Current password" secureTextEntry />
+                <Field label="New password" value={newPw} onChangeText={setNewPw} placeholder="At least 6 characters" secureTextEntry />
+                <TouchableOpacity onPress={changePassword} disabled={savingPw} style={styles.primaryBtn}>
+                  {savingPw ? <ActivityIndicator color={colors.white} /> : <Text style={styles.primaryBtnText}>Update password</Text>}
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
 
           {/* Attendance history */}
           <Text style={styles.sectionTitle}>Attendance history</Text>
@@ -186,7 +203,8 @@ const styles = StyleSheet.create({
   roleBadgeText: { fontSize: 11, fontWeight: "700", fontFamily: "Montserrat_600SemiBold", color: "#15A765" },
   logoutBtn: { padding: 4 },
   sectionTitle: { fontSize: 15, fontWeight: "800", fontFamily: "Montserrat_600SemiBold", color: colors.text, marginTop: 22, marginBottom: 8 },
-  card: { backgroundColor: colors.white, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: colors.border },
+  card: { backgroundColor: colors.white, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: colors.border, marginTop: 8 },
+  subNote: { fontSize: 13, fontFamily: "Montserrat_400Regular", color: colors.textSub, lineHeight: 19 },
   fieldLabel: { fontSize: 11, fontWeight: "700", fontFamily: "Montserrat_600SemiBold", color: colors.textSub, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 },
   input: { height: 44, backgroundColor: colors.background, borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, fontSize: 14, fontFamily: "Montserrat_400Regular", color: colors.text },
   primaryBtn: { marginTop: 4, height: 46, borderRadius: 10, backgroundColor: "#15A765", justifyContent: "center", alignItems: "center" },
