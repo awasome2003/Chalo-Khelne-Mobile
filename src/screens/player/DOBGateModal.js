@@ -20,6 +20,7 @@ import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useAuth } from "../../context/AuthContext";
 import AUTH from "../../api/auth";
+import { authFetch } from "../../api/authFetch";
 
 const ACCENT = "#FF6A00";
 
@@ -79,7 +80,7 @@ export default function DOBGateModal({ visible, onClose, onSaved }) {
         dateOfBirth: dob.toISOString(),
         sex: sex.toLowerCase(),
       };
-      const res = await fetch(AUTH.ENDPOINTS.USER.PROFILE(userId), {
+      const res = await authFetch(AUTH.ENDPOINTS.USER.PROFILE(userId), {
         method: "PUT",
         headers: {
           Authorization: `Bearer ${token}`,

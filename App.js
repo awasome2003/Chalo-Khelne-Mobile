@@ -11,6 +11,8 @@ import { AuthProvider } from "./src/context/AuthContext";
 import { OnboardingProvider } from "./src/context/OnboardingContext";
 import { ChatProvider } from "./src/context/ChatContext";
 import { NotificationProvider } from "./src/context/NotificationContext";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient } from "./src/config/queryClient";
 import FlashMessage from "react-native-flash-message";
 import Toast from 'react-native-toast-message';
 import NotificationService from "./src/services/NotificationService";
@@ -97,18 +99,20 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <FlashMessage position="top" />
-      <AuthProvider>
-        <NotificationProvider>
-          <ChatProvider>
-            <OnboardingProvider>
-              <NavigationContainer linking={linking} ref={navigationRef}>
-                <StatusBar style="auto" />
-                <AppNavigator />
-              </NavigationContainer>
-            </OnboardingProvider>
-          </ChatProvider>
-        </NotificationProvider>
-      </AuthProvider>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <NotificationProvider>
+            <ChatProvider>
+              <OnboardingProvider>
+                <NavigationContainer linking={linking} ref={navigationRef}>
+                  <StatusBar style="auto" />
+                  <AppNavigator />
+                </NavigationContainer>
+              </OnboardingProvider>
+            </ChatProvider>
+          </NotificationProvider>
+        </AuthProvider>
+      </QueryClientProvider>
       <Toast />
     </SafeAreaProvider>
   );

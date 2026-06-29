@@ -35,6 +35,18 @@ const { width } = Dimensions.get("window");
 const numColumns = 3;
 const itemSize = width / numColumns;
 
+const SafeImage = ({ uri, style, fallback, ...rest }) => {
+  const [failed, setFailed] = useState(false);
+  return (
+    <Image
+      source={uri && !failed ? { uri } : fallback}
+      style={style}
+      onError={() => setFailed(true)}
+      {...rest}
+    />
+  );
+};
+
 // Resolve a story image to a usable URI. Backend stores a relative path like
 // "stories/storyImage-xxx.jpg"; full URLs (or already-prefixed paths) pass through.
 const resolveStoryImage = (image) => {
@@ -164,10 +176,11 @@ const StoryViewModal = ({ visible, onClose, stories, initialIndex = 0, onDelete 
           </View>
 
           {imageUri ? (
-            <Image
-              source={{ uri: imageUri }}
+            <SafeImage
+              uri={imageUri}
               style={styles.storyFullImage}
               resizeMode="contain"
+              fallback={require("../../../assets/turf.jpg")}
             />
           ) : (
             <Text
@@ -374,7 +387,7 @@ const SocialProfileScreen = ({ navigation }) => {
         </TouchableOpacity>
         <Text style={styles.profileName}>{user?.name || "Player"}</Text>
         <Text style={styles.profileBio}>
-          {user?.bio || "Football lover & weekend player ⚽"}
+          {user?.bio || ""}
         </Text>
 
         {/* Stats card */}

@@ -6,6 +6,7 @@ import { io } from "socket.io-client";
 import { Platform, Alert } from "react-native";
 import API from "../api/api";
 import NOTIFICATIONS from "../api/notifications";
+import { getToken } from "../services/tokenStore";
 
 const NotificationContext = createContext();
 
@@ -30,7 +31,10 @@ export const NotificationProvider = ({ children }) => {
 
     // Get token from AsyncStorage (more reliable than context state on app start)
     const connectSocket = async () => {
-      const authToken = token || await AsyncStorage.getItem("auth_token");
+      // Token lives in SecureStore now; AsyncStorage("auth_token") is null. Read
+      // the real token so the socket authenticates instead of connecting null.
+      const authToken =
+        token || (await getToken()) || (await AsyncStorage.getItem("auth_token"));
       if (!authToken) return;
 
       const socket = io(API.SERVER_URL, {
@@ -117,10 +121,8 @@ export const NotificationProvider = ({ children }) => {
   // ── Mark single as read ──
   const markAsRead = async (notificationId) => {
     try {
-      const authToken = await AsyncStorage.getItem("auth_token");
-      await axios.put(NOTIFICATIONS.MARK_READ(notificationId), {}, {
-        headers: { Authorization: `Bearer ${authToken}` },
-      });
+      // Bare axios carries the global Authorization header (set in AuthContext).
+      await axios.put(NOTIFICATIONS.MARK_READ(notificationId), {});
       setNotifications((prev) =>
         prev.map((n) => (n._id === notificationId ? { ...n, isRead: true } : n))
       );
@@ -134,10 +136,7 @@ export const NotificationProvider = ({ children }) => {
   const markAllAsRead = async () => {
     if (!userId) return;
     try {
-      const authToken = await AsyncStorage.getItem("auth_token");
-      await axios.put(NOTIFICATIONS.MARK_ALL_READ(userId), {}, {
-        headers: { Authorization: `Bearer ${authToken}` },
-      });
+      await axios.put(NOTIFICATIONS.MARK_ALL_READ(userId), {});
       setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
       setUnreadCount(0);
     } catch (err) {

@@ -18,6 +18,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Website_SERVER_URL from "../../api/api";
 import PLANNER from "../../api/planner";
 import { useAuth } from "../../context/AuthContext";
+import { authFetch } from "../../api/authFetch";
 
 const AddNote = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
@@ -71,7 +72,7 @@ const AddNote = ({ navigation, route }) => {
     searchTimeout.current = setTimeout(async () => {
       try {
         const token = await AsyncStorage.getItem("auth_token");
-        const response = await fetch(
+        const response = await authFetch(
           `${Website_SERVER_URL.Wbsite_SERVER_URL}/api/search?q=${encodeURIComponent(
             text
           )}&types=turf`,
@@ -129,7 +130,7 @@ const AddNote = ({ navigation, route }) => {
         : PLANNER.ENDPOINTS.CREATE;
       const method = isEdit ? "PUT" : "POST";
 
-      const res = await fetch(url, {
+      const res = await authFetch(url, {
         method,
         headers: {
           "Content-Type": "application/json",

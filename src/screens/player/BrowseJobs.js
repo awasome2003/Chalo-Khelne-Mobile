@@ -674,19 +674,20 @@ const BrowseJobs = () => {
       await axios.patch(JOBS.RESPOND_HIRE(req.id), { status }, { headers });
       fetchRequests();
       fetchDashboard();
+      return true;
     } catch (err) {
       Alert.alert("Could not update", err?.response?.data?.message || err.message);
+      return false;
     }
   };
 
-  const openAcceptPopup = (req) => {
-    setRequestAccepted(req);
-    respondToRequest(req, "accepted");
+  // Only show the success popup once the server actually confirmed the change.
+  const openAcceptPopup = async (req) => {
+    if (await respondToRequest(req, "accepted")) setRequestAccepted(req);
   };
   const closeAcceptPopup = () => setRequestAccepted(null);
-  const openRejectPopup = (req) => {
-    setRequestRejected(req);
-    respondToRequest(req, "rejected");
+  const openRejectPopup = async (req) => {
+    if (await respondToRequest(req, "rejected")) setRequestRejected(req);
   };
   const closeRejectPopup = () => setRequestRejected(null);
 

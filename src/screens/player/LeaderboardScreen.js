@@ -13,6 +13,7 @@ import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import API from '../../api/tournaments';
 import { getTournamentType } from '../../utils/sportTrack';
+import { authFetch } from '../../api/authFetch';
 
 const LeaderboardScreen = () => {
   const navigation = useNavigation();
@@ -27,7 +28,7 @@ const LeaderboardScreen = () => {
   const fetchTournaments = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API.ENDPOINTS.LEADERBOARD.ALL_TOURNAMENTS}?limit=20`);
+      const response = await authFetch(`${API.ENDPOINTS.LEADERBOARD.ALL_TOURNAMENTS}?limit=20`);
       const data = await response.json();
 
       if (data.success) {

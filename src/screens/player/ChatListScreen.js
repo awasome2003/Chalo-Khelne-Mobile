@@ -4,7 +4,7 @@ import {
   ActivityIndicator, StatusBar, Platform, Modal, TextInput, Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import { useNavigation, useFocusEffect, useRoute } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "../../context/AuthContext";
 import { useChat } from "../../context/ChatContext";
@@ -13,12 +13,19 @@ import API from "../../api/api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import groupChatApi from "../../api/groupChat";
+import { authFetch } from "../../api/authFetch";
 
 const FILTERS = ["All", "Chats", "Groups"];
 
 const ChatListScreen = () => {
   const navigation = useNavigation();
+  const route = useRoute();
   const insets = useSafeAreaInsets();
+  // The tab that opened chat (e.g. "Social"). Chat is a hidden tab reached only
+  // from Social, so back must return to that tab — NOT the navigator's default
+  // first tab (Home), which is where plain goBack() would land.
+  const fromTab = route.params?.from || "Social";
+  const goBackToOrigin = () => navigation.navigate(fromTab);
   const { user, token } = useAuth();
   const { fetchUnreadTotal } = useChat();
 
@@ -48,7 +55,7 @@ const ChatListScreen = () => {
 
   const fetchConversations = async () => {
     try {
-      const response = await fetch(CHAT.ENDPOINTS.CONVERSATIONS, {
+      const response = await authFetch(CHAT.ENDPOINTS.CONVERSATIONS, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json();
@@ -239,7 +246,14 @@ const ChatListScreen = () => {
 
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
-        <Text style={styles.headerTitle}>Chats</Text>
+        <View style={styles.headerLeft}>
+          {(fromTab || navigation.canGoBack()) && (
+            <TouchableOpacity onPress={goBackToOrigin} style={styles.backBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="chevron-back" size={26} color="#1F2937" />
+            </TouchableOpacity>
+          )}
+          <Text style={styles.headerTitle}>Chats</Text>
+        </View>
         <TouchableOpacity style={styles.createBtn} onPress={() => setShowCreate(true)}>
           <Ionicons name="add" size={24} color="#FFF" />
         </TouchableOpacity>
@@ -358,6 +372,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20, paddingBottom: 12, backgroundColor: "#FFF",
     borderBottomWidth: 1, borderBottomColor: "#E5E7EB",
   },
+  headerLeft: { flexDirection: "row", alignItems: "center", gap: 6 },
+  backBtn: { padding: 2, marginLeft: -4 },
   headerTitle: { fontSize: 24, fontWeight: "900", color: "#1F2937" },
   createBtn: {
     width: 42, height: 42, borderRadius: 14, backgroundColor: "#004E93",

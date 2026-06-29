@@ -16,6 +16,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getSportName } from "../../utils/sportTrack";
 import TOURNAMENTS from "../../api/tournaments";
+import { authFetch } from "../../api/authFetch";
 import { assetUrl } from "../../utils/assetUrl";
 
 // ─── Green design system ───────────────────────────────────────────────
@@ -46,7 +47,7 @@ const EventsScreen = ({ navigation }) => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(TOURNAMENTS.ENDPOINTS.BASE);
+      const response = await authFetch(TOURNAMENTS.ENDPOINTS.BASE);
       const data = await response.json();
 
       // Sort tournaments by date (newest first)

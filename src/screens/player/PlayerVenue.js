@@ -19,6 +19,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import API from "../../api/api";
 import TOURNAMENTS from "../../api/tournaments";
 import { useAuth } from "../../context/AuthContext";
+import { authFetch } from "../../api/authFetch";
 
 // ─── Helpers ────────────────────────────────────────────────────────────
 const getSportIcon = (sportName) => {
@@ -73,6 +74,20 @@ const calculateDistance = (turf) => {
   return `${km.toFixed(1)} km`;
 };
 
+// Turf images may be hosted on external servers and fail to load; fall back to
+// a bundled placeholder on error so cards never show a blank box.
+const TURF_FALLBACK = require("../../../assets/turf.jpg");
+const TurfImage = ({ source, style }) => {
+  const [failed, setFailed] = useState(false);
+  return (
+    <Image
+      source={failed ? TURF_FALLBACK : source}
+      style={style}
+      onError={() => setFailed(true)}
+    />
+  );
+};
+
 const PlayerVenue = ({ navigation }) => {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
@@ -93,7 +108,7 @@ const PlayerVenue = ({ navigation }) => {
   // ─── Fetchers ─────────────────────────────────────────────────────────
   const fetchTurfs = async () => {
     try {
-      const response = await fetch(API.ENDPOINTS.TURFS.BASE);
+      const response = await authFetch(API.ENDPOINTS.TURFS.BASE);
       const data = await response.json();
       const turfData = data.turfs || data || [];
       if (Array.isArray(turfData)) setTurfs(turfData);
@@ -109,7 +124,7 @@ const PlayerVenue = ({ navigation }) => {
   // No dedicated sports endpoint exists yet; tournaments are our source of truth.
   const fetchAvailableSports = async () => {
     try {
-      const res = await fetch(TOURNAMENTS.ENDPOINTS.BASE);
+      const res = await authFetch(TOURNAMENTS.ENDPOINTS.BASE);
       const data = await res.json();
       const tournaments = Array.isArray(data) ? data : data?.tournaments || [];
       const set = new Set();
@@ -130,7 +145,7 @@ const PlayerVenue = ({ navigation }) => {
 
   const fetchAvailability = async () => {
     try {
-      const res = await fetch(API.ENDPOINTS.TURFS.AVAILABILITY_TODAY);
+      const res = await authFetch(API.ENDPOINTS.TURFS.AVAILABILITY_TODAY);
       const data = await res.json();
       if (data?.success && data.availability) setAvailability(data.availability);
     } catch (e) {
@@ -142,7 +157,7 @@ const PlayerVenue = ({ navigation }) => {
     if (!userId) return;
     try {
       const token = await AsyncStorage.getItem("auth_token");
-      const res = await fetch(API.ENDPOINTS.USER.USER_FAVORITES(userId), {
+      const res = await authFetch(API.ENDPOINTS.USER.USER_FAVORITES(userId), {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       const data = await res.json();
@@ -222,6 +237,10 @@ const PlayerVenue = ({ navigation }) => {
       Alert.alert("Sign in required", "Please sign in to save favorites.");
       return;
     }
+    // Backend expects an explicit action ("add" | "remove"); derive it from the
+    // current state BEFORE the optimistic flip.
+    const action = favorites.has(turfId) ? "remove" : "add";
+
     // Optimistic toggle
     setFavorites((prev) => {
       const next = new Set(prev);
@@ -231,14 +250,10 @@ const PlayerVenue = ({ navigation }) => {
     });
 
     try {
-      const token = await AsyncStorage.getItem("auth_token");
-      const res = await fetch(API.ENDPOINTS.USER.TOGGLE_FAVORITE, {
+      const res = await authFetch(API.ENDPOINTS.USER.TOGGLE_FAVORITE, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ userId, turfId }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, turfId, action }),
       });
       if (!res.ok) throw new Error(`Toggle failed (${res.status})`);
     } catch (e) {
@@ -377,7 +392,7 @@ const PlayerVenue = ({ navigation }) => {
 
               return (
                 <View key={turf._id} style={styles.card}>
-                  <Image source={imageSrc} style={styles.cardImage} />
+                  <TurfImage source={imageSrc} style={styles.cardImage} />
 
                   <View style={styles.cardBody}>
                     <View style={styles.cardTitleRow}>

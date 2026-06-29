@@ -449,14 +449,25 @@ const Tournament = ({ route, navigation }) => {
                       </View>
 
                       {match.status === "COMPLETED" && (() => {
-                        const r = require('../../utils/matchResultUtils').readMatchResult(match);
-                        return r ? (
+                        const mru = require('../../utils/matchResultUtils');
+                        const r = mru.readMatchResult(match);
+                        if (!r) return null;
+                        // Sets/time keep the two-digit board; cricket/carrom/chess
+                        // get a sport-aware string (e.g. "154/6 (20.0) vs 150/8").
+                        if (r.type === 'sets' || r.type === 'time') {
+                          return (
+                            <View style={styles.scoreBoard}>
+                              <Text style={styles.scoreDigit}>{r.player1Score}</Text>
+                              <Text style={styles.scoreSeparator}>:</Text>
+                              <Text style={styles.scoreDigit}>{r.player2Score}</Text>
+                            </View>
+                          );
+                        }
+                        return (
                           <View style={styles.scoreBoard}>
-                            <Text style={styles.scoreDigit}>{r.player1Score}</Text>
-                            <Text style={styles.scoreSeparator}>:</Text>
-                            <Text style={styles.scoreDigit}>{r.player2Score}</Text>
+                            <Text style={[styles.scoreDigit, { fontSize: 13 }]}>{mru.getScoreDisplay(match)}</Text>
                           </View>
-                        ) : null;
+                        );
                       })()}
                     </View>
                   ))

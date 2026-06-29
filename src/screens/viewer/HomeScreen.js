@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // New import for the tournaments config
 import tournamentsConfig from "../../api/tournaments";
+import { authFetch } from "../../api/authFetch";
 import { assetUrl } from "../../utils/assetUrl";
 
 // ─── Green design system tokens ─────────────────────────────────────
@@ -73,7 +74,7 @@ const HomeScreen = ({ navigation }) => {
 
     try {
       // Fetch featured tournaments/events
-      const eventsResponse = await fetch(tournamentsConfig.ENDPOINTS.BASE);
+      const eventsResponse = await authFetch(tournamentsConfig.ENDPOINTS.BASE);
       if (!eventsResponse.ok) throw new Error("Failed to fetch events");
 
       const eventsData = await eventsResponse.json();
@@ -261,7 +262,9 @@ const HomeScreen = ({ navigation }) => {
               <Text style={styles.sportBadgeText}>{item.sportsType}</Text>
             </View>
             <View style={styles.priceBadge}>
-              <Text style={styles.priceBadgeText}>₹{item.fee}</Text>
+              <Text style={styles.priceBadgeText}>
+                {isNaN(Number(item.fee)) ? item.fee : `₹${item.fee}`}
+              </Text>
             </View>
           </View>
         </LinearGradient>
@@ -376,7 +379,11 @@ const HomeScreen = ({ navigation }) => {
                 style={styles.slideItem}
                 activeOpacity={0.9}
                 onPress={() => {
-                  navigation.navigate("Event");
+                  // Slides carry a `route` field ("Events" / "Social"). Map the
+                  // events slide to the registered "Event" tab; "Social" is a
+                  // registered route name, so navigate to it directly.
+                  const target = slide.route === "Social" ? "Social" : "Event";
+                  navigation.navigate(target);
                 }}
               >
                 <ImageBackground

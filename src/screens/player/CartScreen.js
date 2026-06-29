@@ -26,6 +26,18 @@ const BORDER = "#EEF1FA";
 
 const DELIVERY_FEE = 50;
 
+const SafeImage = ({ uri, style, fallback, ...rest }) => {
+  const [failed, setFailed] = useState(false);
+  return (
+    <Image
+      source={uri && !failed ? { uri } : fallback}
+      style={style}
+      onError={() => setFailed(true)}
+      {...rest}
+    />
+  );
+};
+
 const CartScreen = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
@@ -47,9 +59,9 @@ const CartScreen = () => {
   );
 
   const onInc = async (id, currentQty, max) => {
-    // Respect real multi-unit stock; otherwise (stock missing or 1, which is the
-    // default when a listing has no quantity) allow increasing up to a sane cap.
-    const cap = max && max > 1 ? max : 99;
+    // Never let the cart quantity exceed the listing's available stock. Used
+    // items default to quantity 1 (one-of-a-kind), so this caps them at 1.
+    const cap = Number(max) >= 1 ? Number(max) : 1;
     if (currentQty >= cap) return;
     const next = await updateQty(id, currentQty + 1);
     setCart(next);
@@ -102,10 +114,12 @@ const CartScreen = () => {
   const CartItem = ({ item }) => {
     const isFree = item.isDonation || item.askingPrice === 0;
     const features = Array.isArray(item.features) ? item.features : [];
+    const available = Number(item.quantity) >= 1 ? Number(item.quantity) : 1;
+    const atMax = (item.qty || 1) >= available;
     const pills = [];
     if (item.condition) pills.push(item.condition);
     features.slice(0, 2).forEach((f) => pills.push(f));
-    pills.push(`Qty:${item.qty || 1}`);
+    pills.push(available <= 1 ? "Only 1 left" : `${available} in stock`);
 
     return (
       <TouchableOpacity
@@ -114,7 +128,11 @@ const CartScreen = () => {
         onLongPress={() => onRemove(item.listingId, item.itemName)}
       >
         {item.image ? (
-          <Image source={{ uri: item.image }} style={styles.itemImage} />
+          <SafeImage
+            uri={item.image}
+            style={styles.itemImage}
+            fallback={require("../../../assets/turf.jpg")}
+          />
         ) : (
           <View style={[styles.itemImage, styles.itemImagePlaceholder]}>
             <Ionicons name="basketball-outline" size={26} color="#D1D5DB" />
@@ -169,13 +187,14 @@ const CartScreen = () => {
               </TouchableOpacity>
               <Text style={styles.stepCount}>{item.qty || 1}</Text>
               <TouchableOpacity
-                style={styles.stepBtn}
+                style={[styles.stepBtn, atMax && styles.stepBtnDisabled]}
+                disabled={atMax}
                 onPress={() =>
                   onInc(item.listingId, item.qty || 1, item.quantity)
                 }
                 hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
               >
-                <Ionicons name="add" size={14} color={TEXT_DARK} />
+                <Ionicons name="add" size={14} color={atMax ? "#C7CBD1" : TEXT_DARK} />
               </TouchableOpacity>
             </View>
           </View>
@@ -429,6 +448,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     justifyContent: "center",
     alignItems: "center",
+  },
+  stepBtnDisabled: {
+    backgroundColor: "#F1F2F4",
   },
   stepCount: {
     minWidth: 16,

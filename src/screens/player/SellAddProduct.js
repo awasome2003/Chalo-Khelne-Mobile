@@ -49,6 +49,10 @@ const BRANDS = [
   "SS",
   "Cosco",
   "Decathlon",
+  "DHS",
+  "Stiga",
+  "Butterfly",
+  "Li-Ning",
   "Other",
 ];
 
@@ -66,7 +70,12 @@ const SIZE_OPTIONS = {
   Accessories: ["One Size", "Small", "Medium", "Large"],
   Other: SIZES,
 };
-const sizeOptionsFor = (category) => SIZE_OPTIONS[category] || SIZES;
+// Always offer "Not Applicable" so products without a real size (balls, nets,
+// accessories…) can skip it cleanly instead of being forced into a wrong value.
+const sizeOptionsFor = (category) => [
+  ...(SIZE_OPTIONS[category] || SIZES),
+  "Not Applicable",
+];
 
 const COLORS = [
   "Black",
@@ -78,6 +87,7 @@ const COLORS = [
   "Gray",
   "Orange",
   "Pink",
+  "Not Applicable",
   "Other",
 ];
 
@@ -150,6 +160,8 @@ const SellAddProduct = () => {
     brand: editing?.brand || "",
     size: editing?.size || "",
     color: editing?.color || "",
+    sellUnit: editing?.sellUnit || "single", // "single" | "pack"
+    packSize: editing?.packSize > 1 ? String(editing.packSize) : "",
     quantity: editing?.quantity ? String(editing.quantity) : "1",
     originalPrice: editing?.originalPrice ? String(editing.originalPrice) : "",
     askingPrice: editing?.askingPrice ? String(editing.askingPrice) : "",
@@ -159,8 +171,15 @@ const SellAddProduct = () => {
   });
   const [isDonation, setIsDonation] = useState(!!editing?.isDonation);
   const [pickerKey, setPickerKey] = useState(null); // which dropdown is open
+  const [customText, setCustomText] = useState(""); // "type your own" value
 
   const update = (key, value) => setForm((p) => ({ ...p, [key]: value }));
+
+  // Open a picker with a fresh custom-text field.
+  const openPicker = (key) => {
+    setCustomText("");
+    setPickerKey(key);
+  };
 
   const handleNext = () => {
     if (!form.itemName.trim()) {
@@ -185,10 +204,19 @@ const SellAddProduct = () => {
         return;
       }
     }
+    if (form.sellUnit === "pack" && Number(form.packSize) < 2) {
+      Alert.alert(
+        "Required",
+        "Enter how many pieces are in the box (2 or more)."
+      );
+      return;
+    }
 
     const payload = {
       ...form,
       quantity: Number(form.quantity) || 1,
+      sellUnit: form.sellUnit === "pack" ? "pack" : "single",
+      packSize: form.sellUnit === "pack" ? Number(form.packSize) || 1 : 1,
       originalPrice: Number(form.originalPrice) || 0,
       askingPrice: isDonation ? 0 : Number(form.askingPrice) || 0,
       isDonation,
@@ -199,14 +227,18 @@ const SellAddProduct = () => {
 
   // ─── Dropdown picker (single shared modal) ──────────────────────────
   const PICKER_CONFIG = {
+    // category is enum-validated on the backend — keep it preset-only.
     category: { title: "Choose a category", options: CATEGORIES },
-    brand: { title: "Choose a brand", options: BRANDS },
-    size: { title: "Choose a size", options: sizeOptionsFor(form.category) },
-    color: { title: "Choose a color", options: COLORS },
+    brand: { title: "Choose a brand", options: BRANDS, allowCustom: true },
+    size: { title: "Choose a size", options: sizeOptionsFor(form.category), allowCustom: true },
+    color: { title: "Choose a color", options: COLORS, allowCustom: true },
     condition: { title: "Select condition", options: CONDITIONS },
   };
 
-  const closePicker = () => setPickerKey(null);
+  const closePicker = () => {
+    setPickerKey(null);
+    setCustomText("");
+  };
   const pickOption = (value) => {
     if (pickerKey === "category" && value !== form.category) {
       // Changing the category invalidates a previously chosen size (e.g. "M"
@@ -263,14 +295,14 @@ const SellAddProduct = () => {
             label="Category"
             value={form.category}
             placeholder="Choose a category"
-            onPress={() => setPickerKey("category")}
+            onPress={() => openPicker("category")}
           />
 
           <DropdownField
-            label="Brands"
+            label="Brand"
             value={form.brand}
-            placeholder="e.g., Nike, Puma"
-            onPress={() => setPickerKey("brand")}
+            placeholder="e.g., Nike, DHS"
+            onPress={() => openPicker("brand")}
           />
 
           <View style={styles.row}>
@@ -279,16 +311,51 @@ const SellAddProduct = () => {
               value={form.size}
               placeholder={form.category ? `e.g., ${sizeOptionsFor(form.category)[0]}` : "Choose category first"}
               style={styles.half}
-              onPress={() => setPickerKey("size")}
+              onPress={() => openPicker("size")}
             />
             <DropdownField
               label="Color"
               value={form.color}
               placeholder="e.g., Green"
               style={styles.half}
-              onPress={() => setPickerKey("color")}
+              onPress={() => openPicker("color")}
             />
           </View>
+
+          {/* Sell As — sell a single piece or a whole box/pack */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>Sell As</Text>
+            <View style={styles.unitRow}>
+              {[
+                { key: "single", label: "Single piece" },
+                { key: "pack", label: "Box / Pack" },
+              ].map((opt) => {
+                const on = form.sellUnit === opt.key;
+                return (
+                  <TouchableOpacity
+                    key={opt.key}
+                    style={[styles.unitBtn, on && styles.unitBtnActive]}
+                    onPress={() => update("sellUnit", opt.key)}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={[styles.unitText, on && styles.unitTextActive]}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          {form.sellUnit === "pack" && (
+            <TextField
+              label="Pieces per box"
+              value={form.packSize}
+              onChangeText={(v) => update("packSize", v)}
+              placeholder="e.g., 6"
+              keyboardType="number-pad"
+            />
+          )}
 
           <View style={styles.row}>
             {/* Donate toggle */}
@@ -308,7 +375,7 @@ const SellAddProduct = () => {
 
             {/* Qty */}
             <TextField
-              label="Qyt :"
+              label={form.sellUnit === "pack" ? "No. of Boxes" : "Quantity"}
               value={form.quantity}
               onChangeText={(v) => update("quantity", v)}
               placeholder="01"
@@ -321,7 +388,11 @@ const SellAddProduct = () => {
           {!isDonation && (
             <View style={styles.row}>
               <TextField
-                label="Original Price"
+                label={
+                  form.sellUnit === "pack"
+                    ? "Original Price (box)"
+                    : "Original Price"
+                }
                 value={form.originalPrice}
                 onChangeText={(v) => update("originalPrice", v)}
                 placeholder="₹3,999/-"
@@ -329,7 +400,11 @@ const SellAddProduct = () => {
                 style={styles.half}
               />
               <TextField
-                label="Selling Price"
+                label={
+                  form.sellUnit === "pack"
+                    ? "Selling Price (box)"
+                    : "Selling Price"
+                }
                 value={form.askingPrice}
                 onChangeText={(v) => update("askingPrice", v)}
                 placeholder="₹800/-"
@@ -343,7 +418,7 @@ const SellAddProduct = () => {
             label="Condition"
             value={form.condition}
             placeholder="Select condition"
-            onPress={() => setPickerKey("condition")}
+            onPress={() => openPicker("condition")}
           />
 
           <TextField
@@ -395,6 +470,36 @@ const SellAddProduct = () => {
             <Text style={styles.sheetTitle}>
               {pickerKey ? PICKER_CONFIG[pickerKey].title : ""}
             </Text>
+
+            {/* Type-your-own — so any product that doesn't match a preset
+                (e.g. a "DHS" brand or a "40mm 3-star" size) still fits. */}
+            {pickerKey && PICKER_CONFIG[pickerKey].allowCustom && (
+              <View style={styles.customRow}>
+                <TextInput
+                  style={styles.customInput}
+                  value={customText}
+                  onChangeText={setCustomText}
+                  placeholder="Type your own…"
+                  placeholderTextColor={TEXT_MUTED}
+                  returnKeyType="done"
+                  onSubmitEditing={() =>
+                    customText.trim() && pickOption(customText.trim())
+                  }
+                />
+                <TouchableOpacity
+                  style={[
+                    styles.customUseBtn,
+                    !customText.trim() && styles.customUseBtnDisabled,
+                  ]}
+                  disabled={!customText.trim()}
+                  onPress={() => pickOption(customText.trim())}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.customUseText}>Use</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
             <ScrollView style={{ maxHeight: 380 }}>
               {pickerKey
                 ? PICKER_CONFIG[pickerKey].options.map((opt) => {
@@ -510,6 +615,30 @@ const styles = StyleSheet.create({
   row: { flexDirection: "row", gap: 12 },
   half: { flex: 1 },
 
+  // Sell-as segmented control
+  unitRow: { flexDirection: "row", gap: 10 },
+  unitBtn: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: FIELD_BG,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  unitBtnActive: {
+    backgroundColor: "#E8F7F0",
+    borderColor: GREEN,
+  },
+  unitText: {
+    fontSize: 13,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "600",
+    color: TEXT_DARK,
+  },
+  unitTextActive: { color: GREEN, fontWeight: "700" },
+
   // Bottom bar
   bottomBar: {
     paddingHorizontal: 16,
@@ -559,6 +688,37 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: TEXT_DARK,
     marginBottom: 12,
+  },
+  customRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 10,
+  },
+  customInput: {
+    flex: 1,
+    minHeight: 44,
+    backgroundColor: FIELD_BG,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    fontSize: 14,
+    fontFamily: "Poppins_400Regular",
+    color: TEXT_DARK,
+  },
+  customUseBtn: {
+    backgroundColor: GREEN,
+    borderRadius: 12,
+    paddingHorizontal: 18,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  customUseBtnDisabled: { backgroundColor: "#A4D9BD" },
+  customUseText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "700",
   },
   optRow: {
     flexDirection: "row",

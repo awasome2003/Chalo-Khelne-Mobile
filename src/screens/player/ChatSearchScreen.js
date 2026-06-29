@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "../../context/AuthContext";
 import CHAT from "../../api/chat";
 import API from "../../api/api";
+import { authFetch } from "../../api/authFetch";
 
 const ChatSearchScreen = () => {
   const navigation = useNavigation();
@@ -39,7 +40,7 @@ const ChatSearchScreen = () => {
     debounceRef.current = setTimeout(async () => {
       setLoading(true);
       try {
-        const response = await fetch(
+        const response = await authFetch(
           `${CHAT.ENDPOINTS.SEARCH_PLAYERS}?q=${encodeURIComponent(text.trim())}`,
           { headers: { Authorization: `Bearer ${token}` } }
         );
@@ -58,7 +59,7 @@ const ChatSearchScreen = () => {
   const startChat = async (player) => {
     setCreating(player._id);
     try {
-      const response = await fetch(CHAT.ENDPOINTS.CONVERSATIONS, {
+      const response = await authFetch(CHAT.ENDPOINTS.CONVERSATIONS, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,

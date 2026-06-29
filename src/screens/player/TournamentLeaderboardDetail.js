@@ -19,6 +19,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
+import useTournamentSports from '../../hooks/useTournamentSports';
+import SportTabStrip from '../../components/SportTabStrip';
+import CricketScoreDetail from '../../components/CricketScoreDetail';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
@@ -45,6 +48,10 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
   const { user, token } = useAuth();
   const userId = user?.id || user?._id;
 
+  // Multi-sport: a sport selector drives sportId on every per-sport fetch so a
+  // multi-sport tournament shows each sport's OWN standings/groups, not a merge.
+  const { sports: tournamentSports, activeSportId, setActiveSportId } = useTournamentSports(tournamentId, tournament);
+
   // STATE MANAGEMENT
   const [leaderboardData, setLeaderboardData] = useState([]);
   const [tournamentStats, setTournamentStats] = useState(null);
@@ -53,7 +60,13 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
   const [error, setError] = useState(null);
 
   // NEW STATE FOR REDESIGN
-  const isGroupStage = tournamentType?.toLowerCase().includes('group stage');
+  // Group stage, combined "knockout + group stage", multi-sport, or an unknown
+  // "n/a" type all show the groups + matches schedule; only a PURE knockout
+  // skips groups.
+  const isGroupStage = (() => {
+    const t = tournamentType?.toLowerCase() || '';
+    return !(t.includes('knockout') && !t.includes('group'));
+  })();
   // Knockout flavor detection. tournamentType (string label) is too coarse to
   // distinguish singles vs team — both can return "knockout". Team knockouts
   // are identified by the per-sport knockoutFormat field (e.g. "Davis Cup").
@@ -611,12 +624,23 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
       }
     }
     fetchLeaderboardData();
-  }, [tournamentType, tournamentId]);
+  }, [tournamentType, tournamentId, activeSportId]);
+
+  // When the SPORT changes, drop any open group's match view + cached matches.
+  // Each sport has its own groups/matches, so without this the previous sport's
+  // matches keep showing under the new sport's tab (until a full page refresh).
+  useEffect(() => {
+    setSelectedGroup(null);
+    setMatches([]);
+    setTopPlayersByGroup({});
+    setViewMode((vm) => (vm === 'MATCHES' ? 'GROUPS' : vm));
+  }, [activeSportId]);
 
   const fetchGroups = async () => {
     try {
       setLoading(true);
-      const endpoint = `${API.ENDPOINTS.BOOKING_GROUPS.BY_TOURNAMENT(tournamentId)}?mobile=true`;
+      let endpoint = `${API.ENDPOINTS.BOOKING_GROUPS.BY_TOURNAMENT(tournamentId)}?mobile=true`;
+      if (activeSportId) endpoint += `&sportId=${activeSportId}`;
       const response = await axios.get(endpoint);
       const data = response.data;
       const groups = data.groups || data.data || (Array.isArray(data) ? data : []);
@@ -692,13 +716,17 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
   const fetchGroupData = async (groupId) => {
     try {
       setLoadingExtra(true);
+      // Clear the previous group's matches FIRST — otherwise a group with no
+      // matches (the endpoint returns success:false) would keep showing the
+      // last group's matches (e.g. every group showed Group A's results).
+      setMatches([]);
       // Fetch Matches
       const matchesResp = await axios.get(`${API.ENDPOINTS.MATCHES.BY_GROUP(tournamentId, groupId)}?mobile=true`);
       const matchesData = matchesResp.data;
 
-      if (matchesData.success) {
-        setMatches(matchesData.matches || matchesData.data || []);
-      }
+      // Set unconditionally (success OR not) so an empty/failed group renders
+      // "no matches" instead of the previously-opened group's matches.
+      setMatches(matchesData?.matches || matchesData?.data || []);
 
       // Fetch Standings - Using BY_TOURNAMENT endpoint as preferred and filtering client-side
       try {
@@ -906,12 +934,14 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
       let endpoint;
       const type = tournamentType?.toLowerCase();
 
-      if (type?.includes('group stage')) {
-        endpoint = API.ENDPOINTS.LEADERBOARD.GROUP_STAGE_PLAYERS(tournamentId);
-      } else if (type?.includes('knockout')) {
+      // Pure knockout → bracket teams; everything else (group stage, combined
+      // "knockout + group stage", multi-sport, or an unknown/"n/a" type) →
+      // group-stage players. Never throw — default to group-stage.
+      if (type?.includes('knockout') && !type?.includes('group')) {
         endpoint = API.ENDPOINTS.LEADERBOARD.KNOCKOUT_TEAMS(tournamentId);
       } else {
-        throw new Error('Invalid tournament type');
+        endpoint = API.ENDPOINTS.LEADERBOARD.GROUP_STAGE_PLAYERS(tournamentId);
+        if (activeSportId) endpoint += `?sportId=${activeSportId}`;
       }
       const response = await axios.get(endpoint);
       const data = response.data;
@@ -1270,23 +1300,7 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
                   </Text>
                 </View>
               </View>
-              <View style={styles.matchTeams}>
-                <View style={styles.matchTeam}>
-                  <Text style={styles.matchTeamName}>{match.player1?.userName || match.player1?.playerName || match.team1?.name || 'TBD'}</Text>
-                  <Text style={styles.matchScore}>
-                    {(() => { const r = require('../../utils/matchResultUtils').readMatchResult(match); return r?.player1Score ?? 0; })()}
-                  </Text>
-                </View>
-                <View style={styles.matchVs}>
-                  <Text style={styles.vsText}>{match.courtNumber ? `COURT ${match.courtNumber}` : 'VS'}</Text>
-                </View>
-                <View style={styles.matchTeam}>
-                  <Text style={styles.matchScore}>
-                    {(() => { const r = require('../../utils/matchResultUtils').readMatchResult(match); return r?.player2Score ?? 0; })()}
-                  </Text>
-                  <Text style={styles.matchTeamName}>{match.player2?.userName || match.player2?.playerName || match.team2?.name || 'TBD'}</Text>
-                </View>
-              </View>
+              {renderSportScoreboard(match)}
               {canOpenScorer && (
                 <View style={styles.tapScoreHint}>
                   <MaterialIcons name="edit" size={12} color="#15A765" />
@@ -1345,8 +1359,8 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
     const isLive =
       (match.status || '').toLowerCase() === 'in-progress' ||
       (match.status || '').toLowerCase() === 'in_progress';
-    const t1Name = match.player1?.playerName || 'TBD';
-    const t2Name = match.player2?.playerName || 'TBD';
+    const t1Name = match.player1?.userName || match.player1?.playerName || match.player1?.playerId?.name || match.player1?.name || 'TBD';
+    const t2Name = match.player2?.userName || match.player2?.playerName || match.player2?.playerId?.name || match.player2?.name || 'TBD';
     const t1Sets = match.score?.player1Sets ?? 0;
     const t2Sets = match.score?.player2Sets ?? 0;
     const winnerName = match.winnerName;
@@ -2499,10 +2513,156 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
     Array.isArray(roundRobinMatches) &&
     roundRobinMatches.length > 0;
 
+  // Sport-specific match scoreboard for the Matches Schedule cards. Each
+  // scoring type renders in its OWN format. NOTE: sets (Table Tennis /
+  // Badminton) intentionally keep the original 3-column design — client
+  // requirement, do not change.
+  const renderSportScoreboard = (match) => {
+    const mru = require('../../utils/matchResultUtils');
+    const r = mru.readMatchResult(match) || {};
+    const st = r.type;
+    const p1 = match.player1?.userName || match.player1?.playerName || match.team1?.name || 'TBD';
+    const p2 = match.player2?.userName || match.player2?.playerName || match.team2?.name || 'TBD';
+    const completed = (match.status || '').toUpperCase() === 'COMPLETED';
+    const winName = r.winner?.playerName;
+    const short = (n) => String(n || '').split(' ')[0];
+
+    // ─── CRICKET — innings scorecard (runs/wickets + overs + result banner) ───
+    if (st === 'innings') {
+      const i1 = (r.details || []).find((i) => i.battingSide === 'player1');
+      const i2 = (r.details || []).find((i) => i.battingSide === 'player2');
+      const fmt = (inn) => (inn ? `${inn.runs ?? 0}/${inn.wickets ?? 0}` : '—');
+      const ov = (inn) => (inn ? `(${inn.overs ?? `${inn.oversBowled ?? 0}.${inn.ballsBowled ?? 0}`} ov)` : '');
+      const row = (name, inn, isWin) => (
+        <View style={styles.cyRow}>
+          <View style={styles.cyTeamWrap}>
+            <Text style={styles.cyBat}>🏏</Text>
+            <Text style={[styles.cyTeam, isWin && styles.cyWin]} numberOfLines={1}>{name}</Text>
+          </View>
+          <Text style={styles.cyScore}>{fmt(inn)} <Text style={styles.cyOvers}>{ov(inn)}</Text></Text>
+        </View>
+      );
+      return (
+        <View style={styles.cyCard}>
+          {row(p1, i1, completed && winName === p1)}
+          <View style={styles.cyDivider} />
+          {row(p2, i2, completed && winName === p2)}
+          <View style={styles.cyBanner}>
+            <Text style={styles.cyBannerText}>{mru.getMatchSummaryLine(match) || (completed ? 'Result pending' : 'Live')}</Text>
+          </View>
+        </View>
+      );
+    }
+
+    // ─── CARROM — boards won + board-by-board chips ───
+    if (st === 'board') {
+      return (
+        <View style={styles.cmCard}>
+          <View style={styles.cmRow}>
+            <Text style={[styles.cmName, completed && winName === p1 && styles.cmWin]} numberOfLines={1}>🎯 {p1}</Text>
+            <View style={styles.cmScoreWrap}>
+              <Text style={styles.cmBoards}>{r.player1Score}</Text>
+              <Text style={styles.cmSep}>boards</Text>
+              <Text style={styles.cmBoards}>{r.player2Score}</Text>
+            </View>
+            <Text style={[styles.cmName, styles.cmRight, completed && winName === p2 && styles.cmWin]} numberOfLines={1}>{p2} 🎯</Text>
+          </View>
+          {(r.details || []).length > 0 && (
+            <View style={styles.cmChips}>
+              {r.details.map((b, i) => (
+                <View key={i} style={styles.cmChip}>
+                  <Text style={styles.cmChipText}>
+                    B{b.boardNumber || i + 1}: {short(b.winner === 'player1' ? p1 : p2)} +{(b.winner === 'player1' ? b.player1Score : b.player2Score) || 0}{b.queenPocketedBy ? ' 👑' : ''}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+      );
+    }
+
+    // ─── CHESS — result (White/Black/Draw) ───
+    if (st === 'single') {
+      const isDraw = completed && (!r.winner || (!r.winner.playerId && !r.winner.playerName));
+      const result = isDraw ? '½ – ½' : completed ? '1 – 0' : 'vs';
+      return (
+        <View style={styles.csCard}>
+          <Text style={[styles.csName, completed && winName === p1 && styles.csWin]} numberOfLines={1}>♟️ {p1}</Text>
+          <View style={[styles.csPill, isDraw && styles.csPillDraw]}>
+            <Text style={styles.csPillText}>{result}</Text>
+          </View>
+          <Text style={[styles.csName, styles.csRight, completed && winName === p2 && styles.csWin]} numberOfLines={1}>{p2} ♟️</Text>
+        </View>
+      );
+    }
+
+    // ─── BADMINTON (set sports EXCEPT Table Tennis) — set-by-set grid ───
+    const isTableTennis = /table\s*tennis/i.test(match.sportName || match.sportsType || '');
+    if (st === 'sets' && !isTableTennis) {
+      const setScores = (r.details || []).map((s) => (s.subRounds && s.subRounds[0]) || (s.games && s.games[0]?.finalScore) || {});
+      const sideRow = (name, key, isWin) => (
+        <View style={styles.bdRow}>
+          <Text style={[styles.bdName, isWin && styles.bdWin]} numberOfLines={1}>🏸 {name}</Text>
+          <View style={styles.bdSets}>
+            {setScores.map((g, i) => {
+              const me = key === 'p1' ? (g.player1Score ?? g.player1) : (g.player2Score ?? g.player2);
+              const opp = key === 'p1' ? (g.player2Score ?? g.player2) : (g.player1Score ?? g.player1);
+              return <Text key={i} style={[styles.bdSetScore, me > opp && styles.bdSetWin]}>{me ?? '-'}</Text>;
+            })}
+          </View>
+          <Text style={styles.bdTotal}>{key === 'p1' ? r.player1Score : r.player2Score}</Text>
+        </View>
+      );
+      return (
+        <View style={styles.bdCard}>
+          <View style={styles.bdHeaderRow}>
+            <Text style={styles.bdHeaderName}> </Text>
+            <View style={styles.bdSets}>
+              {setScores.map((_, i) => <Text key={i} style={styles.bdSetHdr}>S{i + 1}</Text>)}
+            </View>
+            <Text style={styles.bdHeaderTot}>SETS</Text>
+          </View>
+          {sideRow(p1, 'p1', completed && winName === p1)}
+          {sideRow(p2, 'p2', completed && winName === p2)}
+          <View style={styles.bdBanner}>
+            <Text style={styles.bdBannerText}>{mru.getMatchSummaryLine(match) || (completed ? '' : 'Live')}</Text>
+          </View>
+        </View>
+      );
+    }
+
+    // ─── TABLE TENNIS (sets) / TIME — ORIGINAL design (client requirement) ───
+    return (
+      <>
+        <View style={styles.matchTeams}>
+          <View style={styles.matchTeam}>
+            <Text style={styles.matchTeamName}>{p1}</Text>
+            <Text style={styles.matchScore}>{mru.getSideDisplay(match, 'player1')}</Text>
+          </View>
+          <View style={styles.matchVs}>
+            <Text style={styles.vsText}>{match.courtNumber ? `COURT ${match.courtNumber}` : 'VS'}</Text>
+          </View>
+          <View style={styles.matchTeam}>
+            <Text style={styles.matchScore}>{mru.getSideDisplay(match, 'player2')}</Text>
+            <Text style={styles.matchTeamName}>{p2}</Text>
+          </View>
+        </View>
+        {(() => {
+          const line = mru.getMatchSummaryLine(match);
+          return line ? <Text style={styles.matchSummaryLine}>{line}</Text> : null;
+        })()}
+      </>
+    );
+  };
+
   // Header block reused by both branches — keeps the summary card + tab bar
   // identical between the ScrollView and FlatList layouts.
   const renderTopChrome = () => (
     <>
+      {/* Multi-sport selector — switch which sport's standings/groups are shown */}
+      <SportTabStrip sports={tournamentSports} activeSportId={activeSportId} onChange={setActiveSportId} />
+
       <View style={styles.tournamentSummaryCard}>
         <View style={styles.summaryItem}>
           <Text style={styles.summaryVal}>{tournamentStats?.totalMatches || 0}</Text>
@@ -2608,6 +2768,9 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#15A765']} />
         }
       >
+        {/* Multi-sport selector — switch which sport's standings/groups show */}
+        <SportTabStrip sports={tournamentSports} activeSportId={activeSportId} onChange={setActiveSportId} />
+
         {/* Tournament Stats Card (Small) */}
         <View style={styles.tournamentSummaryCard}>
           <View style={styles.summaryItem}>
@@ -2706,8 +2869,8 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
 
             {selectedMatch && (() => {
               const m = selectedMatch;
-              const p1Name = m.player1?.playerName || m.player1?.playerId?.name || m.player1?.name || 'TBD';
-              const p2Name = m.player2?.playerName || m.player2?.playerId?.name || m.player2?.name || 'TBD';
+              const p1Name = m.player1?.userName || m.player1?.playerName || m.player1?.playerId?.name || m.player1?.name || 'TBD';
+              const p2Name = m.player2?.userName || m.player2?.playerName || m.player2?.playerId?.name || m.player2?.name || 'TBD';
               const p1Sets = m.score?.player1Sets ?? m.result?.finalScore?.player1Sets ?? 0;
               const p2Sets = m.score?.player2Sets ?? m.result?.finalScore?.player2Sets ?? 0;
               const winnerName = m.winnerName || m.result?.winner?.playerName || m.winner?.playerName;
@@ -2716,6 +2879,16 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
               const roundLabel = m.round ? formatCategory(m.round) : `Round ${m.roundNumber || ''}`;
               const isCompleted = m.status === 'completed' || m.status === 'COMPLETED';
               const isLive = m.status === 'in-progress';
+
+              // Sport-aware detail for the popup (cricket innings / carrom boards / chess result)
+              const mru = require('../../utils/matchResultUtils');
+              const r = mru.readMatchResult(m) || {};
+              const st = r.type;
+              const isDraw = st === 'single' && isCompleted && (!r.winner || (!r.winner.playerId && !r.winner.playerName));
+              const inn1 = (r.details || []).find((i) => i.battingSide === 'player1');
+              const inn2 = (r.details || []).find((i) => i.battingSide === 'player2');
+              const summaryLine = mru.getMatchSummaryLine(m);
+              const ovOf = (inn) => (inn ? (inn.overs ?? `${inn.oversBowled ?? 0}.${inn.ballsBowled ?? 0}`) : '');
 
               return (
                 <ScrollView showsVerticalScrollIndicator={false}>
@@ -2754,9 +2927,27 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
                       )}
                     </View>
                     <View style={styles.matchModalScoreCol}>
-                      <Text style={styles.matchModalScoreBig}>{p1Sets}</Text>
-                      <Text style={styles.matchModalScoreSep}>:</Text>
-                      <Text style={styles.matchModalScoreBig}>{p2Sets}</Text>
+                      {st === 'innings' ? (
+                        <>
+                          <Text style={styles.matchModalScoreBig}>{inn1?.runs ?? 0}</Text>
+                          <Text style={styles.matchModalScoreSep}>:</Text>
+                          <Text style={styles.matchModalScoreBig}>{inn2?.runs ?? 0}</Text>
+                        </>
+                      ) : st === 'board' ? (
+                        <>
+                          <Text style={styles.matchModalScoreBig}>{r.player1Score ?? 0}</Text>
+                          <Text style={styles.matchModalScoreSep}>:</Text>
+                          <Text style={styles.matchModalScoreBig}>{r.player2Score ?? 0}</Text>
+                        </>
+                      ) : st === 'single' ? (
+                        <Text style={styles.matchModalScoreBig}>{isDraw ? '½ : ½' : (isCompleted ? '1 : 0' : 'vs')}</Text>
+                      ) : (
+                        <>
+                          <Text style={styles.matchModalScoreBig}>{p1Sets}</Text>
+                          <Text style={styles.matchModalScoreSep}>:</Text>
+                          <Text style={styles.matchModalScoreBig}>{p2Sets}</Text>
+                        </>
+                      )}
                     </View>
                     <View style={styles.matchModalPlayerCol}>
                       <Text style={[
@@ -2774,8 +2965,38 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
                     </View>
                   </View>
 
-                  {/* Score breakdown — shape-aware */}
-                  {sets.length > 0 ? (
+                  {/* Score breakdown — SPORT-aware */}
+                  {st === 'innings' ? (
+                    // ─── CRICKET: Cricbuzz-style detail ───
+                    <View style={styles.matchModalSection}>
+                      <CricketScoreDetail match={m} />
+                    </View>
+                  ) : st === 'board' ? (
+                    // ─── CARROM: board-by-board ───
+                    <View style={styles.matchModalSection}>
+                      <Text style={styles.matchModalSectionTitle}>Boards</Text>
+                      {(r.details || []).map((b, i) => (
+                        <View key={i} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#F8FAFC' }}>
+                          <Text style={{ fontSize: 13, fontWeight: '800', color: '#9A3412' }}>Board {b.boardNumber || i + 1}</Text>
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: '#1F2937' }}>
+                            {(b.winner === 'player1' ? p1Name : p2Name)} +{(b.winner === 'player1' ? b.player1Score : b.player2Score) || 0}{b.queenPocketedBy ? '  👑' : ''}
+                          </Text>
+                        </View>
+                      ))}
+                      {summaryLine ? <Text style={{ marginTop: 12, textAlign: 'center', fontSize: 13.5, fontWeight: '800', color: '#EA580C' }}>{summaryLine}</Text> : null}
+                    </View>
+                  ) : st === 'single' ? (
+                    // ─── CHESS: result ───
+                    <View style={styles.matchModalSection}>
+                      <Text style={styles.matchModalSectionTitle}>Result</Text>
+                      <View style={{ alignItems: 'center', paddingVertical: 16 }}>
+                        <Text style={{ fontSize: 30, fontWeight: '900', color: '#1E293B', letterSpacing: 1 }}>{isDraw ? '½ – ½' : (isCompleted ? '1 – 0' : 'vs')}</Text>
+                        <Text style={{ marginTop: 10, fontSize: 14, fontWeight: '700', color: '#475569' }}>
+                          {isDraw ? 'Match drawn' : (isCompleted ? `${winnerName || 'Winner'} won` : 'Not started')}
+                        </Text>
+                      </View>
+                    </View>
+                  ) : sets.length > 0 ? (
                     hasNestedGames(m.matchFormat) ? (
                       // ─── NESTED (Tennis): set tabs + per-set game grid ───
                       <View style={styles.matchModalSection}>
@@ -3750,6 +3971,78 @@ const styles = StyleSheet.create({
     color: '#15A765',
     marginVertical: 4,
   },
+  matchSummaryLine: {
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#475569',
+    textAlign: 'center',
+  },
+
+  // ── CRICKET scorecard ──
+  cyCard: {
+    backgroundColor: '#0B1437',
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 4,
+  },
+  cyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  cyTeamWrap: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 },
+  cyBat: { fontSize: 13, marginRight: 6 },
+  cyTeam: { color: '#C7D2FE', fontSize: 14, fontWeight: '700', flexShrink: 1 },
+  cyWin: { color: '#FFFFFF' },
+  cyScore: { color: '#34D399', fontSize: 20, fontWeight: '900', letterSpacing: 0.5 },
+  cyOvers: { color: '#94A3B8', fontSize: 11, fontWeight: '600' },
+  cyDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginVertical: 9 },
+  cyBanner: {
+    marginTop: 11,
+    backgroundColor: 'rgba(52,211,153,0.15)',
+    borderRadius: 8,
+    paddingVertical: 7,
+    alignItems: 'center',
+  },
+  cyBannerText: { color: '#A7F3D0', fontSize: 12.5, fontWeight: '800', letterSpacing: 0.3 },
+
+  // ── CARROM card ──
+  cmCard: { backgroundColor: '#FFF7ED', borderRadius: 14, padding: 12, marginTop: 4, borderWidth: 1, borderColor: '#FED7AA' },
+  cmRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  cmName: { flex: 1, fontSize: 13, fontWeight: '700', color: '#9A3412' },
+  cmRight: { textAlign: 'right' },
+  cmWin: { color: '#B45309', fontWeight: '900' },
+  cmScoreWrap: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8 },
+  cmBoards: { fontSize: 22, fontWeight: '900', color: '#EA580C', marginHorizontal: 6 },
+  cmSep: { fontSize: 10, fontWeight: '700', color: '#C2410C', textTransform: 'uppercase' },
+  cmChips: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 10, gap: 6 },
+  cmChip: { backgroundColor: '#FFEDD5', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, marginRight: 6, marginBottom: 6 },
+  cmChipText: { fontSize: 11, fontWeight: '700', color: '#9A3412' },
+
+  // ── CHESS card ──
+  csCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#F8FAFC', borderRadius: 14, padding: 14, marginTop: 4, borderWidth: 1, borderColor: '#E2E8F0' },
+  csName: { flex: 1, fontSize: 13.5, fontWeight: '700', color: '#334155' },
+  csRight: { textAlign: 'right' },
+  csWin: { color: '#0F172A', fontWeight: '900' },
+  csPill: { backgroundColor: '#1E293B', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 7, marginHorizontal: 10 },
+  csPillDraw: { backgroundColor: '#64748B' },
+  csPillText: { color: '#FFFFFF', fontSize: 14, fontWeight: '900', letterSpacing: 0.5 },
+
+  // ── BADMINTON set-by-set grid ──
+  bdCard: { backgroundColor: '#ECFEFF', borderRadius: 14, padding: 12, marginTop: 4, borderWidth: 1, borderColor: '#A5F3FC' },
+  bdHeaderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
+  bdHeaderName: { flex: 1 },
+  bdHeaderTot: { width: 38, textAlign: 'center', fontSize: 10, fontWeight: '800', color: '#0E7490' },
+  bdSetHdr: { width: 26, textAlign: 'center', fontSize: 10, fontWeight: '700', color: '#0891B2' },
+  bdRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 4 },
+  bdName: { flex: 1, fontSize: 13, fontWeight: '700', color: '#155E75' },
+  bdWin: { color: '#0E7490', fontWeight: '900' },
+  bdSets: { flexDirection: 'row', alignItems: 'center' },
+  bdSetScore: { width: 26, textAlign: 'center', fontSize: 14, fontWeight: '700', color: '#64748B' },
+  bdSetWin: { color: '#0E7490', fontWeight: '900' },
+  bdTotal: { width: 38, textAlign: 'center', fontSize: 18, fontWeight: '900', color: '#06B6D4' },
+  bdBanner: { marginTop: 8, paddingTop: 7, borderTopWidth: 1, borderTopColor: '#CFFAFE', alignItems: 'center' },
+  bdBannerText: { fontSize: 12, fontWeight: '800', color: '#0E7490' },
   // matchVs: {
   //   paddingHorizontal: 10,
   // },

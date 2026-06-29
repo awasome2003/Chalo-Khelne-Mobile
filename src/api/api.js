@@ -1,13 +1,36 @@
 // config/api.js — Central API configuration
+import { NativeModules } from "react-native";
 
 // ── Server Configuration ──
-// Auto-selects by build: production bundles (__DEV__ === false) use the live
-// HTTPS server; Metro/dev builds use the LAN IP. No manual toggle before APK build.
-const Wbsite_SERVER_URL = __DEV__
-  ? "http://192.168.1.55:3003" // local development
-  : "https://chalokhelne.com"; // production
+// Switch between LOCAL and LIVE by commenting one SERVER_URL line below.
+// LOCAL auto-detects the LAN IP from the Metro bundle URL (so it matches the
+// machine running expo start without manual IP edits); falls back to the
+// last-known IP below if detection isn't available.
+const DEV_FALLBACK_IP = "192.168.1.65";
+function detectDevHost() {
+  try {
+    const scriptURL = NativeModules?.SourceCode?.scriptURL || "";
+    const m = scriptURL.match(/https?:\/\/([^:/]+)/);
+    const host = m && m[1];
+    if (host && host !== "localhost" && host !== "127.0.0.1") return host;
+  } catch {
+    /* not available — use fallback */
+  }
+  return DEV_FALLBACK_IP;
+}
 
-const SERVER_URL = Wbsite_SERVER_URL;
+// ──────────────────────────────────────────────────────────────
+// 👉 SWITCH SERVER: keep exactly ONE line below uncommented.
+//    Comment the active one and uncomment the other to switch.
+// ──────────────────────────────────────────────────────────────
+
+// LOCAL — development (auto-detects this machine's LAN IP from Metro)
+const SERVER_URL = `http://${detectDevHost()}:3003`;
+
+// LIVE — production
+// const SERVER_URL = "https://chalokhelne.com";
+
+const Wbsite_SERVER_URL = SERVER_URL; // kept for existing imports
 const BASE_URL = `${SERVER_URL}/api`;
 const UPLOADS_URL = `${SERVER_URL}/uploads`;
 
@@ -34,6 +57,14 @@ const ENDPOINTS = {
     USER_FAVORITES: (userId) => `${BASE_URL}/users/user-favorites/${userId}`,
     SEARCH: (query) => `${BASE_URL}/users/search?q=${query}`, // Add search endpoint
     VALIDATE_PLAYERS: `${BASE_URL}/players/users/validate-players`,
+  },
+
+  // Follow / social graph (backend: /api/follow)
+  FOLLOW: {
+    STATUS: (userId) => `${BASE_URL}/follow/${userId}/status`,
+    TOGGLE: (targetId) => `${BASE_URL}/follow/${targetId}/toggle`,
+    FOLLOWERS: (userId) => `${BASE_URL}/follow/${userId}/followers`,
+    FOLLOWING: (userId) => `${BASE_URL}/follow/${userId}/following`,
   },
 
   // Add turf booking endpoints

@@ -90,4 +90,110 @@ export async function clearRefreshToken() {
   } catch {}
 }
 
-export default { getToken, setToken, clearToken, getRefreshToken, setRefreshToken, clearRefreshToken };
+// ── Multi-session account registry (account switcher) ───────────────────────
+// Lets the app remember more than one signed-in account (e.g. a player account
+// AND a school-coach account) and flip between them WITHOUT logging out. The
+// ACTIVE session is still mirrored to the canonical auth_token/refresh_token/
+// auth_user keys above, so every existing screen keeps working unchanged — this
+// only adds the ability to save several and swap which one is "active".
+//
+// Layout:
+//   auth_sessions        (AsyncStorage) → [{ id, user }]  (non-secret metadata)
+//   active_session_id    (AsyncStorage) → id of the active account
+//   auth_token__<id>     (SecureStore)  → that account's access token
+//   refresh_token__<id>  (SecureStore)  → that account's refresh token
+const SESSIONS_KEY = "auth_sessions";
+const ACTIVE_SESSION_KEY = "active_session_id";
+const tkKey = (id) => `auth_token__${id}`;
+const rtKey = (id) => `refresh_token__${id}`;
+
+// Per-key secure helpers (mirror the access-token strategy: SecureStore first,
+// AsyncStorage fallback, never leave a plaintext copy behind).
+async function secureGet(key) {
+  if (await secureAvailable()) return (await SecureStore.getItemAsync(key)) || null;
+  return AsyncStorage.getItem(key);
+}
+async function secureSet(key, val) {
+  if (!val) return secureDel(key);
+  if (await secureAvailable()) {
+    await SecureStore.setItemAsync(key, val);
+    await AsyncStorage.removeItem(key);
+  } else {
+    await AsyncStorage.setItem(key, val);
+  }
+}
+async function secureDel(key) {
+  try { if (SecureStore) await SecureStore.deleteItemAsync(key); } catch {}
+  try { await AsyncStorage.removeItem(key); } catch {}
+}
+
+export async function getSessions() {
+  try {
+    const raw = await AsyncStorage.getItem(SESSIONS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function saveSessionsMeta(list) {
+  await AsyncStorage.setItem(
+    SESSIONS_KEY,
+    JSON.stringify(list.map((s) => ({ id: String(s.id), user: s.user })))
+  );
+}
+
+export async function getActiveSessionId() {
+  return AsyncStorage.getItem(ACTIVE_SESSION_KEY);
+}
+
+export async function setActiveSessionId(id) {
+  if (id) await AsyncStorage.setItem(ACTIVE_SESSION_KEY, String(id));
+  else await AsyncStorage.removeItem(ACTIVE_SESSION_KEY);
+}
+
+// Add or update a saved account (tokens → SecureStore, metadata → AsyncStorage).
+export async function upsertSession({ id, token, refreshToken, user }) {
+  id = String(id);
+  if (token) await secureSet(tkKey(id), token);
+  if (refreshToken) await secureSet(rtKey(id), refreshToken);
+  const list = await getSessions();
+  const i = list.findIndex((s) => String(s.id) === id);
+  // Preserve the existing display user when this is a token-only refresh.
+  const keepUser = user !== undefined ? user : i >= 0 ? list[i].user : user;
+  const entry = { id, user: keepUser };
+  if (i >= 0) list[i] = entry;
+  else list.push(entry);
+  await saveSessionsMeta(list);
+  return list;
+}
+
+// Full session (metadata + secret tokens) for one account.
+export async function getSession(id) {
+  id = String(id);
+  const meta = (await getSessions()).find((s) => String(s.id) === id);
+  if (!meta) return null;
+  return {
+    id,
+    user: meta.user,
+    token: await secureGet(tkKey(id)),
+    refreshToken: await secureGet(rtKey(id)),
+  };
+}
+
+// Forget one account (used when removing it from the switcher or on logout).
+export async function removeSession(id) {
+  id = String(id);
+  await secureDel(tkKey(id));
+  await secureDel(rtKey(id));
+  const list = (await getSessions()).filter((s) => String(s.id) !== id);
+  await saveSessionsMeta(list);
+  return list;
+}
+
+export default {
+  getToken, setToken, clearToken,
+  getRefreshToken, setRefreshToken, clearRefreshToken,
+  getSessions, getActiveSessionId, setActiveSessionId,
+  upsertSession, getSession, removeSession,
+};

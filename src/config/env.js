@@ -8,12 +8,30 @@
  *   import { SERVER_URL } from '../config/env';
  */
 
+import { NativeModules } from "react-native";
+
+// Auto-detect the dev machine's LAN IP from the Metro bundle URL, so the dev
+// SERVER_URL always tracks whatever machine is running `expo start` — no manual
+// IP edits when DHCP changes your address. Falls back to the last-known IP.
+const DEV_FALLBACK_IP = "192.168.1.65";
+function detectDevHost() {
+  try {
+    const scriptURL = NativeModules?.SourceCode?.scriptURL || "";
+    const m = scriptURL.match(/https?:\/\/([^:/]+)/);
+    const host = m && m[1];
+    if (host && host !== "localhost" && host !== "127.0.0.1") return host;
+  } catch {
+    /* not available in this context — use fallback */
+  }
+  return DEV_FALLBACK_IP;
+}
+
 const ENVIRONMENTS = {
   development: {
-    // Laptop LAN IP, captured 2026-05-21 via `ipconfig`. Re-check whenever
-    // you change networks — DHCP can hand you a different address.
+    // LAN IP auto-detected from the Metro host (the machine running expo start).
     // Both phone and laptop must be on the same Wi-Fi for this to work.
-    SERVER_URL: "http://10.88.83.245:3003",
+    // Keep this in sync with src/api/api.js (the primary API config).
+    SERVER_URL: `http://${detectDevHost()}:3003`,
   },
   staging: {
     SERVER_URL: "https://chalo-khelne-backend-hp3z.onrender.com",

@@ -11,8 +11,24 @@ import {
   Alert,
 } from "react-native";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import axios from "axios";
 import { useAuth } from "../../context/AuthContext";
 import API from "../../api/api";
+
+// Turf images come from external servers and can fail to load; fall back to a
+// bundled placeholder on error (or when there's no image) so cards never show a
+// blank white box. Defined at module scope so it never remounts mid-render.
+const TURF_FALLBACK = require("../../../assets/TurnImageNew.jpg");
+const TurfImage = ({ uri, style }) => {
+  const [failed, setFailed] = useState(false);
+  return (
+    <Image
+      source={uri && !failed ? { uri } : TURF_FALLBACK}
+      style={style}
+      onError={() => setFailed(true)}
+    />
+  );
+};
 
 const FavoriteVenue = () => {
   const navigation = useNavigation();
@@ -41,16 +57,12 @@ const FavoriteVenue = () => {
         return;
       }
 
-      const response = await fetch(
-        `${API.ENDPOINTS.USER.FAVORITES}?userId=${userId}`
-      );
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      setFavorites(data);
+      // axios carries the app-wide Authorization header (set in AuthContext),
+      // so this hits the protected route authenticated — no more 401.
+      const { data } = await axios.get(API.ENDPOINTS.USER.FAVORITES, {
+        params: { userId },
+      });
+      setFavorites(Array.isArray(data) ? data : data?.favorites || []);
     } catch (error) {
       console.error("Error fetching favorites:", error);
       Alert.alert("Error", "Failed to load favorites. Please try again later.");
@@ -64,25 +76,15 @@ const FavoriteVenue = () => {
       const userId = user?.id || user?._id;
       if (!userId) return;
 
-      const response = await fetch(API.ENDPOINTS.USER.TOGGLE_FAVORITE, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          userId,
-          turfId,
-          action: "remove",
-        }),
+      await axios.post(API.ENDPOINTS.USER.TOGGLE_FAVORITE, {
+        userId,
+        turfId,
+        action: "remove",
       });
 
-      if (response.ok) {
-        // Remove from local state to update UI immediately
-        setFavorites(favorites.filter((item) => item.turfId !== turfId));
-        Alert.alert("Success", "Venue removed from favorites");
-      } else {
-        throw new Error("Failed to remove from favorites");
-      }
+      // axios throws on non-2xx, so reaching here means it succeeded.
+      setFavorites(favorites.filter((item) => item.turfId !== turfId));
+      Alert.alert("Success", "Venue removed from favorites");
     } catch (error) {
       console.error("Error removing favorite:", error);
       Alert.alert(
@@ -162,7 +164,7 @@ const FavoriteVenue = () => {
       <View style={styles.contentContainer}>
         {loading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#FF6A00" />
+            <ActivityIndicator size="large" color="#15A765" />
             <Text style={styles.loadingText}>Loading favorites...</Text>
           </View>
         ) : favorites.length === 0 ? (
@@ -177,12 +179,8 @@ const FavoriteVenue = () => {
                 }
               >
                 <View style={styles.imageContainer}>
-                  <Image
-                    source={
-                      item.image
-                        ? { uri: `${API.UPLOADS_URL}/${item.image}` }
-                        : require("../../../assets/turf.jpg")
-                    }
+                  <TurfImage
+                    uri={item.image ? `${API.UPLOADS_URL}/${item.image}` : null}
                     style={styles.venueImage}
                   />
                   <View style={styles.titleOverlay}>
@@ -279,7 +277,7 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginTop: 10,
-    color: "#FF6A00",
+    color: "#15A765",
     fontSize: 16,
   },
   emptyContainer: {
@@ -295,7 +293,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   exploreButton: {
-    backgroundColor: "#FF6A00",
+    backgroundColor: "#15A765",
     paddingVertical: 12,
     paddingHorizontal: 24,
     borderRadius: 8,
@@ -413,7 +411,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: 10,
     right: 10,
-    backgroundColor: "#FF6A00",
+    backgroundColor: "#15A765",
     width: 24,
     height: 24,
     borderRadius: 12,

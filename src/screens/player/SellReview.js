@@ -278,13 +278,27 @@ const SellReview = () => {
               </View>
             ) : null}
           </View>
+
+          {/* Sold as — single piece vs box/pack */}
+          <View style={styles.specRow}>
+            <View style={styles.specBox}>
+              <Text style={styles.specLabel}>Sold as</Text>
+              <Text style={styles.specValue}>
+                {product.sellUnit === "pack"
+                  ? `Box of ${product.packSize || 1}`
+                  : "Single piece"}
+              </Text>
+            </View>
+          </View>
         </View>
 
         {/* Price Summary */}
         <View style={styles.summaryCard}>
           <Text style={styles.summaryTitle}>Price Summary</Text>
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Qyt :</Text>
+            <Text style={styles.summaryLabel}>
+              {product.sellUnit === "pack" ? "No. of Boxes" : "Qty"}
+            </Text>
             <Text style={styles.summaryValue}>
               {String(qty).padStart(2, "0")}
             </Text>

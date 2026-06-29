@@ -14,6 +14,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import API from "../../api/api";
+import { authFetch } from "../../api/authFetch";
 import { assetUrl } from "../../utils/assetUrl";
 
 // ─── Green design system tokens ─────────────────────────────────────────
@@ -48,9 +49,8 @@ const VenueScreen = ({ navigation }) => {
   const fetchVenues = async () => {
     setLoading(true);
     try {
-      const response = await fetch(API.ENDPOINTS.TURFS.BASE);
+      const response = await authFetch(API.ENDPOINTS.TURFS.BASE);
       const data = await response.json();
-      console.log(response)
 
       // Check for different response formats
       const turfs = data.turfs || data; // Support both {turfs: [...]} and direct array format

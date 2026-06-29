@@ -23,6 +23,7 @@ import Swiper from "react-native-swiper";
 import { LinearGradient } from "expo-linear-gradient";
 import { useNavigation } from "@react-navigation/native";
 import { useAuth } from "../../context/AuthContext";
+import RoleSwitcher from "../../components/RoleSwitcher";
 import { getSportName, getCategories } from "../../utils/sportTrack";
 import TOURNAMENTS from "../../api/tournaments";
 import API from "../../api/api";
@@ -32,20 +33,61 @@ import AUTH from "../../api/auth";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Website_SERVER_URL from "../../api/api";
 import { useNotifications } from "../../context/NotificationContext";
+import { authFetch } from "../../api/authFetch";
 
 const SPORTS_LIST = [
   { name: "Basketball", icon: require("../../../assets/Basketball.png") },
   { name: "Football", icon: require("../../../assets/Football.png") },
   { name: "Cricket", icon: require("../../../assets/Cricket.png") },
-  { name: "Basketball", icon: require("../../../assets/Basketball.png") },
-  { name: "Football", icon: require("../../../assets/Football.png") },
-  { name: "Cricket", icon: require("../../../assets/Cricket.png") },
 ];
+
+// Turf images can come from external servers and fail to load; fall back to a
+// bundled placeholder on error so cards never show a blank grey box.
+const TURF_FALLBACK = require("../../../assets/TurnImageNew.jpg");
+const TurfImage = ({ source, style }) => {
+  const [failed, setFailed] = useState(false);
+  return (
+    <Image
+      source={failed ? TURF_FALLBACK : source}
+      style={style}
+      onError={() => setFailed(true)}
+    />
+  );
+};
+
+// New accounts have no profileImage — show a clean initials avatar instead of a
+// stock person photo (which looked like a real, unrelated person).
+const initialsOf = (name) => {
+  const n = String(name || "").trim();
+  return n ? n.charAt(0).toUpperCase() : "?";
+};
+const HeaderAvatar = ({ user, style }) => {
+  const [failed, setFailed] = useState(false);
+  const raw = (user?.profileImage || "").trim();
+  // Show the real photo only if it's a non-empty path that actually loads;
+  // otherwise (no photo, or a broken/unreachable URL) show the initials.
+  if (raw && !failed) {
+    return (
+      <Image
+        source={{ uri: assetUrl(raw) }}
+        style={style}
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+  return (
+    <View style={[style, styles.avatarFallback]}>
+      <Text style={styles.avatarFallbackText}>{initialsOf(user?.name)}</Text>
+    </View>
+  );
+};
 
 const PlayerHomeScreen = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { user, logout, updateUser } = useAuth();
+  const [roleSwitcherOpen, setRoleSwitcherOpen] = useState(false);
+  const activeRoleLabel = (user?.role || "Player");
   const { unreadCount: unreadNotifications } = useNotifications();
 
   const windowWidth = Dimensions.get("window").width;
@@ -107,7 +149,7 @@ const PlayerHomeScreen = () => {
     try {
       const token = await AsyncStorage.getItem("auth_token");
       if (token && user?.id) {
-        const response = await fetch(AUTH.ENDPOINTS.CURRENT_USER, {
+        const response = await authFetch(AUTH.ENDPOINTS.CURRENT_USER, {
           headers: {
             Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
@@ -193,7 +235,7 @@ const PlayerHomeScreen = () => {
 
     setNotificationsLoading(true);
     try {
-      const response = await fetch(TOURNAMENTS.ENDPOINTS.NOTIFICATIONS.USER(user.id));
+      const response = await authFetch(TOURNAMENTS.ENDPOINTS.NOTIFICATIONS.USER(user.id));
       const data = await response.json();
 
       if (data.success) {
@@ -208,7 +250,7 @@ const PlayerHomeScreen = () => {
 
   const markAsRead = async (notificationId) => {
     try {
-      await fetch(TOURNAMENTS.ENDPOINTS.NOTIFICATIONS.MARK_READ(notificationId), {
+      await authFetch(TOURNAMENTS.ENDPOINTS.NOTIFICATIONS.MARK_READ(notificationId), {
         method: "PUT",
       });
 
@@ -228,7 +270,7 @@ const PlayerHomeScreen = () => {
     if (!user?.id) return;
 
     try {
-      await fetch(TOURNAMENTS.ENDPOINTS.NOTIFICATIONS.MARK_ALL_READ(user.id), {
+      await authFetch(TOURNAMENTS.ENDPOINTS.NOTIFICATIONS.MARK_ALL_READ(user.id), {
         method: "PUT",
       });
 
@@ -338,7 +380,7 @@ const PlayerHomeScreen = () => {
   const fetchTournaments = async () => {
     setLoading((prev) => ({ ...prev, tournaments: true }));
     try {
-      const response = await fetch(TOURNAMENTS.ENDPOINTS.BASE);
+      const response = await authFetch(TOURNAMENTS.ENDPOINTS.BASE);
       const data = await response.json();
 
       const now = new Date();
@@ -424,7 +466,7 @@ const PlayerHomeScreen = () => {
   const fetchTurfs = async () => {
     setLoading((prev) => ({ ...prev, turfs: true }));
     try {
-      const response = await fetch(API.ENDPOINTS.TURFS.BASE);
+      const response = await authFetch(API.ENDPOINTS.TURFS.BASE);
       const data = await response.json();
 
       if (data.turfs && Array.isArray(data.turfs)) {
@@ -475,7 +517,7 @@ const PlayerHomeScreen = () => {
   const fetchPosts = async () => {
     setLoading((prev) => ({ ...prev, posts: true }));
     try {
-      const response = await fetch(POSTS.ENDPOINTS.GET_ALL);
+      const response = await authFetch(POSTS.ENDPOINTS.GET_ALL);
       const data = await response.json();
 
       if (data.success || Array.isArray(data)) {
@@ -505,7 +547,7 @@ const PlayerHomeScreen = () => {
   const toggleSave = async (postId) => {
     try {
       const isSaved = saved[postId];
-      const response = await fetch(POSTS.ENDPOINTS.SAVE(postId), {
+      const response = await authFetch(POSTS.ENDPOINTS.SAVE(postId), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: user?.id, saved: !isSaved }),
@@ -554,7 +596,7 @@ const PlayerHomeScreen = () => {
   const toggleFavorite = async (postId) => {
     try {
       const isFav = favorites[postId];
-      const response = await fetch(POSTS.ENDPOINTS.LIKE(postId), {
+      const response = await authFetch(POSTS.ENDPOINTS.LIKE(postId), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: user?.id, liked: !isFav }),
@@ -599,7 +641,7 @@ const PlayerHomeScreen = () => {
   const fetchTurfsByCategory = async (category) => {
     setLoading((prev) => ({ ...prev, turfs: true }));
     try {
-      const response = await fetch(
+      const response = await authFetch(
         `${API.ENDPOINTS.TURFS.BASE}?sport=${encodeURIComponent(category)}`
       );
       const data = await response.json();
@@ -663,16 +705,38 @@ const PlayerHomeScreen = () => {
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
     searchTimeout.current = setTimeout(async () => {
       try {
-        const response = await fetch(
+        const response = await authFetch(
           `${Website_SERVER_URL.Wbsite_SERVER_URL}/api/search?query=${encodeURIComponent(text)}`
         );
         const data = await response.json();
-        setSearchResults({
-          turfs: data?.turfs || [],
-          tournaments: data?.tournaments || [],
-          users: data?.users || [],
-          trainers: data?.trainers || [],
-        });
+
+        // The backend returns a flat `results` array of
+        // { type, id, label, sublabel }. Group it into the shapes the result
+        // list renders. (Fall back to a pre-grouped response if present.)
+        if (Array.isArray(data?.results)) {
+          const grouped = { turfs: [], tournaments: [], users: [], trainers: [] };
+          for (const r of data.results) {
+            const base = { _id: r.id, name: r.label, sublabel: r.sublabel };
+            if (r.type === "player") grouped.users.push(base);
+            else if (r.type === "turf")
+              grouped.turfs.push({ ...base, address: { area: r.sublabel } });
+            else if (r.type === "tournament")
+              grouped.tournaments.push({
+                ...base,
+                title: r.label,
+                sportsType: r.sublabel,
+              });
+            else if (r.type === "trainer") grouped.trainers.push(base);
+          }
+          setSearchResults(grouped);
+        } else {
+          setSearchResults({
+            turfs: data?.turfs || [],
+            tournaments: data?.tournaments || [],
+            users: data?.users || [],
+            trainers: data?.trainers || [],
+          });
+        }
       } catch (error) {
         console.error("Search error:", error);
         setSearchResults({ turfs: [], tournaments: [], users: [], trainers: [] });
@@ -701,30 +765,25 @@ const PlayerHomeScreen = () => {
               {/* Header */}
               <View style={styles.header}>
                 <View style={styles.headerLeft}>
-                  <Image
-                    source={
-                      user?.profileImage
-                        ? {
-                            uri: assetUrl(user.profileImage),
-                          }
-                        : require("../../../assets/ProfilePlaceholder.png")
-                    }
-                    style={styles.profilePic}
-                  />
+                  <HeaderAvatar user={user} style={styles.profilePic} />
                   <View style={styles.headerTextContainer}>
-                    <Text style={styles.userName}>{user?.name || "Aarav Mehta"}</Text>
-                    <TouchableOpacity style={styles.locationContainer}>
-                      <Text style={styles.locationText}>
-                        {user?.location ||
-                          user?.city ||
-                          user?.address?.area ||
-                          user?.address?.city ||
-                          "Pimpri Colony"}
-                      </Text>
-                      <MaterialIcons name="keyboard-arrow-down" size={16} color="#666" />
+                    <Text style={styles.userName}>{user?.name || "there"}</Text>
+                    <TouchableOpacity
+                      style={styles.locationContainer}
+                      onPress={() => setRoleSwitcherOpen(true)}
+                      activeOpacity={0.7}
+                    >
+                      <MaterialIcons name="badge" size={15} color="#15A765" />
+                      <Text style={styles.roleSwitchText}>{activeRoleLabel}</Text>
+                      <MaterialIcons name="keyboard-arrow-down" size={16} color="#15A765" />
                     </TouchableOpacity>
                   </View>
                 </View>
+                <RoleSwitcher
+                  visible={roleSwitcherOpen}
+                  onClose={() => setRoleSwitcherOpen(false)}
+                  onManageRoles={() => navigation.navigate("RoleHubHome")}
+                />
                 <View style={styles.headerRight}>
                   <TouchableOpacity style={styles.iconButton} onPress={openSidebar}>
                     <MaterialIcons name="menu" size={28} color="#8D848F" />
@@ -804,7 +863,7 @@ const PlayerHomeScreen = () => {
                 <TouchableOpacity
                   style={styles.actionCard}
                   activeOpacity={0.85}
-                  onPress={() => navigation.navigate("TurfList")}
+                  onPress={() => navigation.navigate("Turf", { screen: "Play" })}
                 >
                   <View style={styles.actionTextContent}>
                     <Text style={styles.actionTitle}>Book Turf</Text>
@@ -832,9 +891,7 @@ const PlayerHomeScreen = () => {
                     key={`${item.name}-${index}`}
                     style={styles.sportItem}
                     activeOpacity={0.85}
-                    onPress={() => {
-                      // TODO: navigate to sport-specific page — route to be provided.
-                    }}
+                    onPress={() => navigation.navigate("SportsLibrary")}
                   >
                     <View>
                       <Image source={item.icon} style={styles.sportIcon} />
@@ -869,7 +926,7 @@ const PlayerHomeScreen = () => {
                       }
                     >
                       <View style={styles.turfImageContainer}>
-                        <Image source={turf.image} style={styles.turfImage} />
+                        <TurfImage source={turf.image} style={styles.turfImage} />
                         <View style={styles.ratingBadge}>
                           <MaterialIcons name="star" size={12} color="#FFB300" />
                           <Text style={styles.ratingText}>
@@ -1038,7 +1095,10 @@ const PlayerHomeScreen = () => {
                         style={styles.searchResultItem}
                         onPress={() => {
                           setIsSearching(false);
-                          navigation.navigate("PlayerProfile", { playerId: item._id });
+                          navigation.navigate("PlayerPublicProfile", {
+                            userId: item._id,
+                            user: item,
+                          });
                         }}
                       >
                         <Image
@@ -1404,6 +1464,17 @@ const styles = StyleSheet.create({
     marginRight: 8,
     backgroundColor: "#eee",
   },
+  avatarFallback: {
+    backgroundColor: "#15A765",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarFallbackText: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "800",
+    fontFamily: "Montserrat_600SemiBold",
+  },
   headerTextContainer: {
     justifyContent: "center",
     flexShrink: 1,
@@ -1423,6 +1494,12 @@ const styles = StyleSheet.create({
     fontFamily: "Poppins_400Regular",
     color: "#645E66",
     marginRight: 4,
+  },
+  roleSwitchText: {
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular",
+    color: "#15A765",
+    marginHorizontal: 4,
   },
   headerRight: {
     flexDirection: "row",

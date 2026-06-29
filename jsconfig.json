@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "checkJs": false,
+    "baseUrl": ".",
+    "paths": {
+      "@chalo/api-types": ["../shared/api-types/index.ts"]
+    }
+  },
+  "exclude": ["node_modules"]
+}

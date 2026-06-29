@@ -14,6 +14,7 @@ import {
 import { MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import tournamentConfig from "../../api/tournaments";
+import { authFetch } from "../../api/authFetch";
 
 const TeamKnockouts = ({ route }) => {
   // =====================================================
@@ -80,7 +81,7 @@ const TeamKnockouts = ({ route }) => {
   const fetchTeams = async () => {
     try {
       const url = tournamentConfig.ENDPOINTS.BOOKINGS.TOURNAMENT_TEAMS(tournamentId);
-      const response = await fetch(url);
+      const response = await authFetch(url);
       const data = await response.json();
 
       if (data.success) {
@@ -100,7 +101,7 @@ const TeamKnockouts = ({ route }) => {
   const fetchMatches = async () => {
     try {
       const url = tournamentConfig.ENDPOINTS.TEAM_KNOCKOUT.BY_TOURNAMENT(tournamentId);
-      const response = await fetch(url);
+      const response = await authFetch(url);
       const data = await response.json();
 
       if (data.success) {
@@ -209,7 +210,7 @@ const TeamKnockouts = ({ route }) => {
             setRrGenerating(true);
             try {
               const token = await AsyncStorage.getItem("auth_token");
-              const res = await fetch(
+              const res = await authFetch(
                 `${tournamentConfig.BASE_URL}/tournaments/team-knockout/round-robin/generate`,
                 {
                   method: "POST",
@@ -290,7 +291,7 @@ const TeamKnockouts = ({ route }) => {
     setPickSubmitting(true);
     try {
       const url = tournamentConfig.ENDPOINTS.TEAM_KNOCKOUT.SELECT_PAIRING(selectedMatch._id);
-      const response = await fetch(url, {
+      const response = await authFetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ setNumber: pickSetNumber, selectionId }),

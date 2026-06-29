@@ -15,6 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import API from "../../api/api";
+import { authFetch } from "../../api/authFetch";
 import useBottomInset from "../../hooks/useBottomInset";
 import { assetUrl } from "../../utils/assetUrl";
 
@@ -53,7 +54,7 @@ const VenueDetailsScreen = ({ route, navigation }) => {
 
     setLoading(true);
     try {
-      const response = await fetch(API.ENDPOINTS.TURFS.BY_ID(venueId));
+      const response = await authFetch(API.ENDPOINTS.TURFS.BY_ID(venueId));
       const data = await response.json();
 
       if (data) {

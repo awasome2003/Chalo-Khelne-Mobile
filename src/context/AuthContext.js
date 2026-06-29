@@ -41,6 +41,14 @@ const _performRefresh = async () => {
   if (!data.token) throw new Error("refresh_failed");
   await tokenStore.setToken(data.token);
   if (data.refreshToken) await tokenStore.setRefreshToken(data.refreshToken);
+  // Keep the active account's saved copy fresh too, so token rotation doesn't
+  // strand it when the user switches away and back.
+  try {
+    const activeId = await tokenStore.getActiveSessionId();
+    if (activeId) {
+      await tokenStore.upsertSession({ id: activeId, token: data.token, refreshToken: data.refreshToken });
+    }
+  } catch (_) {}
   setAuthHeader(data.token);
   return data.token;
 };
@@ -189,6 +197,37 @@ export const AuthProvider = ({ children }) => {
   const [isInitializing, setIsInitializing] = useState(true);
   const [error, setError] = useState(null);
   const [token, setToken] = useState(null);
+  // Account switcher — the list of remembered accounts + which one is active.
+  const [sessions, setSessions] = useState([]);
+  const [activeSessionId, setActiveSessionIdState] = useState(null);
+
+  // Stable account id for a user object (works for both id and _id shapes).
+  const sidOf = (u) => String(u?.id || u?._id || "");
+
+  // Pull the saved-account list + active id into React state for the UI.
+  const refreshSessions = useCallback(async () => {
+    try {
+      const [list, activeId] = await Promise.all([
+        tokenStore.getSessions(),
+        tokenStore.getActiveSessionId(),
+      ]);
+      setSessions(list);
+      setActiveSessionIdState(activeId);
+    } catch (e) {
+      console.warn("Could not load saved accounts:", e);
+    }
+  }, []);
+
+  // Remember the just-authenticated account and mark it active. Tokens go to
+  // SecureStore (per account); the active one stays mirrored to the canonical
+  // keys so the rest of the app is unaffected.
+  const rememberSession = useCallback(async ({ token: tk, refreshToken, user: u }) => {
+    const id = sidOf(u);
+    if (!id) return;
+    await tokenStore.upsertSession({ id, token: tk, refreshToken, user: u });
+    await tokenStore.setActiveSessionId(id);
+    await refreshSessions();
+  }, [refreshSessions]);
 
   // Load user from storage on mount
   useEffect(() => {
@@ -270,6 +309,22 @@ export const AuthProvider = ({ children }) => {
         setUser(null);
         setToken(null);
       } finally {
+        // Make sure the currently-active login is represented in the account
+        // switcher (covers users who were logged in before this feature shipped).
+        try {
+          const t = await Storage.getToken();
+          const u = await Storage.getUser();
+          const id = sidOf(u);
+          if (t && id) {
+            const existing = await tokenStore.getSessions();
+            if (!existing.find((s) => String(s.id) === id)) {
+              const rt = await tokenStore.getRefreshToken();
+              await tokenStore.upsertSession({ id, token: t, refreshToken: rt, user: u });
+            }
+            await tokenStore.setActiveSessionId(id);
+          }
+        } catch (_) {}
+        await refreshSessions();
         setIsInitializing(false);
         setLoading(false);
       }
@@ -417,6 +472,8 @@ export const AuthProvider = ({ children }) => {
       await Storage.storeUser(data.user);
       setUser(data.user);
       setToken(data.token);
+      // Remember this account in the switcher.
+      await rememberSession({ token: data.token, refreshToken: data.refreshToken, user: data.user });
 
       // Check if logged-in user already has a push token
       // If not, register one for them
@@ -462,6 +519,8 @@ export const AuthProvider = ({ children }) => {
 
       setUser(responseData.user);
       setToken(responseData.token);
+      // Remember this account in the switcher.
+      await rememberSession({ token: responseData.token, refreshToken: responseData.refreshToken, user: responseData.user });
 
       // Optional – never block login
       try {
@@ -486,7 +545,69 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Log out
+  // Make a remembered account the active one by mirroring its saved token/user
+  // into the canonical keys the whole app reads. No network, no re-login — the
+  // navigator re-renders for the new account's role automatically.
+  const applyActiveSession = useCallback(async (session) => {
+    if (!session || !session.token || !session.user) {
+      throw new Error("That account needs to sign in again.");
+    }
+    await Storage.storeToken(session.token);
+    if (session.refreshToken) await tokenStore.setRefreshToken(session.refreshToken);
+    else await tokenStore.clearRefreshToken();
+    await Storage.storeUser(session.user);
+    await tokenStore.setActiveSessionId(sidOf(session.user));
+    setToken(session.token);
+    setUser(session.user);
+    setAuthHeader(session.token);
+    await refreshSessions();
+    try {
+      await NotificationService.registerPushTokenForNewUser(sidOf(session.user));
+    } catch (e) {
+      console.warn("Push token registration skipped on switch:", e);
+    }
+  }, [refreshSessions]);
+
+  // Switch to an already-remembered account (the one-tap path).
+  const switchAccount = useCallback(async (id) => {
+    setLoading(true);
+    try {
+      const session = await tokenStore.getSession(id);
+      await applyActiveSession(session);
+      return session.user;
+    } finally {
+      setLoading(false);
+    }
+  }, [applyActiveSession]);
+
+  // Add ANOTHER account (e.g. the school-coach login) WITHOUT logging out of the
+  // current one, then switch into it. On failure the current session is left
+  // completely untouched — unlike login(), which clears state on error.
+  const addAccount = useCallback(async (credentials) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await apiRequest(AUTH.ENDPOINTS.LOGIN, "POST", credentials);
+      if (!data || !data.token || !data.user) {
+        throw new Error(data?.error || data?.message || "Invalid response from server");
+      }
+      await tokenStore.upsertSession({
+        id: sidOf(data.user), token: data.token, refreshToken: data.refreshToken, user: data.user,
+      });
+      await applyActiveSession({
+        token: data.token, refreshToken: data.refreshToken, user: data.user,
+      });
+      return data.user;
+    } catch (err) {
+      setError(err.message || "Could not add account");
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [applyActiveSession]);
+
+  // Log out — forget ONLY the active account. If another remembered account
+  // remains, switch to it instead of dropping the user to the login screen.
   const logout = useCallback(async () => {
     setLoading(true);
     try {
@@ -503,15 +624,35 @@ export const AuthProvider = ({ children }) => {
       } catch (revokeErr) {
         // Ignore — the local clear below still logs the user out.
       }
+
+      // Drop the current account from the remembered list.
+      const currentId = sidOf(user) || (await tokenStore.getActiveSessionId());
+      let remaining = [];
+      try {
+        remaining = currentId ? await tokenStore.removeSession(currentId) : await tokenStore.getSessions();
+      } catch (_) {}
+
+      if (remaining && remaining.length > 0) {
+        // Fall back to another signed-in account instead of the login screen.
+        const next = await tokenStore.getSession(remaining[0].id);
+        if (next && next.token) {
+          await applyActiveSession(next);
+          return;
+        }
+      }
+
+      // No other account — full clear (original behaviour).
       await Storage.clear();
+      await tokenStore.setActiveSessionId(null);
       setUser(null);
       setToken(null);
+      await refreshSessions();
     } catch (err) {
       console.error("Logout error:", err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user, applyActiveSession, refreshSessions]);
 
   // Register global token expiry handler for apiClient + the global bare-axios interceptor
   useEffect(() => {
@@ -623,6 +764,12 @@ export const AuthProvider = ({ children }) => {
     isPlayer,
     isTrainer,
     isReferee,
+    // Account switcher
+    sessions,
+    activeSessionId,
+    addAccount,
+    switchAccount,
+    refreshSessions,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

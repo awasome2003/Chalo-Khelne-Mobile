@@ -16,6 +16,7 @@ import CHAT from "../../api/chat";
 import API from "../../api/api";
 import { assetUrl } from "../../utils/assetUrl";
 import groupChatApi from "../../api/groupChat";
+import { authFetch } from "../../api/authFetch";
 
 /**
  * Unified conversation screen for both DM and Group chats.
@@ -83,7 +84,7 @@ const ChatConversationScreen = () => {
         const res = await axios.get(groupChatApi.MESSAGES(chatId));
         setMessages(res.data?.messages || []);
       } else {
-        const response = await fetch(CHAT.ENDPOINTS.MESSAGES(conversationId), {
+        const response = await authFetch(CHAT.ENDPOINTS.MESSAGES(conversationId), {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await response.json();
@@ -107,7 +108,7 @@ const ChatConversationScreen = () => {
   const markAsRead = async () => {
     if (isGroup) return;
     try {
-      await fetch(CHAT.ENDPOINTS.MARK_READ(conversationId), {
+      await authFetch(CHAT.ENDPOINTS.MARK_READ(conversationId), {
         method: "PUT",
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -193,7 +194,7 @@ const ChatConversationScreen = () => {
         };
         setMessages((prev) => [...prev, tempMsg]);
 
-        const response = await fetch(CHAT.ENDPOINTS.SEND, {
+        const response = await authFetch(CHAT.ENDPOINTS.SEND, {
           method: "POST",
           headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
           body: JSON.stringify({ conversationId, text: msgText }),

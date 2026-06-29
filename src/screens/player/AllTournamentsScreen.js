@@ -16,6 +16,7 @@ import { MaterialIcons } from "@expo/vector-icons";
 import tournamentConfig from "../../api/tournaments";
 import { getTournamentType } from "../../utils/sportTrack";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { authFetch } from "../../api/authFetch";
 
 const AllTournamentsScreen = ({ navigation }) => {
   const [tournaments, setTournaments] = useState([]);
@@ -31,7 +32,7 @@ const AllTournamentsScreen = ({ navigation }) => {
   const fetchTournaments = async () => {
     try {
       setLoading(true);
-      const response = await fetch(tournamentConfig.ENDPOINTS.BASE);
+      const response = await authFetch(tournamentConfig.ENDPOINTS.BASE);
       const data = await response.json();
 
       // Change this part - it seems the API doesn't return a 'success' field
@@ -60,7 +61,7 @@ const AllTournamentsScreen = ({ navigation }) => {
       const userId = await AsyncStorage.getItem("userId");
       if (!userId) return;
 
-      const response = await fetch(
+      const response = await authFetch(
         tournamentConfig.ENDPOINTS.BOOKINGS.BY_USER(userId)
       );
       const data = await response.json();

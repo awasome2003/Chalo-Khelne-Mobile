@@ -19,6 +19,7 @@ import {
 import axios from "axios";
 import API from "../../api/api";
 import { useAuth } from "../../context/AuthContext";
+import { authFetch } from "../../api/authFetch";
 
 // 31 days starting today (today + next 30).
 const DATE_RANGE_DAYS = 31;
@@ -63,24 +64,6 @@ const toISODate = (d) => {
   return `${yyyy}-${mm}-${dd}`;
 };
 
-// Fallback slot list when the availability endpoint returns nothing.
-const PREDEFINED_TIME_SLOTS = [
-  { id: "slot-6", startTime: "6:00", endTime: "7:00", timeSlot: "06:00 - 07:00", available: true, price: 500 },
-  { id: "slot-7", startTime: "7:00", endTime: "8:00", timeSlot: "07:00 - 08:00", available: true, price: 500 },
-  { id: "slot-8", startTime: "8:00", endTime: "9:00", timeSlot: "08:00 - 09:00", available: true, price: 500 },
-  { id: "slot-9", startTime: "9:00", endTime: "10:00", timeSlot: "09:00 - 10:00", available: true, price: 500 },
-  { id: "slot-10", startTime: "10:00", endTime: "11:00", timeSlot: "10:00 - 11:00", available: false, price: 500 },
-  { id: "slot-11", startTime: "11:00", endTime: "12:00", timeSlot: "11:00 - 12:00", available: true, price: 500 },
-  { id: "slot-13", startTime: "13:00", endTime: "14:00", timeSlot: "13:00 - 14:00", available: true, price: 500 },
-  { id: "slot-14", startTime: "14:00", endTime: "15:00", timeSlot: "14:00 - 15:00", available: true, price: 500 },
-  { id: "slot-15", startTime: "15:00", endTime: "16:00", timeSlot: "15:00 - 16:00", available: true, price: 500 },
-  { id: "slot-16", startTime: "16:00", endTime: "17:00", timeSlot: "16:00 - 17:00", available: true, price: 500 },
-  { id: "slot-18", startTime: "18:00", endTime: "19:00", timeSlot: "18:00 - 19:00", available: true, price: 600 },
-  { id: "slot-19", startTime: "19:00", endTime: "20:00", timeSlot: "19:00 - 20:00", available: true, price: 600 },
-  { id: "slot-20", startTime: "20:00", endTime: "21:00", timeSlot: "20:00 - 21:00", available: true, price: 600 },
-  { id: "slot-21", startTime: "21:00", endTime: "22:00", timeSlot: "21:00 - 22:00", available: true, price: 600 },
-];
-
 const COURT_ICON_BY_TYPE = (type) => {
   const t = String(type || "").toLowerCase();
   if (t.includes("grass") || t.includes("natural")) return "soccer-field";
@@ -108,13 +91,15 @@ const VenueBookingScreen = ({ route }) => {
     return today;
   });
   const [period, setPeriod] = useState("AM");
-  const [selectedTimeSlot, setSelectedTimeSlot] = useState(null);
+  // Multiple slots can be booked at once — keep the selection as a list.
+  const [selectedSlots, setSelectedSlots] = useState([]);
   const [selectedCourt, setSelectedCourt] = useState(null);
 
   const [turfDetails, setTurfDetails] = useState(null);
   const [loadingTurf, setLoadingTurf] = useState(true);
   const [availableTimeSlots, setAvailableTimeSlots] = useState([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
+  const [slotsError, setSlotsError] = useState(false);
 
   // ─── Fetch ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -128,7 +113,7 @@ const VenueBookingScreen = ({ route }) => {
   const fetchTurfDetails = async () => {
     setLoadingTurf(true);
     try {
-      const res = await fetch(API.ENDPOINTS.TURFS.BY_ID(turfId));
+      const res = await authFetch(API.ENDPOINTS.TURFS.BY_ID(turfId));
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setTurfDetails(data);
@@ -146,6 +131,7 @@ const VenueBookingScreen = ({ route }) => {
 
   const fetchAvailability = async () => {
     setLoadingSlots(true);
+    setSlotsError(false);
     try {
       const sport = incomingSport;
       const sportParam =
@@ -163,15 +149,27 @@ const VenueBookingScreen = ({ route }) => {
       ) {
         setAvailableTimeSlots(res.data.timeSlots);
       } else {
-        setAvailableTimeSlots(PREDEFINED_TIME_SLOTS);
+        // Genuine "no slots" — show the empty state, not fabricated slots.
+        setAvailableTimeSlots([]);
       }
     } catch (err) {
       console.error("Error fetching availability:", err);
-      setAvailableTimeSlots(PREDEFINED_TIME_SLOTS);
+      // Don't show fake bookable slots on failure — surface a retryable error.
+      setAvailableTimeSlots([]);
+      setSlotsError(true);
     } finally {
       setLoadingSlots(false);
-      setSelectedTimeSlot(null);
+      setSelectedSlots([]);
     }
+  };
+
+  // Add/remove a slot from the multi-selection.
+  const toggleSlot = (slot) => {
+    setSelectedSlots((prev) => {
+      const exists = prev.some((s) => s.id === slot.id);
+      if (exists) return prev.filter((s) => s.id !== slot.id);
+      return [...prev, slot];
+    });
   };
 
   // ─── Derived ─────────────────────────────────────────────────────────
@@ -206,7 +204,7 @@ const VenueBookingScreen = ({ route }) => {
   const turfName = turfDetails?.name ? `${turfDetails.name} Turf` : "Book Turf";
 
   const canProceed =
-    !!selectedTimeSlot && (courts.length === 0 || !!selectedCourt);
+    selectedSlots.length > 0 && (courts.length === 0 || !!selectedCourt);
 
   // ─── Actions ─────────────────────────────────────────────────────────
   const handleViewCart = () => {
@@ -225,7 +223,9 @@ const VenueBookingScreen = ({ route }) => {
           }`.trim()
         : "",
       date: toISODate(selectedDate),
-      selectedSlot: selectedTimeSlot,
+      // New multi-slot path; keep selectedSlot (first) for backward compatibility.
+      selectedSlots,
+      selectedSlot: selectedSlots[0] || null,
       selectedCourt: selectedCourt,
       selectedSport: incomingSport || turfDetails?.sports?.[0] || null,
     });
@@ -369,36 +369,55 @@ const VenueBookingScreen = ({ route }) => {
           <View style={{ padding: 24, alignItems: "center" }}>
             <ActivityIndicator size="small" color="#15A765" />
           </View>
-        ) : slotsForPeriod.length > 0 ? (
-          <View style={styles.slotGrid}>
-            {slotsForPeriod.map((slot) => {
-              const isSelected = selectedTimeSlot?.id === slot.id;
-              const isDisabled = slot.available === false;
-              return (
-                <TouchableOpacity
-                  key={slot.id}
-                  style={[
-                    styles.slotBtn,
-                    isSelected && styles.slotBtnSelected,
-                    isDisabled && styles.slotBtnDisabled,
-                  ]}
-                  disabled={isDisabled}
-                  onPress={() => setSelectedTimeSlot(slot)}
-                  activeOpacity={0.85}
-                >
-                  <Text
-                    style={[
-                      styles.slotText,
-                      isSelected && styles.slotTextSelected,
-                      isDisabled && styles.slotTextDisabled,
-                    ]}
-                  >
-                    {to12h(slot.timeSlot)}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
+        ) : slotsError ? (
+          <View style={styles.errorBox}>
+            <Ionicons name="cloud-offline-outline" size={30} color="#C0392B" />
+            <Text style={styles.errorText}>
+              Couldn't load available slots. Please check your connection and try
+              again.
+            </Text>
+            <TouchableOpacity
+              style={styles.retryBtn}
+              onPress={fetchAvailability}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="refresh" size={16} color="#15A765" />
+              <Text style={styles.retryBtnText}>Retry</Text>
+            </TouchableOpacity>
           </View>
+        ) : slotsForPeriod.length > 0 ? (
+          <>
+            <Text style={styles.multiHint}>Tap to select one or more slots.</Text>
+            <View style={styles.slotGrid}>
+              {slotsForPeriod.map((slot) => {
+                const isSelected = selectedSlots.some((s) => s.id === slot.id);
+                const isDisabled = slot.available === false;
+                return (
+                  <TouchableOpacity
+                    key={slot.id}
+                    style={[
+                      styles.slotBtn,
+                      isSelected && styles.slotBtnSelected,
+                      isDisabled && styles.slotBtnDisabled,
+                    ]}
+                    disabled={isDisabled}
+                    onPress={() => toggleSlot(slot)}
+                    activeOpacity={0.85}
+                  >
+                    <Text
+                      style={[
+                        styles.slotText,
+                        isSelected && styles.slotTextSelected,
+                        isDisabled && styles.slotTextDisabled,
+                      ]}
+                    >
+                      {to12h(slot.timeSlot)}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </>
         ) : (
           <View style={styles.emptySlots}>
             <Text style={styles.emptySlotsText}>
@@ -453,7 +472,9 @@ const VenueBookingScreen = ({ route }) => {
           <View style={styles.cartLeft}>
             <Ionicons name="cart-outline" size={18} color="#fff" />
             <Text style={styles.cartLeftText}>
-              {selectedTimeSlot ? "1 Slot added" : "Select a slot"}
+              {selectedSlots.length > 0
+                ? `${selectedSlots.length} slot${selectedSlots.length > 1 ? "s" : ""} added`
+                : "Select slots"}
             </Text>
           </View>
           <View style={styles.cartRight}>
@@ -634,6 +655,41 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: "Poppins_400Regular",
     color: "#666666",
+  },
+
+  multiHint: {
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular",
+    color: "#8D848F",
+    marginBottom: 10,
+  },
+
+  // Availability error + retry
+  errorBox: { paddingVertical: 28, alignItems: "center", gap: 10 },
+  errorText: {
+    fontSize: 13,
+    fontFamily: "Poppins_400Regular",
+    color: "#666666",
+    textAlign: "center",
+    paddingHorizontal: 24,
+    lineHeight: 19,
+  },
+  retryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: "#15A765",
+    marginTop: 4,
+  },
+  retryBtnText: {
+    fontSize: 13,
+    fontFamily: "Montserrat_500Medium",
+    fontWeight: "600",
+    color: "#15A765",
   },
 
   // Courts

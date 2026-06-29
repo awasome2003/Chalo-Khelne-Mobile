@@ -11,6 +11,8 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import notificationService from "../../services/NotificationService";
+import API from "../../api/api";
+import { authFetch } from "../../api/authFetch";
 
 const { width } = Dimensions.get("window");
 const SLIDER_WIDTH = width * 0.8;
@@ -48,7 +50,7 @@ const PlayerNotifications = ({ visible, onClose, userId }) => {
       }
 
       // Call your backend API for player notifications
-      const response = await fetch(`${API.BASE_URL}/player/${userId}/notifications`);
+      const response = await authFetch(`${API.BASE_URL}/player/${userId}/notifications`);
       const data = await response.json();
 
       if (!response.ok) {

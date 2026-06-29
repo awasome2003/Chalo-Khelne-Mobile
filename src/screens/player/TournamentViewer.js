@@ -13,7 +13,8 @@ import {
 import Icon from "react-native-vector-icons/FontAwesome";
 import tournamentConfig from "../../api/tournaments";
 import axios from "axios";
-import { readMatchResult, getLiveLabel } from "../../utils/matchResultUtils";
+import { readMatchResult, getLiveLabel, getScoreDisplay } from "../../utils/matchResultUtils";
+import CricketScoreDetail from "../../components/CricketScoreDetail";
 import useTournamentSports from "../../hooks/useTournamentSports";
 import SportTabStrip from "../../components/SportTabStrip";
 import { withSport } from "../../utils/sportQuery";
@@ -70,7 +71,16 @@ const TournamentViewer = ({ tournamentId: rawTournamentId }) => {
         )
       );
 
-      const groupsArray = response?.data?.groups;
+      // The endpoint may return the array directly, as { groups: [...] }, or as
+      // the standard { success, data: [...] } wrapper — accept all three.
+      const body = response?.data;
+      const groupsArray = Array.isArray(body)
+        ? body
+        : Array.isArray(body?.groups)
+        ? body.groups
+        : Array.isArray(body?.data)
+        ? body.data
+        : null;
 
       if (Array.isArray(groupsArray)) {
         // Only show Round 1 groups in the Groups/League tab
@@ -118,7 +128,16 @@ const TournamentViewer = ({ tournamentId: rawTournamentId }) => {
         )
       );
 
-      const groupsArray = response?.data?.groups;
+      // The endpoint may return the array directly, as { groups: [...] }, or as
+      // the standard { success, data: [...] } wrapper — accept all three.
+      const body = response?.data;
+      const groupsArray = Array.isArray(body)
+        ? body
+        : Array.isArray(body?.groups)
+        ? body.groups
+        : Array.isArray(body?.data)
+        ? body.data
+        : null;
 
       if (Array.isArray(groupsArray)) {
         // Only show Round 2 groups in Top Players section
@@ -523,7 +542,7 @@ const TournamentViewer = ({ tournamentId: rawTournamentId }) => {
                           <View style={styles.matchInfoItem}>
                             <Icon name="bar-chart" size={12} color="#FF6400" />
                             <Text style={styles.matchInfoText}>
-                              {(() => { const r = readMatchResult(match); return r ? `${r.player1Score}-${r.player2Score}` : '0-0'; })()}
+                              {getScoreDisplay(match) || '0-0'}
                             </Text>
                           </View>
                         )}
@@ -707,7 +726,7 @@ const TournamentViewer = ({ tournamentId: rawTournamentId }) => {
                               <View style={styles.matchInfoItem}>
                                 <Icon name="bar-chart" size={12} color="#FF6400" />
                                 <Text style={styles.matchInfoText}>
-                                  {(() => { const r = readMatchResult(match); return r ? `${r.player1Score}-${r.player2Score}` : '0-0'; })()}
+                                  {getScoreDisplay(match) || '0-0'}
                                 </Text>
                               </View>
                             )}
@@ -893,7 +912,7 @@ const TournamentViewer = ({ tournamentId: rawTournamentId }) => {
                             <View style={styles.matchInfoItem}>
                               <Icon name="bar-chart" size={12} color="#FF6400" />
                               <Text style={styles.matchInfoText}>
-                                {(() => { const r = readMatchResult(match); return r ? `${r.player1Score}-${r.player2Score}` : '0-0'; })()}
+                                {getScoreDisplay(match) || '0-0'}
                               </Text>
                             </View>
                           )}
@@ -1051,11 +1070,11 @@ const TournamentViewer = ({ tournamentId: rawTournamentId }) => {
                 </View>
 
                 {/* 🔥 LIVE SCORE SECTION - The star of the show! */}
-                {(selectedMatch.status === 'IN_PROGRESS' || selectedMatch.status === 'COMPLETED') && (
+                {(normMatchStatus(selectedMatch.status) === 'IN_PROGRESS' || normMatchStatus(selectedMatch.status) === 'COMPLETED') && (
                   <View style={styles.detailSection}>
                     <Text style={styles.sectionTitle}>
                       <Icon name="trophy" size={16} color="#FFD700" />
-                      {selectedMatch.status === 'IN_PROGRESS' ? ' Live Score' : ' Final Score'}
+                      {normMatchStatus(selectedMatch.status) === 'IN_PROGRESS' ? ' Live Score' : ' Final Score'}
                     </Text>
 
                     {/* Current/Final Set Score */}
@@ -1078,8 +1097,49 @@ const TournamentViewer = ({ tournamentId: rawTournamentId }) => {
                       </View>
                     </View>
 
+                    {/* Sport-aware score summary (carrom boards / chess result).
+                        Cricket is rendered by <CricketScoreDetail/> below. */}
+                    {(() => {
+                      const r = readMatchResult(selectedMatch);
+                      if (!r || r.type === 'sets' || r.type === 'innings') return null;
+                      return (
+                        <View style={{ alignItems: 'center', paddingVertical: 8 }}>
+                          <Text style={{ fontSize: 16, fontWeight: '800', color: '#1F2937' }}>
+                            {getScoreDisplay(selectedMatch)}
+                          </Text>
+                        </View>
+                      );
+                    })()}
+
+                    {/* Cricket — Cricbuzz-style detail */}
+                    <CricketScoreDetail match={selectedMatch} />
+
+                    {/* Carrom board breakdown */}
+                    {(() => {
+                      const r = readMatchResult(selectedMatch);
+                      if (!r || r.type !== 'board' || !(r.details?.length)) return null;
+                      const sideName = (s) => (s === 'player1'
+                        ? (selectedMatch.player1?.userName || selectedMatch.player1?.playerName)
+                        : (selectedMatch.player2?.userName || selectedMatch.player2?.playerName));
+                      return (
+                        <View style={styles.setsBreakdown}>
+                          <Text style={styles.setsTitle}>Boards</Text>
+                          {r.details.map((b, index) => (
+                            <View key={index} style={styles.setRow}>
+                              <Text style={styles.setLabel}>Board {b.boardNumber || index + 1}</Text>
+                              <View style={styles.setScores}>
+                                <Text style={styles.setScoreText}>
+                                  {sideName(b.winner) || b.winner} +{(b.winner === 'player1' ? b.player1Points : b.player2Points) || 0}{b.queenPocketedBy ? ' 👑' : ''}
+                                </Text>
+                              </View>
+                            </View>
+                          ))}
+                        </View>
+                      );
+                    })()}
+
                     {/* Live Game Score (if in progress) */}
-                    {selectedMatch.status === 'IN_PROGRESS' && selectedMatch.liveScore && (
+                    {normMatchStatus(selectedMatch.status) === 'IN_PROGRESS' && selectedMatch.liveScore && (
                       <View style={styles.liveScoreContainer}>
                         <Text style={styles.liveScoreTitle}>Current Game</Text>
                         <View style={styles.liveScoreRow}>
@@ -1537,6 +1597,11 @@ const TournamentViewer = ({ tournamentId: rawTournamentId }) => {
     </View>
   );
 };
+
+// Normalize match status to a canonical UPPER_SNAKE form. Group matches use
+// 'IN_PROGRESS'/'COMPLETED'; knockout matches are normalized to 'in-progress'/
+// 'completed'. Compare against this so both render the score block.
+const normMatchStatus = (s) => String(s || "").toUpperCase().replace(/-/g, "_");
 
 // Helper function to get status colors
 const getStatusColor = (status) => {

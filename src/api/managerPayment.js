@@ -1,6 +1,14 @@
 import API from "./api";
+import tokenStore from "../services/tokenStore";
 
 const { BASE_URL, UPLOADS_URL, Wbsite_SERVER_URL } = API;
+
+// These helpers use raw fetch (not the axios instance), so they must attach the
+// auth token themselves — otherwise the secured payment routes return 401.
+const authHeaders = async (extra = {}) => {
+  const token = await tokenStore.getToken();
+  return { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...extra };
+};
 
 const ENDPOINTS = {
     QR_CODES: (managerId, tournamentId) =>
@@ -18,7 +26,7 @@ const ENDPOINTS = {
 const managerPaymentAPI = {
     getQrCodes: async (managerId, tournamentId) => {
         try {
-            const response = await fetch(ENDPOINTS.QR_CODES(managerId, tournamentId));
+            const response = await fetch(ENDPOINTS.QR_CODES(managerId, tournamentId), { headers: await authHeaders() });
             const data = await response.json();
 
             if (!response.ok) throw new Error(data.message || "Failed to fetch QR codes");
@@ -41,7 +49,7 @@ const managerPaymentAPI = {
 
     getUpiIds: async (managerId, tournamentId) => {
         try {
-            const response = await fetch(ENDPOINTS.UPI_IDS(managerId, tournamentId));
+            const response = await fetch(ENDPOINTS.UPI_IDS(managerId, tournamentId), { headers: await authHeaders() });
             const data = await response.json();
 
             // If response is not OK but the server indicates no UPI IDs, handle it gracefully
@@ -65,7 +73,7 @@ const managerPaymentAPI = {
 
     getOfflinePayments: async (managerId, tournamentId) => {
         try {
-            const response = await fetch(ENDPOINTS.OFFLINE_PAYMENTS(managerId, tournamentId));
+            const response = await fetch(ENDPOINTS.OFFLINE_PAYMENTS(managerId, tournamentId), { headers: await authHeaders() });
             const data = await response.json();
             if (!response.ok) throw new Error(data.message || "Failed to fetch offline payments");
             return { manager: data.manager || null, offlinePayments: data.offlinePayments || [] };
@@ -79,7 +87,7 @@ const managerPaymentAPI = {
         try {
             const response = await fetch(ENDPOINTS.NOTIFY(managerId, tournamentId), {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: await authHeaders({ "Content-Type": "application/json" }),
                 body: JSON.stringify(payload),
             });
             const data = await response.json();
@@ -93,7 +101,7 @@ const managerPaymentAPI = {
 
     getNotifications: async (managerId) => {
         try {
-            const response = await fetch(ENDPOINTS.NOTIFICATIONS(managerId));
+            const response = await fetch(ENDPOINTS.NOTIFICATIONS(managerId), { headers: await authHeaders() });
             const data = await response.json();
             if (!response.ok) throw new Error(data.message || "Failed to fetch notifications");
             return data.notifications || [];

@@ -19,6 +19,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "../../context/AuthContext";
 import PLANNER from "../../api/planner";
 import TRAINER from "../../api/trainerConsole";
+import { authFetch } from "../../api/authFetch";
 
 const { width } = Dimensions.get("window");
 
@@ -61,7 +62,7 @@ const Planner = ({ navigation }) => {
       if (showSpinner) setLoading(true);
       try {
         const token = await AsyncStorage.getItem("auth_token");
-        const res = await fetch(feedUrl, {
+        const res = await authFetch(feedUrl, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
         const data = await res.json();

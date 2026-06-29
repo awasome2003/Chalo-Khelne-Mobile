@@ -100,7 +100,6 @@ const SPORTS_OPTIONS = [
   "Hockey",
   "Kabaddi",
   "Swimming",
-  "Tennis", // Tennis listed twice as in the mockup image
 ];
 
 const EXPERIENCE_LEVELS = [
@@ -152,10 +151,10 @@ const CreateProfessionalProfileScreen = () => {
     scorer: "Scorer",
     cameraman: "Cameraman",
     commentator: "Commentator",
-    eventstaff: "Event Staff",
-    physiotherapy: "Physiotherapist",
+    event_staff: "Event Staff",
+    physiotherapist: "Physiotherapist",
     photographer: "Photographer",
-    groundstaff: "Ground Staff",
+    ground_staff: "Ground Staff",
   };
 
   const pickCertificate = async () => {

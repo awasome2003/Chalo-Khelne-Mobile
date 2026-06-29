@@ -25,18 +25,27 @@ export default function useTournamentSports(tournamentId, seedTournament) {
   useEffect(() => {
     let cancelled = false;
 
+    const sportKey = (s) => String(s?.sportId || s?._id || s?.id || "");
     const seedFromArray = (arr) => {
       if (cancelled) return;
       setSports(arr);
-      const first = arr?.[0];
-      const firstId = first ? String(first.sportId || first._id || first.id || "") : "";
-      setActiveSportId(firstId || null);
+      // Preserve a still-valid selection (e.g. set from a partial seed or the
+      // user's pick); otherwise default to the first sport. Avoids resetting
+      // the chosen sport when the authoritative list arrives.
+      setActiveSportId((cur) => {
+        if (cur && Array.isArray(arr) && arr.some((s) => sportKey(s) === String(cur))) return cur;
+        const first = arr?.[0];
+        return first ? (sportKey(first) || null) : null;
+      });
       setLoading(false);
     };
 
+    // Seed instantly for first paint, but DON'T stop here — a partial /
+    // normalised seed (e.g. 1 sport from a card shape) would otherwise hide the
+    // multi-sport switcher. We still fetch BY_ID below for the authoritative
+    // sports[] and upgrade the list.
     if (Array.isArray(seedTournament?.sports) && seedTournament.sports.length > 0) {
       seedFromArray(seedTournament.sports);
-      return () => { cancelled = true; };
     }
 
     if (!tournamentId) {

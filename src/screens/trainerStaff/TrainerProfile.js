@@ -7,11 +7,13 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import axios from "axios";
 import { useAuth } from "../../context/AuthContext";
+import AccountSwitcher from "../../components/AccountSwitcher";
 import API from "../../api/api";
 import { colors } from "../../theme";
 
 export default function TrainerProfile() {
   const { user, logout } = useAuth();
+  const [switcherOpen, setSwitcherOpen] = useState(false);
   const id = user?.id || user?._id;
   const isSubstitute = String(user?.role || "") === "Substitute";
 
@@ -118,10 +120,15 @@ export default function TrainerProfile() {
               <Text style={styles.name}>{name || "Trainer"}</Text>
               <View style={styles.roleBadge}><Text style={styles.roleBadgeText}>{roleLabel}</Text></View>
             </View>
+            <TouchableOpacity onPress={() => setSwitcherOpen(true)} style={styles.logoutBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="swap-horizontal" size={22} color={"#15A765"} />
+            </TouchableOpacity>
             <TouchableOpacity onPress={confirmLogout} style={styles.logoutBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Ionicons name="log-out-outline" size={22} color={colors.error} />
             </TouchableOpacity>
           </View>
+
+          <AccountSwitcher visible={switcherOpen} onClose={() => setSwitcherOpen(false)} />
 
           {isSubstitute ? (
             <View style={styles.card}>

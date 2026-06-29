@@ -25,6 +25,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "../../context/AuthContext";
 import AUTH from "../../api/auth";
 import API from "../../api/api";
+import { authFetch } from "../../api/authFetch";
 
 const GREEN = "#15A765";
 const GREEN_DARK = "#0F8A55";
@@ -203,7 +204,7 @@ const EditPlayerProfileScreen = () => {
         type: "image/jpeg",
         name: "profile-image.jpg",
       });
-      const res = await fetch(AUTH.ENDPOINTS.USER.UPLOAD_IMAGE(userId), {
+      const res = await authFetch(AUTH.ENDPOINTS.USER.UPLOAD_IMAGE(userId), {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: fd,
@@ -255,7 +256,7 @@ const EditPlayerProfileScreen = () => {
           .join("\n"),
       };
 
-      const res = await fetch(AUTH.ENDPOINTS.USER.PROFILE(userId), {
+      const res = await authFetch(AUTH.ENDPOINTS.USER.PROFILE(userId), {
         method: "PUT",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -339,7 +340,7 @@ const EditPlayerProfileScreen = () => {
 
           <Text style={styles.name}>{name || "Player"}</Text>
           <Text style={styles.bio}>
-            {initialProfile.bio || "Football lover & weekend player ⚽"}
+            {initialProfile.bio || ""}
           </Text>
 
           {/* Basic Details */}

@@ -14,6 +14,7 @@ import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import PLANNER from "../../api/planner";
+import { authFetch } from "../../api/authFetch";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -149,7 +150,7 @@ const DaySchedule = ({ navigation }) => {
           onPress: async () => {
             try {
               const token = await AsyncStorage.getItem("auth_token");
-              const res = await fetch(PLANNER.ENDPOINTS.DELETE(activity.id), {
+              const res = await authFetch(PLANNER.ENDPOINTS.DELETE(activity.id), {
                 method: "DELETE",
                 headers: token ? { Authorization: `Bearer ${token}` } : {},
               });

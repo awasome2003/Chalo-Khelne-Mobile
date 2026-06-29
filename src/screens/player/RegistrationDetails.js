@@ -15,6 +15,7 @@ import { Ionicons, MaterialIcons, FontAwesome5, MaterialCommunityIcons } from "@
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getTournamentType } from "../../utils/sportTrack";
+import assetUrl from "../../utils/assetUrl";
 
 const { width } = Dimensions.get("window");
 
@@ -52,24 +53,46 @@ const RegistrationDetails = ({ route, navigation }) => {
   };
 
   const handleViewMatchDetails = () => {
-    const tournamentType = tournamentData?.booking?.tournamentType || tournamentData?.type;
-    if (!tournamentType) {
-      Alert.alert("Error", "Tournament type information is missing");
-      return;
-    }
-    const typeNormalized = tournamentType.toLowerCase();
-    if (typeNormalized.includes("group")) {
-      navigation.navigate("GroupStage", { tournament: tournamentData });
-    } else if (typeNormalized.includes("knockout")) {
-      navigation.navigate("TeamKnockouts", { id: tournamentData.id, tournament: tournamentData });
-    } else {
-      Alert.alert("Information", `Navigation to ${tournamentType} matches is not yet implemented`);
-    }
+    // One scoreboard for the whole app — the Tournament Leaderboard (groups +
+    // matches + schedule + standings), which handles every format incl.
+    // multi-sport. No more separate GroupStage / TeamKnockouts / Details screens.
+    const tournamentType = tournamentData?.booking?.tournamentType || tournamentData?.type || "";
+    navigation.navigate("Tournament Leaderboard", {
+      tournament: tournamentData,
+      tournamentId: tournamentData.id,
+      tournamentName: tournamentData.name,
+      tournamentType,
+    });
   };
 
   const tournamentName = tournamentData.name !== "NA" ? tournamentData.name : (tournamentData.booking?.tournamentName || "Tournament");
   const venueInfo = tournamentData.eventLocation || tournamentData.club || "N/A";
   const status = tournamentData.booking?.status || "Confirmed";
+
+  // Tournament hero image. The list screens already resolve a usable <Image>
+  // source onto `image` (either { uri } via assetUrl, or a bundled require).
+  // Fall back to a raw tournamentLogo path, then to the bundled banner.
+  const fallbackHero = require("../../../assets/Home1.jpg");
+  const rawLogo =
+    tournamentData.tournamentLogo ||
+    tournamentData.rawData?.tournamentLogo ||
+    tournamentData.fullDetails?.tournamentLogo;
+  const heroSource =
+    tournamentData.image ||
+    (tournamentData.imageUrl ? { uri: assetUrl(tournamentData.imageUrl) } : null) ||
+    (typeof rawLogo === "string" && rawLogo.trim()
+      ? { uri: assetUrl(rawLogo.startsWith("http") ? rawLogo : "tournaments/" + rawLogo) }
+      : null) ||
+    fallbackHero;
+
+  // Tournament type. tournamentData is the UI-formatted object whose `type` is
+  // already computed; getTournamentType() expects the raw tournament (sports[]),
+  // so prefer the booking type / precomputed type, then the raw object.
+  const tournamentType =
+    tournamentData.booking?.tournamentType ||
+    tournamentData.type ||
+    getTournamentType(tournamentData.rawData || tournamentData.fullDetails) ||
+    "Standard";
 
   return (
     <View style={styles.container}>
@@ -78,7 +101,7 @@ const RegistrationDetails = ({ route, navigation }) => {
       {/* Immersive Hero Header */}
       <View style={styles.heroContainer}>
         <ImageBackground
-          source={require("../../../assets/Home1.jpg")} // Fallback or logic for tournament image
+          source={heroSource}
           style={styles.heroBackground}
         >
           <LinearGradient
@@ -132,7 +155,7 @@ const RegistrationDetails = ({ route, navigation }) => {
             <LinearGradient colors={["#FFF", "#F0F4F8"]} style={styles.dashGradient}>
               <MaterialIcons name="sports" size={20} color="#FF6A00" />
               <Text style={styles.dashLabel}>Type</Text>
-              <Text style={styles.dashValue}>{getTournamentType(tournamentData) || "Standard"}</Text>
+              <Text style={styles.dashValue}>{tournamentType}</Text>
             </LinearGradient>
           </View>
         </View>

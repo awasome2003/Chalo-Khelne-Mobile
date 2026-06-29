@@ -81,6 +81,7 @@ import Planner from "../screens/player/Planner";
 import AddNote from "../screens/player/AddNote";
 import DaySchedule from "../screens/player/DaySchedule";
 import SocialProfile from "../screens/player/SocialProfile";
+import PlayerPublicProfile from "../screens/player/PlayerPublicProfile";
 import TurfBookingPreview from "../screens/player/TurfBookingPreview";
 import TurfPaymentMethod from "../screens/player/TurfPaymentMethod";
 import CartScreen from "../screens/player/CartScreen";
@@ -130,6 +131,11 @@ const HomeStack = () => {
         name="PlayerProfile"
         component={PlayerProfileScreen}
         options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="PlayerPublicProfile"
+        component={PlayerPublicProfile}
+        options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
       />
       <Stack.Screen
         name="Planner"
@@ -235,6 +241,9 @@ const HomeStack = () => {
       {/* Service Role screens (reachable from TournamentDetails → Apply as Staff) */}
       <Stack.Screen name="BrowseTournamentJobsHome" component={BrowseTournamentJobs} options={{ headerShown: false }} />
       <Stack.Screen name="RoleHubHome" component={RoleHub} options={{ headerShown: false }} />
+      {/* Alias so PlayerProfileScreen's "+" (navigate "RoleHub") resolves when the
+          profile is reached via Home search, not just the Profile tab. */}
+      <Stack.Screen name="RoleHub" component={RoleHub} options={{ headerShown: false }} />
       <Stack.Screen name="ServiceProfileSetupHome" component={ServiceProfileSetup} options={{ headerShown: false }} />
 
       {/* Sports Jobs & Opportunities (Browse Jobs module) */}
@@ -454,6 +463,28 @@ const PlayStack = () => {
         name="TurfPaymentMethod"
         component={TurfPaymentMethod}
         options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
+      />
+      <Stack.Screen
+        name="FavouriteVenue"
+        component={FavoriteVenue}
+        options={{ headerShown: false }}
+      />
+      {/* Cross-stack targets the turf flow navigates to (Book Turf now opens the
+          Turf tab, so these must resolve inside PlayStack too). */}
+      <Stack.Screen
+        name="MyBookings"
+        component={MyBooking}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="EditProfile"
+        component={EditProfileScreen}
+        options={{ headerShown: false, tabBarStyle: { display: 'none' } }}
+      />
+      <Stack.Screen
+        name="TermsConditionsScreen"
+        component={TermsCondition}
+        options={{ headerShown: false }}
       />
       {/* Add other player home-related screens here */}
     </Stack.Navigator>

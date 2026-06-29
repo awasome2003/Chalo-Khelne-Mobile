@@ -15,7 +15,8 @@ import {
   StatusBar,
   Share,
 } from "react-native";
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import MaterialIcons from "react-native-vector-icons/MaterialIcons";
 import axios from "axios";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -49,6 +50,14 @@ const Event = ({ navigation }) => {
   const { user, isAuthenticated } = useAuth();
   const insets = useSafeAreaInsets();
   const scrollY = useRef(new Animated.Value(0)).current;
+
+  // Always land on the default "Events" tab when leaving the screen, so coming
+  // back from another tab (e.g. Social) never shows the Leaderboard tab stuck.
+  useFocusEffect(
+    useCallback(() => {
+      return () => setActiveTab("Events");
+    }, [])
+  );
 
   // Tab animation
   const tabValue = useRef(new Animated.Value(0)).current;
@@ -521,10 +530,12 @@ const Event = ({ navigation }) => {
       <View key={item.id} style={styles.tournamentCard}>
         <View style={styles.cardImageWrap}>
           <Image source={imageSource} style={styles.cardImage} resizeMode="cover" />
-          <View style={styles.statusPill}>
-            <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
-            <Text style={styles.statusPillText}>{item.status}</Text>
-          </View>
+          {item.status !== "Past" && (
+            <View style={styles.statusPill}>
+              <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
+              <Text style={styles.statusPillText}>{item.status}</Text>
+            </View>
+          )}
         </View>
 
         <View style={styles.cardBody}>
@@ -556,13 +567,25 @@ const Event = ({ navigation }) => {
             <Text style={styles.closesText} numberOfLines={1}>
               {closesLabel || " "}
             </Text>
-            <TouchableOpacity
-              style={styles.registerButton}
-              onPress={goToDetails}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.registerButtonText}>Register</Text>
-            </TouchableOpacity>
+            {item.status === "Past" ? (
+              // A past event can't be registered for — show a neutral View
+              // button (opens results/details) instead of Register.
+              <TouchableOpacity
+                style={styles.viewButton}
+                onPress={goToDetails}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.viewButtonText}>View</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={styles.registerButton}
+                onPress={goToDetails}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.registerButtonText}>Register</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </View>
@@ -574,7 +597,9 @@ const Event = ({ navigation }) => {
   const renderRegistrationCard = (item) => {
     return (
       <TouchableOpacity
-        key={item.id}
+        // Key by the booking id — a player can register for the SAME tournament
+        // in multiple categories, so tournament id (item.id) isn't unique here.
+        key={item.booking?._id || item.booking?.id || item.id}
         style={styles.registrationModernCard}
         onPress={() => {
           const tId =
@@ -1127,6 +1152,20 @@ const styles = StyleSheet.create({
   },
   registerButtonText: {
     color: "#FFFFFF",
+    fontSize: 13,
+    fontFamily: "Poppins_400Regular",
+    fontWeight: "600",
+  },
+  viewButton: {
+    backgroundColor: "#F3F4F6",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    paddingHorizontal: 22,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  viewButtonText: {
+    color: "#374151",
     fontSize: 13,
     fontFamily: "Poppins_400Regular",
     fontWeight: "600",

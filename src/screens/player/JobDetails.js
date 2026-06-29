@@ -226,6 +226,7 @@ const JobDetails = () => {
   const requirementList = job?.requirements?.length ? job.requirements : REQUIREMENTS;
   const benefitList = job?.benefits?.length ? job.benefits : BENEFITS;
   const org = job?.organizer || {};
+  const orgName = org.name || "Mumbai Premier League";
   const inr = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 
   // My professional profiles shown in the "Select professional Profile" list
@@ -410,7 +411,7 @@ const JobDetails = () => {
         <View style={styles.orgRow}>
           <View style={styles.orgAvatar}>
             <Text style={styles.orgAvatarText}>
-              {(org.name || "Mumbai Premier League")
+              {orgName
                 .split(" ")
                 .map((w) => w[0])
                 .join("")
@@ -419,7 +420,7 @@ const JobDetails = () => {
             </Text>
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.orgName}>{org.name || "Mumbai Premier League"}</Text>
+            <Text style={styles.orgName}>{orgName}</Text>
             <Text style={styles.orgDesc}>
               {org.description ||
                 "Professional cricket tournament organizer with 5+ years experience"}
@@ -499,7 +500,14 @@ const JobDetails = () => {
                   <Text style={styles.applyJobTitle}>{jobTitleParam}</Text>
                   <Text style={styles.applyJobSubtitle}>{jobSubtitleParam}</Text>
                 </View>
-                <Text style={styles.applyJobRate}>{jobRateParam || "₹7,500 /-"}</Text>
+                <Text style={styles.applyJobRate}>
+                  {jobRateParam ||
+                    (job?.estimatedEarnings != null
+                      ? `${inr(job.estimatedEarnings)} /-`
+                      : job?.ratePerMatch != null
+                      ? `${inr(job.ratePerMatch)} /-`
+                      : "—")}
+                </Text>
               </View>
 
               <Text style={styles.applySectionHeading}>Select professional Profile</Text>
@@ -564,7 +572,7 @@ const JobDetails = () => {
               <Text style={styles.charCounter}>{cover.length}/{COVER_MAX} characters</Text>
 
               <Text style={styles.noteText}>
-                *Your application will be sent to Mumbai Premier League. They typically respond within 24-48 hours.
+                *Your application will be sent to {orgName}. They typically respond within 24-48 hours.
               </Text>
             </ScrollView>
 
@@ -608,7 +616,7 @@ const JobDetails = () => {
             </View>
             <Text style={styles.successTitle}>Application Submitted!</Text>
             <Text style={styles.successMessage}>
-              Your application has been sent to Mumbai Premier League. You'll hear back within 24-48 hours.
+              Your application has been sent to {orgName}. You'll hear back within 24-48 hours.
             </Text>
             <TouchableOpacity style={styles.successBtn} activeOpacity={0.9} onPress={closeSuccess}>
               <Text style={styles.successBtnText}>Done</Text>

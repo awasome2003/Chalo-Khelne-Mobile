@@ -18,6 +18,7 @@ import { useAuth } from "../../context/AuthContext";
 import { Ionicons, MaterialIcons, FontAwesome5 } from "@expo/vector-icons";
 import { LinearGradient } from 'expo-linear-gradient';
 import RoleSelector from "./RoleSelector";
+import DateTimePickerModal from "react-native-modal-datetime-picker";
 
 const { width, height } = Dimensions.get("window");
 
@@ -31,6 +32,10 @@ const RegisterScreen = ({ navigation }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [validationErrors, setValidationErrors] = useState({});
+  // Date of birth — required by the backend for Player/Trainer/Referee
+  // (Families Policy age-gating; under-13 cannot self-register).
+  const [dateOfBirth, setDateOfBirth] = useState(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const { register, loading } = useAuth();
 
   const handleMobileChange = (value) => {
@@ -48,18 +53,21 @@ const RegisterScreen = ({ navigation }) => {
   };
 
   const handleRegister = async () => {
+    const cleanName = name.trim();
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanMobile = mobile.trim();
     const errors = {};
 
-    if (!name.trim()) errors.name = "Name is required";
-    if (!email.trim()) {
+    if (!cleanName) errors.name = "Name is required";
+    if (!cleanEmail) {
       errors.email = "Email is required";
     } else {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(email)) errors.email = "Invalid email address";
+      if (!emailRegex.test(cleanEmail)) errors.email = "Invalid email address";
     }
-    if (!mobile.trim()) {
+    if (!cleanMobile) {
       errors.mobile = "Mobile is required";
-    } else if (mobile.length !== 10) {
+    } else if (cleanMobile.length !== 10) {
       errors.mobile = "Enter a valid 10-digit number";
     }
     if (!password.trim()) {
@@ -67,7 +75,24 @@ const RegisterScreen = ({ navigation }) => {
     } else if (password.length < 6) {
       errors.password = "Minimum 6 characters";
     }
-    if (password !== confirmPassword) errors.confirmPassword = "Passwords match error";
+    if (password !== confirmPassword) errors.confirmPassword = "Passwords do not match";
+
+    // DOB is required server-side for these roles (Families Policy age-gating).
+    const DOB_ROLES = ["Player", "Trainer", "Referee"];
+    if (DOB_ROLES.includes(role)) {
+      if (!dateOfBirth) {
+        errors.dateOfBirth = "Date of birth is required";
+      } else {
+        const t = new Date();
+        let age = t.getFullYear() - dateOfBirth.getFullYear();
+        const m = t.getMonth() - dateOfBirth.getMonth();
+        if (m < 0 || (m === 0 && t.getDate() < dateOfBirth.getDate())) age--;
+        if (age < 13) {
+          errors.dateOfBirth =
+            "You must be at least 13. Under-13 accounts must be created by a parent.";
+        }
+      }
+    }
 
     if (Object.keys(errors).length > 0) {
       setValidationErrors(errors);
@@ -77,7 +102,14 @@ const RegisterScreen = ({ navigation }) => {
     setValidationErrors({});
 
     try {
-      const response = await register({ name, email, mobile, password, role });
+      const response = await register({
+        name: cleanName,
+        email: cleanEmail,
+        mobile: cleanMobile,
+        password,
+        role,
+        dateOfBirth: dateOfBirth ? dateOfBirth.toISOString() : undefined,
+      });
       if (response) {
         let msg = "Account created successfully. Please login.";
         if (response.message && response.message.includes("waiting for approval")) {
@@ -209,6 +241,38 @@ const RegisterScreen = ({ navigation }) => {
                   />
                 </View>
                 {validationErrors.mobile && <Text style={styles.errorText}>{validationErrors.mobile}</Text>}
+
+                {/* Date of Birth */}
+                <Text style={styles.inputLabel}>Date of Birth</Text>
+                <TouchableOpacity
+                  style={[styles.inputWrapper, validationErrors.dateOfBirth && styles.inputErrorBorder]}
+                  onPress={() => setShowDatePicker(true)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.iconBox}>
+                    <MaterialIcons name="cake" size={20} color="#3B4DFD" />
+                  </View>
+                  <Text style={[styles.input, { paddingVertical: 14, color: dateOfBirth ? "#000" : "#999" }]}>
+                    {dateOfBirth ? dateOfBirth.toLocaleDateString() : "Select date of birth"}
+                  </Text>
+                </TouchableOpacity>
+                {validationErrors.dateOfBirth && <Text style={styles.errorText}>{validationErrors.dateOfBirth}</Text>}
+                <DateTimePickerModal
+                  isVisible={showDatePicker}
+                  mode="date"
+                  maximumDate={new Date()}
+                  date={dateOfBirth || new Date(2000, 0, 1)}
+                  onConfirm={(d) => {
+                    setShowDatePicker(false);
+                    setDateOfBirth(d);
+                    setValidationErrors((prev) => {
+                      const n = { ...prev };
+                      delete n.dateOfBirth;
+                      return n;
+                    });
+                  }}
+                  onCancel={() => setShowDatePicker(false)}
+                />
 
                 {/* Password Input */}
                 <Text style={styles.inputLabel}>Security</Text>

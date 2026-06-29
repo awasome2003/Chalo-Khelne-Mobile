@@ -233,6 +233,16 @@ const ENDPOINTS = {
     LIVE_STATE: (matchId) => `${BASE_URL}/tournaments/matches/${matchId}/live-state`,
     COMPLETE_GAME: (matchId) => `${BASE_URL}/tournaments/matches/${matchId}/complete-game`,
 
+    // Cricket (innings) incremental scoring
+    CRICKET_SETUP: (matchId) => `${BASE_URL}/tournaments/matches/${matchId}/cricket/setup`,
+    CRICKET_LINEUP: (matchId) => `${BASE_URL}/tournaments/matches/${matchId}/cricket/lineup`,
+    CRICKET_BALL: (matchId) => `${BASE_URL}/tournaments/matches/${matchId}/cricket/ball`,
+    CRICKET_UNDO: (matchId) => `${BASE_URL}/tournaments/matches/${matchId}/cricket/undo`,
+    CRICKET_INNINGS_SWITCH: (matchId) => `${BASE_URL}/tournaments/matches/${matchId}/cricket/innings-switch`,
+    CRICKET_FINISH: (matchId) => `${BASE_URL}/tournaments/matches/${matchId}/cricket/finish`,
+    // Carrom (board) incremental scoring
+    CARROM_BOARD: (matchId) => `${BASE_URL}/tournaments/matches/${matchId}/carrom/board`,
+
     // Bulk Score Sync
     BULK_SYNC: (tournamentId) => `${BASE_URL}/tournaments/${tournamentId}/bulk-sync-scores`
   },

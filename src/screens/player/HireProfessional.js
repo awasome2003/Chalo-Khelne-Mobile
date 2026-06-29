@@ -521,7 +521,11 @@ const HireProfessional = () => {
               {/* Rate */}
               <View style={styles.priceRow}>
                 <Text style={styles.priceAmount}>{selectedPro?.rate}</Text>
-                <Text style={styles.priceUnit}> per hour / Negotiable</Text>
+                <Text style={styles.priceUnit}>
+                  {" "}
+                  {selectedPro?.rateUnit || "per hour"}
+                  {selectedPro?.note ? ` / ${selectedPro.note}` : ""}
+                </Text>
               </View>
 
               <View style={styles.sheetDivider} />
@@ -533,7 +537,7 @@ const HireProfessional = () => {
                   <Text style={styles.statSub}>Experience</Text>
                 </View>
                 <View style={styles.statCard}>
-                  <Text style={styles.statTitle}>Pune</Text>
+                  <Text style={styles.statTitle}>{selectedPro?.location || "—"}</Text>
                   <Text style={styles.statSub}>Locations</Text>
                 </View>
               </View>
@@ -557,18 +561,23 @@ const HireProfessional = () => {
               {/* About */}
               <Text style={styles.sectionHeading}>About us</Text>
               <Text style={styles.aboutText}>
-                Experienced cricket referee with 3+ years of professional experience. Specialized in local and state-level tournaments.
+                {selectedPro?.about || "—"}
               </Text>
 
               {/* Certifications */}
               <Text style={styles.sectionHeading}>Certifications</Text>
               <View style={styles.certRow}>
-                <View style={styles.certChip}>
-                  <Text style={styles.certText}>ICC Level 2 Umpire</Text>
-                </View>
-                <View style={styles.certChip}>
-                  <Text style={styles.certText}>UEFA B License</Text>
-                </View>
+                {selectedPro?.licenses?.length ? (
+                  selectedPro.licenses.map((lic, i) => (
+                    <View key={`cert-${i}`} style={styles.certChip}>
+                      <Text style={styles.certText}>{lic}</Text>
+                    </View>
+                  ))
+                ) : (
+                  <View style={styles.certChip}>
+                    <Text style={styles.certText}>—</Text>
+                  </View>
+                )}
               </View>
 
               <View style={styles.sheetDivider} />
@@ -633,8 +642,8 @@ const HireProfessional = () => {
                   <Text style={styles.proSummaryRole}>{selectedPro?.role}</Text>
                 </View>
                 <View style={{ alignItems: "flex-end" }}>
-                  <Text style={styles.proSummaryRate}>₹2,500</Text>
-                  <Text style={styles.proSummaryUnit}>per match</Text>
+                  <Text style={styles.proSummaryRate}>{selectedPro?.rate || "—"}</Text>
+                  <Text style={styles.proSummaryUnit}>{selectedPro?.rateUnit || "per hour"}</Text>
                 </View>
               </View>
 
@@ -642,7 +651,7 @@ const HireProfessional = () => {
               <Text style={styles.fieldLabel}>Event name</Text>
               <TextInput
                 style={[styles.fieldInput, form.eventName ? { color: "#333333" } : null]}
-                placeholder="e.g., Football Jersey, Cricket Bat"
+                placeholder="e.g., Sunday League Final"
                 placeholderTextColor="#9A9A9A"
                 value={form.eventName}
                 onChangeText={(v) => updateField("eventName", v)}
@@ -685,7 +694,7 @@ const HireProfessional = () => {
               <Text style={styles.fieldLabel}>Location</Text>
               <TextInput
                 style={[styles.fieldInput, form.location ? { color: "#333333" } : null]}
-                placeholder="e.g., Football Jersey, Cricket Bat"
+                placeholder="e.g., DSK Sports Ground, Pune"
                 placeholderTextColor="#9A9A9A"
                 value={form.location}
                 onChangeText={(v) => updateField("location", v)}
@@ -694,7 +703,7 @@ const HireProfessional = () => {
               <Text style={styles.fieldLabel}>Duration</Text>
               <TextInput
                 style={[styles.fieldInput, form.duration ? { color: "#333333" } : null]}
-                placeholder="e.g., Football Jersey, Cricket Bat"
+                placeholder="e.g., 4 hours"
                 placeholderTextColor="#9A9A9A"
                 value={form.duration}
                 onChangeText={(v) => updateField("duration", v)}
@@ -703,12 +712,14 @@ const HireProfessional = () => {
               <Text style={styles.fieldLabel}>Offer Payment</Text>
               <TextInput
                 style={[styles.fieldInput, form.offerPayment ? { color: "#333333" } : null]}
-                placeholder="e.g., Football Jersey, Cricket Bat"
+                placeholder="e.g., ₹2,500"
                 placeholderTextColor="#9A9A9A"
                 value={form.offerPayment}
                 onChangeText={(v) => updateField("offerPayment", v)}
               />
-              <Text style={styles.fieldHint}>Suggested: ₹2,500 per match</Text>
+              <Text style={styles.fieldHint}>
+                Suggested: {selectedPro?.rate || "—"} {selectedPro?.rateUnit || "per hour"}
+              </Text>
 
               <Text style={styles.fieldLabel}>
                 Description<Text style={styles.fieldLabelMuted}>(Optional)</Text>
@@ -724,7 +735,7 @@ const HireProfessional = () => {
               />
 
               <Text style={styles.noteText}>
-                *Your request will be sent to Amit Sharma. They can accept, reject, or negotiate the terms.
+                *Your request will be sent to {selectedPro?.name || "this professional"}. They can accept, reject, or negotiate the terms.
               </Text>
             </ScrollView>
 

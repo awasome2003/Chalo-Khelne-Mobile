@@ -4,6 +4,7 @@ import { io } from "socket.io-client";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "./AuthContext";
 import API from "../api/api";
+import { authFetch } from "../api/authFetch";
 
 const ChatContext = createContext();
 
@@ -91,7 +92,7 @@ export const ChatProvider = ({ children }) => {
   const fetchUnreadTotal = useCallback(async () => {
     if (!token) return;
     try {
-      const response = await fetch(`${API.BASE_URL}/chat/unread-total`, {
+      const response = await authFetch(`${API.BASE_URL}/chat/unread-total`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json();

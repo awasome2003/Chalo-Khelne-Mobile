@@ -36,11 +36,25 @@ import Add from "./AddPopUp";
 import POSTS from "../../api/posts";
 import STORIES from "../../api/stories";
 import API from "../../api/api";
+import CHAT from "../../api/chat";
+import { authFetch } from "../../api/authFetch";
 import { assetUrl } from "../../utils/assetUrl";
 import * as ImagePicker from "expo-image-picker";
 import Svg, { Path, G, Defs, ClipPath, Rect } from "react-native-svg";
 
 const { width } = Dimensions.get("window");
+
+const SafeImage = ({ uri, style, fallback, ...rest }) => {
+  const [failed, setFailed] = useState(false);
+  return (
+    <Image
+      source={uri && !failed ? { uri } : fallback}
+      style={style}
+      onError={() => setFailed(true)}
+      {...rest}
+    />
+  );
+};
 
 // ─── UTILS ───────────────────────────────────────────────────────────────
 const formatTimeAgo = (dateString) => {
@@ -548,10 +562,11 @@ const StoryViewModal = ({
           </View>
 
           {currentStory.image ? (
-            <Image
-              source={{ uri: currentStory.image }}
+            <SafeImage
+              uri={assetUrl(currentStory.image)}
               style={styles.storyFullImage}
               resizeMode="contain"
+              fallback={require("../../../assets/turf.jpg")}
             />
           ) : (
             <Text
@@ -1184,15 +1199,32 @@ const Social = ({ navigation }) => {
     ]);
   };
 
-  const handleStoryReply = (story) => {
+  const handleStoryReply = async (story) => {
     setViewStoryVisible(false);
-    const otherUserId = story.user?._id;
-    if (!otherUserId) return;
-    // Open the chat tab and pre-fill conversation with this user.
-    navigation.navigate("Chat", {
-      screen: "ChatConversation",
-      params: { otherUserId, name: story.user?.name },
-    });
+    const otherUser = story.user;
+    if (!otherUser?._id) return;
+    // ChatConversation needs a real conversationId — create/resolve the DM first
+    // (same as ChatSearch's startChat), then open it. Passing only otherUserId
+    // opened an empty chat that sent messages with conversationId: undefined.
+    try {
+      const response = await authFetch(CHAT.ENDPOINTS.CONVERSATIONS, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ participantId: otherUser._id }),
+      });
+      const data = await response.json();
+      if (data?.success && data.conversation?._id) {
+        navigation.navigate("Chat", {
+          screen: "ChatConversation",
+          params: { conversationId: data.conversation._id, otherUser },
+        });
+      } else {
+        Alert.alert("Couldn't open chat", "Please try again.");
+      }
+    } catch (err) {
+      console.error("[Social] story reply chat failed:", err);
+      Alert.alert("Couldn't open chat", err.message || "Please try again.");
+    }
   };
 
   const renderStoryThumb = (group) => {
@@ -1207,9 +1239,10 @@ const Social = ({ navigation }) => {
         <View style={[styles.storyCircle, { borderColor: "#FF9B21" }]}>
           <View style={styles.storyCircleInner}>
             {first?.image ? (
-              <Image
-                source={{ uri: assetUrl(first.image) }}
+              <SafeImage
+                uri={assetUrl(first.image)}
                 style={styles.storyImage}
+                fallback={require("../../../assets/turf.jpg")}
               />
             ) : (
               <View
@@ -1297,7 +1330,7 @@ const Social = ({ navigation }) => {
         <View style={styles.headerIcons}>
           <TouchableOpacity
             style={styles.headerIconBtn}
-            onPress={() => navigation.navigate("Chat", { screen: "ChatList" })}
+            onPress={() => navigation.navigate("Chat", { screen: "ChatList", params: { from: "Social" } })}
           >
             <ChatIcon width={24} height={24} color="#333" />
           </TouchableOpacity>
@@ -1354,9 +1387,10 @@ const Social = ({ navigation }) => {
                     {myStories.length > 0 && firstMine ? (
                       <View style={styles.storyCircleInner}>
                         {firstMine.image ? (
-                          <Image
-                            source={{ uri: assetUrl(firstMine.image) }}
+                          <SafeImage
+                            uri={assetUrl(firstMine.image)}
                             style={styles.storyImage}
+                            fallback={require("../../../assets/turf.jpg")}
                           />
                         ) : (
                           <View

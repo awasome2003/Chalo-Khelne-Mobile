@@ -9,6 +9,7 @@ import * as ImagePicker from "expo-image-picker";
 import axios from "axios";
 import { useAuth } from "../../context/AuthContext";
 import API from "../../api/api";
+import { authFetch } from "../../api/authFetch";
 import { colors } from "../../theme";
 
 const GREEN = "#15A765";
@@ -84,7 +85,7 @@ export default function TrainerStaffHome() {
       fd.append("name", fName.trim());
       fd.append("contactNumber", fContact.trim());
       if (fPhoto) fd.append("photo", { uri: fPhoto.uri, name: fPhoto.fileName || "photo.jpg", type: fPhoto.mimeType || "image/jpeg" });
-      const resp = await fetch(`${API.BASE_URL}/substitutes`, { method: "POST", headers: { Authorization: bearer }, body: fd });
+      const resp = await authFetch(`${API.BASE_URL}/substitutes`, { method: "POST", headers: { Authorization: bearer }, body: fd });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error || "Failed to submit");
       setShowForm(false); setFName(""); setFContact(""); setFPhoto(null);

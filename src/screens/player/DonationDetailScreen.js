@@ -30,6 +30,18 @@ const TEXT_DARK = "#1A181B";
 const TEXT_MUTED = "#6B7280";
 const BORDER = "#EEF1FA";
 
+const SafeImage = ({ uri, style, fallback, ...rest }) => {
+  const [failed, setFailed] = useState(false);
+  return (
+    <Image
+      source={uri && !failed ? { uri } : fallback}
+      style={style}
+      onError={() => setFailed(true)}
+      {...rest}
+    />
+  );
+};
+
 const DonationDetailScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
@@ -222,12 +234,11 @@ const DonationDetailScreen = () => {
           {/* Hero image */}
           <View style={styles.imageWrap}>
             {listing.images && listing.images.length > 0 ? (
-              <Image
-                source={{
-                  uri: listing.images[activeImage] || listing.images[0],
-                }}
+              <SafeImage
+                uri={listing.images[activeImage] || listing.images[0]}
                 style={styles.heroImage}
                 resizeMode="cover"
+                fallback={require("../../../assets/turf.jpg")}
               />
             ) : (
               <View style={[styles.heroImage, styles.imagePlaceholder]}>
@@ -319,7 +330,9 @@ const DonationDetailScreen = () => {
             )}
           </View>
           {listing.quantity ? (
-            <Text style={styles.qtyText}>Qty : {listing.quantity}</Text>
+            <Text style={styles.qtyText}>
+              {Number(listing.quantity) <= 1 ? "Only 1 left" : `${listing.quantity} in stock`}
+            </Text>
           ) : null}
 
           {/* Feature pills (simple variant — Figma 1 places them above price area) */}
@@ -337,9 +350,10 @@ const DonationDetailScreen = () => {
           <View style={styles.sellerCard}>
             <View style={styles.sellerAvatar}>
               {listing.sellerAvatar ? (
-                <Image
-                  source={{ uri: listing.sellerAvatar }}
+                <SafeImage
+                  uri={listing.sellerAvatar}
                   style={styles.sellerAvatarImg}
+                  fallback={require("../../../assets/ProfilePlaceholder.png")}
                 />
               ) : (
                 <Ionicons name="person" size={22} color="#9CA3AF" />
@@ -383,6 +397,14 @@ const DonationDetailScreen = () => {
                 <View style={styles.specBox}>
                   <Text style={styles.specBoxLabel}>Size</Text>
                   <Text style={styles.specBoxValue}>{specs.Size}</Text>
+                </View>
+              ) : null}
+              {listing.sellUnit === "pack" ? (
+                <View style={styles.specBox}>
+                  <Text style={styles.specBoxLabel}>Sold as</Text>
+                  <Text style={styles.specBoxValue}>
+                    Box of {listing.packSize || 1}
+                  </Text>
                 </View>
               ) : null}
             </View>

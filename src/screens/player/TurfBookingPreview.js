@@ -20,6 +20,7 @@ import {
 import API from "../../api/api";
 import { useAuth } from "../../context/AuthContext";
 import CouponInput from "../../components/CouponInput";
+import { authFetch } from "../../api/authFetch";
 
 // ─── Helpers ────────────────────────────────────────────────────────────
 
@@ -107,9 +108,17 @@ const TurfBookingPreview = ({ route }) => {
     turfAddress: incomingTurfAddress,
     date,
     selectedSlot,
+    selectedSlots: incomingSlots,
     selectedCourt,
     selectedSport,
   } = params;
+
+  // Normalize to a list — supports both the new multi-slot path and the old
+  // single-slot params.
+  const slots = useMemo(() => {
+    if (Array.isArray(incomingSlots) && incomingSlots.length) return incomingSlots;
+    return selectedSlot ? [selectedSlot] : [];
+  }, [incomingSlots, selectedSlot]);
 
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
@@ -128,7 +137,7 @@ const TurfBookingPreview = ({ route }) => {
     }
     (async () => {
       try {
-        const res = await fetch(API.ENDPOINTS.TURFS.BY_ID(turfId));
+        const res = await authFetch(API.ENDPOINTS.TURFS.BY_ID(turfId));
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         setTurfDetails(data);
@@ -160,20 +169,29 @@ const TurfBookingPreview = ({ route }) => {
     return require("../../../assets/turf.jpg");
   }, [turfDetails]);
 
-  const baseAmount = useMemo(() => {
-    const sportPrice = Number(selectedSport?.pricePerHour);
-    const slotPrice = Number(selectedSlot?.price);
-    if (!isNaN(sportPrice) && sportPrice > 0) return sportPrice;
+  // Price for one slot: prefer its own price (time-of-day premium), else the
+  // sport's flat hourly rate.
+  const priceOf = (slot) => {
+    const slotPrice = Number(slot?.price);
     if (!isNaN(slotPrice) && slotPrice > 0) return slotPrice;
+    const sportPrice = Number(selectedSport?.pricePerHour);
+    if (!isNaN(sportPrice) && sportPrice > 0) return sportPrice;
     return 0;
-  }, [selectedSport, selectedSlot]);
+  };
+
+  const baseAmount = useMemo(
+    () => slots.reduce((sum, s) => sum + priceOf(s), 0),
+    [slots, selectedSport]
+  );
 
   const finalAmount = appliedCoupon?.final_amount ?? baseAmount;
 
   const dateLabel = formatDateLabel(date);
-  const timeLabel = to12hWithSuffix(selectedSlot?.startTime);
-  const timeRangeLabel = to12hRange(selectedSlot);
-  const durationLabel = slotDurationLabel(selectedSlot);
+  // Card header summary: a single slot shows its range; multiple shows the count.
+  const slotCountLabel =
+    slots.length === 1 ? to12hRange(slots[0]) : `${slots.length} slots`;
+  const durationLabel =
+    slots.length === 1 ? slotDurationLabel(slots[0]) : `${slots.length} × 60 min`;
 
   // ─── Actions ─────────────────────────────────────────────────────────
   const handleProceedToPay = () => {
@@ -210,7 +228,8 @@ const TurfBookingPreview = ({ route }) => {
       turfName,
       turfAddress: address,
       date,
-      selectedSlot,
+      selectedSlots: slots,
+      selectedSlot: slots[0] || null,
       selectedCourt,
       selectedSport,
       baseAmount,
@@ -277,7 +296,7 @@ const TurfBookingPreview = ({ route }) => {
 
               <View style={s.cardDetailRow}>
                 <Ionicons name="time-outline" size={14} color="#8D848F" />
-                <Text style={s.cardDetailText}>{timeRangeLabel}</Text>
+                <Text style={s.cardDetailText}>{slotCountLabel}</Text>
               </View>
 
               {!!address && (
@@ -306,9 +325,15 @@ const TurfBookingPreview = ({ route }) => {
           {/* Date & Time block */}
           <Text style={s.sectionTitle}>Date & Time</Text>
           <View style={s.kvRow}>
-            <Text style={s.kvLabel}>{dateLabel || "—"}</Text>
-            <Text style={s.kvValue}>{timeLabel || "—"}</Text>
+            <Text style={s.kvLabel}>Date</Text>
+            <Text style={s.kvValue}>{dateLabel || "—"}</Text>
           </View>
+          {slots.map((slot, i) => (
+            <View key={slot.id || i} style={s.kvRow}>
+              <Text style={s.kvLabel}>{to12hRange(slot)}</Text>
+              <Text style={s.kvValue}>₹{priceOf(slot)}/-</Text>
+            </View>
+          ))}
           <View style={s.kvRow}>
             <Text style={s.kvLabel}>Court</Text>
             <Text style={s.kvValue}>{selectedCourt?.name || "—"}</Text>

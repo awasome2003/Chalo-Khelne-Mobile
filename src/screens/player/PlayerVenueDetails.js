@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import API from "../../api/api";
 import SportSelectionModal from "./SportSelectionModal";
+import { authFetch } from "../../api/authFetch";
 
 const { width } = Dimensions.get("window");
 
@@ -68,7 +69,7 @@ export default function PlayerVenueDetails({ route, navigation }) {
   const fetchTurfDetails = async () => {
     try {
       setLoading(true);
-      const response = await fetch(API.ENDPOINTS.TURFS.BY_ID(turfId));
+      const response = await authFetch(API.ENDPOINTS.TURFS.BY_ID(turfId));
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
       setTurfDetails(data);
@@ -82,7 +83,7 @@ export default function PlayerVenueDetails({ route, navigation }) {
 
   const fetchAvailability = async () => {
     try {
-      const res = await fetch(API.ENDPOINTS.TURFS.AVAILABILITY_TODAY);
+      const res = await authFetch(API.ENDPOINTS.TURFS.AVAILABILITY_TODAY);
       const data = await res.json();
       if (data?.success && data.availability) {
         const entry = data.availability[String(turfId)];

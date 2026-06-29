@@ -9,6 +9,9 @@ import {
     Alert
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import axios from "axios";
+import TournamentConfig from "../../api/tournaments";
+import { getTournamentType } from "../../utils/sportTrack";
 
 const TournamentFeeSummary = ({ navigation, route }) => {
     const {
@@ -35,6 +38,9 @@ const TournamentFeeSummary = ({ navigation, route }) => {
     const status = bookingData?.status || "Pending";
 
     const [selectedPaymentMethod, setSelectedPaymentMethod] = useState(null);
+    // Free tournament → skip payment entirely; one "Create Booking" button.
+    const isFree = Number(amount) === 0;
+    const [creating, setCreating] = useState(false);
 
     const paymentMethods = [
         {
@@ -95,6 +101,53 @@ const TournamentFeeSummary = ({ navigation, route }) => {
         }
     };
 
+    // Free tournament: create the booking directly (no payment screen). All the
+    // pre-payment procedures already ran (wizard selection here; the backend
+    // re-validates eligibility / deadline / duplicate before creating). The
+    // backend's free branch (amount 0 && method !== "cash") auto-confirms it.
+    const handleCreateFreeBooking = async () => {
+        if (creating) return;
+        try {
+            setCreating(true);
+            const bookingPayload = {
+                userId,
+                userName: bookingData?.userName || name,
+                userEmail: bookingData?.userEmail || email,
+                userPhone: bookingData?.userPhone || phone,
+                tournamentId,
+                tournamentName: tournament?.name || tournamentName,
+                tournamentType: getTournamentType(tournament) || "N/A",
+                paymentAmount: 0,
+                paymentMethod: "online",
+                status: "pending",
+                team: bookingData?.team || {},
+                selectedCategories: bookingData?.selectedCategories || [],
+                sportSelections: bookingData?.sportSelections || [],
+                totalFee: 0,
+                employeeId: bookingData?.employeeId || null,
+            };
+            const response = await axios.post(
+                TournamentConfig.ENDPOINTS.BOOKINGS.CREATE,
+                bookingPayload
+            );
+            if (response.data?.success) {
+                Alert.alert("Registration Confirmed", "Your free registration is confirmed!", [
+                    { text: "OK", onPress: () => navigation.navigate("Events", { screen: "EventScreen" }) },
+                ]);
+            } else {
+                Alert.alert("Registration Failed", response.data?.message || "Please try again.");
+            }
+        } catch (error) {
+            // Backend gates (eligibility/deadline/duplicate) return a clear message here.
+            Alert.alert(
+                "Registration Failed",
+                error.response?.data?.message || error.message || "Please try again."
+            );
+        } finally {
+            setCreating(false);
+        }
+    };
+
     const handleGoBack = () => {
         navigation.goBack();
     };
@@ -111,10 +164,30 @@ const TournamentFeeSummary = ({ navigation, route }) => {
 
                     <View style={styles.feeContainer}>
                         <Text style={styles.feeLabel}>Registration Fee:</Text>
-                        <Text style={styles.feeAmount}>₹{amount}</Text>
+                        <Text style={styles.feeAmount}>{isFree ? 'Free' : `₹${amount}`}</Text>
                     </View>
                 </View>
 
+                {isFree ? (
+                    /* Free tournament — skip payment, single Create Booking button */
+                    <>
+                        <View style={styles.importantNotesContainer}>
+                            <Text style={styles.importantNotesTitle}>This tournament is free</Text>
+                            <Text style={styles.importantNote}>• No payment required — tap below to confirm your registration.</Text>
+                        </View>
+                        <TouchableOpacity
+                            style={[styles.proceedButton, creating && styles.proceedButtonDisabled]}
+                            onPress={handleCreateFreeBooking}
+                            disabled={creating}
+                        >
+                            <Text style={styles.proceedButtonText}>
+                                {creating ? 'Creating Booking…' : 'Create Booking'}
+                            </Text>
+                        </TouchableOpacity>
+                        <View style={{ height: 20 }} />
+                    </>
+                ) : (
+                <>
                 {/* Payment Methods Section */}
                 <Text style={styles.sectionTitle}>Select Payment Method</Text>
 
@@ -175,6 +248,8 @@ const TournamentFeeSummary = ({ navigation, route }) => {
                         Proceed to Payment
                     </Text>
                 </TouchableOpacity>
+                </>
+                )}
 
                 <View style={{ height: 20 }} />
             </ScrollView>

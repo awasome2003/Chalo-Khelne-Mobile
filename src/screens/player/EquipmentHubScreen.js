@@ -37,6 +37,113 @@ const BORDER = "#EEF1FA";
 
 const BASE = `${API.BASE_URL}/donations`;
 
+// ─── Hero banner ──────────────────────────────────────────────────────
+const Hero = ({ onSellPress }) => (
+  <LinearGradient
+    colors={["#B89DE3", "#8A6FD6"]}
+    start={{ x: 0, y: 0 }}
+    end={{ x: 1, y: 1 }}
+    style={styles.hero}
+  >
+    <View style={styles.heroDecor}>
+      <Ionicons name="tennisball" size={42} color="rgba(255,255,255,0.9)" />
+      <Ionicons name="football" size={48} color="rgba(255,255,255,0.85)" />
+      <Ionicons name="basketball" size={42} color="rgba(255,255,255,0.9)" />
+    </View>
+    <View style={styles.heroBody}>
+      <Text style={styles.heroTitle}>Sell What You Don't Use.</Text>
+      <Text style={styles.heroSub}>
+        Turn unused sports gear into cash. List items in seconds.
+      </Text>
+      <TouchableOpacity
+        style={styles.heroCta}
+        onPress={onSellPress}
+        activeOpacity={0.85}
+      >
+        <Text style={styles.heroCtaText}>Sell Now</Text>
+      </TouchableOpacity>
+    </View>
+  </LinearGradient>
+);
+
+// ─── Header ───────────────────────────────────────────────────────────
+const Header = ({ onMenuPress }) => (
+  <View style={styles.header}>
+    <Text style={styles.headerTitle}>Equipment Store</Text>
+    <TouchableOpacity
+      onPress={onMenuPress}
+      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+    >
+      <Ionicons name="person-circle-outline" size={24} color={TEXT_DARK} />
+    </TouchableOpacity>
+  </View>
+);
+
+// ─── Search ───────────────────────────────────────────────────────────
+const SearchBar = ({ value, onChangeText }) => (
+  <View style={styles.searchBar}>
+    <Ionicons name="search" size={18} color={TEXT_MUTED} />
+    <TextInput
+      style={styles.searchInput}
+      value={value}
+      onChangeText={onChangeText}
+      placeholder="Search sports, turfs or players"
+      placeholderTextColor={TEXT_MUTED}
+    />
+    <View style={styles.searchDivider} />
+    <TouchableOpacity hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+      <Ionicons name="mic-outline" size={18} color={TEXT_MUTED} />
+    </TouchableOpacity>
+  </View>
+);
+
+// ─── Sport chips ──────────────────────────────────────────────────────
+const Chips = ({ chips, active, onSelect }) => (
+  <ScrollView
+    horizontal
+    showsHorizontalScrollIndicator={false}
+    contentContainerStyle={styles.chipRow}
+  >
+    {chips.map((s) => {
+      const isActive = active === s;
+      return (
+        <TouchableOpacity
+          key={s}
+          style={[styles.chip, isActive && styles.chipActive]}
+          onPress={() => onSelect(s)}
+          activeOpacity={0.85}
+        >
+          <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
+            {s}
+          </Text>
+        </TouchableOpacity>
+      );
+    })}
+  </ScrollView>
+);
+
+// ─── Empty / loading ──────────────────────────────────────────────────
+const ListEmpty = ({ loading, search, activeSport }) => {
+  if (loading) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color={GREEN} />
+      </View>
+    );
+  }
+  return (
+    <View style={styles.center}>
+      <Ionicons name="basketball-outline" size={56} color="#D1D5DB" />
+      <Text style={styles.emptyTitle}>No equipment found</Text>
+      <Text style={styles.emptyDesc}>
+        {search.trim() || activeSport !== "All"
+          ? "Try a different search or filter"
+          : "Check back later for new items"}
+      </Text>
+    </View>
+  );
+};
+
 export default function EquipmentHubScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
@@ -249,113 +356,6 @@ export default function EquipmentHubScreen() {
     );
   };
 
-  // ─── Hero banner ────────────────────────────────────────────────────
-  const Hero = () => (
-    <LinearGradient
-      colors={["#B89DE3", "#8A6FD6"]}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={styles.hero}
-    >
-      <View style={styles.heroDecor}>
-        <Ionicons name="tennisball" size={42} color="rgba(255,255,255,0.9)" />
-        <Ionicons name="football" size={48} color="rgba(255,255,255,0.85)" />
-        <Ionicons name="basketball" size={42} color="rgba(255,255,255,0.9)" />
-      </View>
-      <View style={styles.heroBody}>
-        <Text style={styles.heroTitle}>Sell What You Don't Use.</Text>
-        <Text style={styles.heroSub}>
-          Turn unused sports gear into cash. List items in seconds.
-        </Text>
-        <TouchableOpacity
-          style={styles.heroCta}
-          onPress={() => navigation.navigate("SellGearIntro")}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.heroCtaText}>Sell Now</Text>
-        </TouchableOpacity>
-      </View>
-    </LinearGradient>
-  );
-
-  // ─── Header ─────────────────────────────────────────────────────────
-  const Header = () => (
-    <View style={styles.header}>
-      <Text style={styles.headerTitle}>Equipment Store</Text>
-      <TouchableOpacity
-        onPress={openMenu}
-        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-      >
-        <Ionicons name="person-circle-outline" size={24} color={TEXT_DARK} />
-      </TouchableOpacity>
-    </View>
-  );
-
-  // ─── Search ─────────────────────────────────────────────────────────
-  const SearchBar = () => (
-    <View style={styles.searchBar}>
-      <Ionicons name="search" size={18} color={TEXT_MUTED} />
-      <TextInput
-        style={styles.searchInput}
-        value={search}
-        onChangeText={setSearch}
-        placeholder="Search sports, turfs or players"
-        placeholderTextColor={TEXT_MUTED}
-      />
-      <View style={styles.searchDivider} />
-      <TouchableOpacity hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
-        <Ionicons name="mic-outline" size={18} color={TEXT_MUTED} />
-      </TouchableOpacity>
-    </View>
-  );
-
-  // ─── Sport chips ────────────────────────────────────────────────────
-  const Chips = () => (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.chipRow}
-    >
-      {sportChips.map((s) => {
-        const active = activeSport === s;
-        return (
-          <TouchableOpacity
-            key={s}
-            style={[styles.chip, active && styles.chipActive]}
-            onPress={() => setActiveSport(s)}
-            activeOpacity={0.85}
-          >
-            <Text style={[styles.chipText, active && styles.chipTextActive]}>
-              {s}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
-    </ScrollView>
-  );
-
-  // ─── Empty / loading ────────────────────────────────────────────────
-  const ListEmpty = () => {
-    if (loading) {
-      return (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={GREEN} />
-        </View>
-      );
-    }
-    return (
-      <View style={styles.center}>
-        <Ionicons name="basketball-outline" size={56} color="#D1D5DB" />
-        <Text style={styles.emptyTitle}>No equipment found</Text>
-        <Text style={styles.emptyDesc}>
-          {search.trim() || activeSport !== "All"
-            ? "Try a different search or filter"
-            : "Check back later for new items"}
-        </Text>
-      </View>
-    );
-  };
-
   const openCart = () => navigation.navigate("Cart");
 
   return (
@@ -366,15 +366,27 @@ export default function EquipmentHubScreen() {
         renderItem={renderItem}
         ListHeaderComponent={
           <>
-            <Header />
+            <Header onMenuPress={openMenu} />
             <View style={{ paddingHorizontal: 16 }}>
-              <Hero />
-              <SearchBar />
+              <Hero
+                onSellPress={() => navigation.navigate("SellGearIntro")}
+              />
+              <SearchBar value={search} onChangeText={setSearch} />
             </View>
-            <Chips />
+            <Chips
+              chips={sportChips}
+              active={activeSport}
+              onSelect={setActiveSport}
+            />
           </>
         }
-        ListEmptyComponent={ListEmpty}
+        ListEmptyComponent={
+          <ListEmpty
+            loading={loading}
+            search={search}
+            activeSport={activeSport}
+          />
+        }
         contentContainerStyle={{
           paddingHorizontal: 16,
           paddingBottom: (cartIds.size > 0 ? 160 : 100) + insets.bottom,

@@ -28,6 +28,18 @@ const TEXT_DARK = "#1A181B";
 const TEXT_MUTED = "#6B7280";
 const BORDER = "#EEF1FA";
 
+const SafeImage = ({ uri, style, fallback, ...rest }) => {
+  const [failed, setFailed] = useState(false);
+  return (
+    <Image
+      source={uri && !failed ? { uri } : fallback}
+      style={style}
+      onError={() => setFailed(true)}
+      {...rest}
+    />
+  );
+};
+
 const STATUS_STYLES = {
   confirmed: { bg: "#FFF3E0", fg: "#B25E00", label: "Order Confirmed" },
   packed: { bg: "#FFF3E0", fg: "#B25E00", label: "Packed" },
@@ -232,7 +244,11 @@ const MyClaimsScreen = () => {
         onPress={() => goToOrder(item)}
       >
         {imageUrl ? (
-          <Image source={{ uri: imageUrl }} style={styles.cardImage} />
+          <SafeImage
+            uri={imageUrl}
+            style={styles.cardImage}
+            fallback={require("../../../assets/turf.jpg")}
+          />
         ) : (
           <View style={[styles.cardImage, styles.cardImagePlaceholder]}>
             <Ionicons name="basketball-outline" size={22} color="#D1D5DB" />
@@ -275,7 +291,7 @@ const MyClaimsScreen = () => {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
-          onPress={() => navigation.goBack()}
+          onPress={() => navigation.navigate("EquipmentHub")}
           style={styles.backBtn}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >

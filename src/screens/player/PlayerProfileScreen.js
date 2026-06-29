@@ -18,11 +18,14 @@ import {
 } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "../../context/AuthContext";
+import AccountSwitcher from "../../components/AccountSwitcher";
+import { getAvailableRoles, mergeRoles } from "../../utils/roles";
 import API from "../../api/api";
 import { assetUrl } from "../../utils/assetUrl";
 import AUTH from "../../api/auth";
 import POSTS from "../../api/posts";
 import PLAYER_STATS from "../../api/playerStats";
+import { authFetch } from "../../api/authFetch";
 
 const GREEN = "#15A765";
 const GREEN_DARK = "#0F8A55";
@@ -67,6 +70,7 @@ const PlayerProfileScreen = () => {
   const [profile, setProfile] = useState(authUser || null);
   const [loading, setLoading] = useState(!authUser);
   const [refreshing, setRefreshing] = useState(false);
+  const [switcherOpen, setSwitcherOpen] = useState(false);
   const [postsCount, setPostsCount] = useState(0);
   const [careerStats, setCareerStats] = useState(null);
   const [activeSport, setActiveSport] = useState(null);
@@ -75,7 +79,7 @@ const PlayerProfileScreen = () => {
     try {
       const token = await AsyncStorage.getItem("auth_token");
       if (!token) return;
-      const res = await fetch(AUTH.ENDPOINTS.CURRENT_USER, {
+      const res = await authFetch(AUTH.ENDPOINTS.CURRENT_USER, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
@@ -93,7 +97,7 @@ const PlayerProfileScreen = () => {
 
   const fetchPostsCount = async () => {
     try {
-      const res = await fetch(POSTS.ENDPOINTS.GET_ALL);
+      const res = await authFetch(POSTS.ENDPOINTS.GET_ALL);
       const data = await res.json();
       const list = data?.posts || data || [];
       const uid = authUser?.id || authUser?._id || profile?.id || profile?._id;
@@ -110,7 +114,7 @@ const PlayerProfileScreen = () => {
     try {
       const uid = authUser?.id || authUser?._id || profile?.id || profile?._id;
       if (!uid) return;
-      const res = await fetch(PLAYER_STATS.ENDPOINTS.CAREER(uid));
+      const res = await authFetch(PLAYER_STATS.ENDPOINTS.CAREER(uid));
       const data = await res.json();
       if (data?.success) {
         setCareerStats(data);
@@ -193,17 +197,9 @@ const PlayerProfileScreen = () => {
   const hasAnyStats = sportStats.length > 0;
 
   const handleAddRole = () => {
-    const remaining = ROLE_OPTIONS.filter(
-      (r) =>
-        ![...userRoles, currentRole]
-          .map((x) => x.toLowerCase())
-          .includes(r.toLowerCase())
-    );
-    if (remaining.length === 0) {
-      Alert.alert("All roles added", "You already have every available role.");
-      return;
-    }
-    Alert.alert("Add a role", "Multi-role assignment coming soon.");
+    // Open the role-creation flow (My Services) where the user creates a new
+    // role / professional profile (Trainer, Referee, Scorer, etc.).
+    navigation.navigate("RoleHub");
   };
 
   const handleLogout = () => {
@@ -261,7 +257,7 @@ const PlayerProfileScreen = () => {
         {/* Name + tagline */}
         <Text style={styles.name}>{profile.name || "Player"}</Text>
         <Text style={styles.bio}>
-          {profile.bio || "Football lover & weekend player ⚽"}
+          {profile.bio || ""}
         </Text>
 
         {/* Stats */}
@@ -289,15 +285,28 @@ const PlayerProfileScreen = () => {
           >
             <Ionicons name="add" size={18} color={GREEN} />
           </TouchableOpacity>
-          {[...new Set([currentRole, ...userRoles, ...ROLE_OPTIONS])]
-            .slice(0, 4)
+          {/* Roles this account can act as (always includes base Player) —
+              every chip is a real switch. New roles are added via the "+". */}
+          {getAvailableRoles(profile)
             .map((r) => {
               const active =
                 r.toLowerCase() === (currentRole || "").toLowerCase();
               return (
-                <View
+                <TouchableOpacity
                   key={r}
                   style={[styles.roleChip, active && styles.roleChipActive]}
+                  activeOpacity={0.85}
+                  onPress={() => {
+                    if (active) return;
+                    // Merge from both sources so no role is lost on switch.
+                    const base = {
+                      role: authUser?.role || profile?.role,
+                      roles: [...(authUser?.roles || []), ...(profile?.roles || [])],
+                    };
+                    const merged = mergeRoles(base, r);
+                    updateUser({ ...authUser, role: r, roles: merged }).catch(() => {});
+                    setProfile((p) => ({ ...(p || {}), role: r, roles: merged }));
+                  }}
                 >
                   <Text
                     style={[
@@ -307,7 +316,7 @@ const PlayerProfileScreen = () => {
                   >
                     {titleCase(r)}
                   </Text>
-                </View>
+                </TouchableOpacity>
               );
             })}
         </View>
@@ -450,6 +459,16 @@ const PlayerProfileScreen = () => {
           )}
         </View>
 
+        {/* Switch account (player ⇄ school coach) */}
+        <TouchableOpacity
+          style={styles.switchBtn}
+          onPress={() => setSwitcherOpen(true)}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="swap-horizontal" size={18} color={GREEN} />
+          <Text style={styles.switchText}>Switch account</Text>
+        </TouchableOpacity>
+
         {/* Log out */}
         <TouchableOpacity
           style={styles.logoutBtn}
@@ -460,6 +479,8 @@ const PlayerProfileScreen = () => {
           <Text style={styles.logoutText}>Log Out</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      <AccountSwitcher visible={switcherOpen} onClose={() => setSwitcherOpen(false)} />
     </SafeAreaView>
   );
 };
@@ -795,6 +816,25 @@ const styles = StyleSheet.create({
     fontFamily: "Poppins_400Regular",
     color: TEXT_DARK,
     lineHeight: 19,
+  },
+
+  switchBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 18,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(21,167,101,0.4)",
+    backgroundColor: "rgba(21,167,101,0.08)",
+  },
+  switchText: {
+    fontSize: 14,
+    fontFamily: "Montserrat_600SemiBold",
+    fontWeight: "700",
+    color: GREEN,
   },
 
   logoutBtn: {

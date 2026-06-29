@@ -44,8 +44,8 @@ const METHODS = [
   },
   {
     id: "cod",
-    label: "Cash on Delivery (COD)",
-    sub: "Pay directly at the Delivery time",
+    label: "Pay at Venue",
+    sub: "Pay directly at the venue",
     icon: "flash-outline",
     online: false,
   },
@@ -59,6 +59,7 @@ const TurfPaymentMethod = ({ route }) => {
     turfAddress,
     date,
     selectedSlot,
+    selectedSlots,
     selectedCourt,
     selectedSport,
     baseAmount,
@@ -84,8 +85,33 @@ const TurfPaymentMethod = ({ route }) => {
       ? baseAmount
       : 0;
 
+  // Multi-slot: one booking is created per selected slot.
+  const slots =
+    Array.isArray(selectedSlots) && selectedSlots.length
+      ? selectedSlots
+      : selectedSlot
+      ? [selectedSlot]
+      : [];
+
+  const priceOf = (slot) => {
+    const p = Number(slot?.price);
+    if (!isNaN(p) && p > 0) return p;
+    const sp = Number(selectedSport?.pricePerHour);
+    if (!isNaN(sp) && sp > 0) return sp;
+    return 0;
+  };
+
+  // The coupon discount is for the whole order; attach it to the first slot's
+  // booking so the per-booking amounts still sum to the total the user saw.
+  const orderDiscount = Math.max(
+    0,
+    (Number(baseAmount) || 0) - (Number(amount) || 0)
+  );
+
   // ─── Booking creation ────────────────────────────────────────────────
-  const createBooking = async (method, provider) => {
+  // Creates a booking for ONE slot. `withCoupon` attaches the coupon to this
+  // booking (used for the first slot only).
+  const createBooking = async (method, provider, slot, slotAmount, withCoupon) => {
     const userId = user?.id || user?._id;
     if (!userId) {
       Alert.alert("Login Required", "Please log in to complete the booking.");
@@ -97,7 +123,7 @@ const TurfPaymentMethod = ({ route }) => {
         ? {
             name: selectedSport.name,
             pricePerHour:
-              Number(selectedSport.pricePerHour) || totalAmount || 0,
+              Number(selectedSport.pricePerHour) || slotAmount || 0,
           }
         : undefined;
 
@@ -111,14 +137,14 @@ const TurfPaymentMethod = ({ route }) => {
       sportName: selectedSport?.name,
       ...(sportPayload ? { sport: sportPayload } : {}),
       date,
-      timeSlot: selectedSlot?.timeSlot,
-      amount: totalAmount,
+      timeSlot: slot?.timeSlot,
+      amount: slotAmount,
       paymentMethod: method,
       paymentProvider: provider || "",
       ...(selectedCourt
         ? { court: { name: selectedCourt.name, type: selectedCourt.type || "" } }
         : {}),
-      ...(couponCode ? { couponCode } : {}),
+      ...(withCoupon && couponCode ? { couponCode } : {}),
     };
 
     try {
@@ -136,23 +162,26 @@ const TurfPaymentMethod = ({ route }) => {
         "Booking Failed",
         err.response?.data?.message ||
           err.message ||
-          "Could not complete your booking. Please try again."
+          `Could not book the ${slot?.timeSlot || ""} slot. Please try again.`
       );
       return null;
     }
   };
 
-  const navigateToConfirmation = (booking, method, provider) => {
+  const navigateToConfirmation = (bookings, method, provider, chargedTotal) => {
+    const bookedSlots = slots.slice(0, bookings.length);
     navigation.navigate("TurfConfirmation", {
-      bookingId: booking?._id,
+      bookingId: bookings[0]?._id,
+      bookingIds: bookings.map((b) => b?._id).filter(Boolean),
       userId: user?.id || user?._id,
       turfId,
       turfName: turfName || "Turf",
       type: selectedSport?.name,
       date,
-      time: selectedSlot?.timeSlot,
+      time: bookedSlots.map((sl) => sl?.timeSlot).filter(Boolean).join(", "),
+      slotCount: bookings.length,
       venue: turfAddress || "Venue address not available",
-      amount: totalAmount,
+      amount: chargedTotal,
       status: "Confirmed",
       name: userName,
       email: userEmail,
@@ -171,17 +200,75 @@ const TurfPaymentMethod = ({ route }) => {
 
     const method = METHODS.find((m) => m.id === selectedMethodId);
     if (!method) return;
+    if (slots.length === 0) {
+      Alert.alert("No slot selected", "Please select at least one slot.");
+      return;
+    }
 
     setSubmitting(true);
     try {
-      if (method.online) {
-        const booking = await createBooking("online", method.id);
-        if (booking) navigateToConfirmation(booking, "online", method.id);
-      } else {
-        // Cash on Delivery — booking goes through immediately, paid at venue.
-        const booking = await createBooking("cash", "");
-        if (booking) navigateToConfirmation(booking, "cash", "");
+      const payMethod = method.online ? "online" : "cash";
+      const provider = method.online ? method.id : "";
+
+      // One booking per slot. The coupon discount goes on the first slot only.
+      const created = [];
+      let chargedTotal = 0;
+      for (let i = 0; i < slots.length; i++) {
+        const slot = slots[i];
+        const isFirst = i === 0;
+        const slotAmount = isFirst
+          ? Math.max(0, priceOf(slot) - orderDiscount)
+          : priceOf(slot);
+        const booking = await createBooking(
+          payMethod,
+          provider,
+          slot,
+          slotAmount,
+          isFirst
+        );
+        if (!booking) break; // createBooking already alerted
+        created.push(booking);
+        chargedTotal += slotAmount;
       }
+
+      if (created.length === 0) return; // all failed; alert already shown
+      if (created.length < slots.length) {
+        Alert.alert(
+          "Partially booked",
+          `Booked ${created.length} of ${slots.length} slots. The remaining slot(s) couldn't be completed.`
+        );
+      }
+      navigateToConfirmation(created, payMethod, provider, chargedTotal);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Free slot → skip payment selection; one "Create Booking" button. Mirrors
+  // handlePay's loop with no payment method (amount 0). The backend creates the
+  // booking; slot-availability and other checks run there as usual.
+  const handleFreeBooking = async () => {
+    if (submitting) return;
+    if (slots.length === 0) {
+      Alert.alert("No slot selected", "Please select at least one slot.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const created = [];
+      let chargedTotal = 0;
+      for (let i = 0; i < slots.length; i++) {
+        const slot = slots[i];
+        const slotAmount = i === 0
+          ? Math.max(0, priceOf(slot) - orderDiscount)
+          : priceOf(slot);
+        const booking = await createBooking("online", "", slot, slotAmount, i === 0);
+        if (!booking) break;
+        created.push(booking);
+        chargedTotal += slotAmount;
+      }
+      if (created.length === 0) return;
+      navigateToConfirmation(created, "online", "", chargedTotal);
     } finally {
       setSubmitting(false);
     }
@@ -206,48 +293,76 @@ const TurfPaymentMethod = ({ route }) => {
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
         showsVerticalScrollIndicator={false}
       >
-        {METHODS.map((m) => {
-          const isSelected = selectedMethodId === m.id;
-          return (
-            <TouchableOpacity
-              key={m.id}
-              style={[s.methodCard, isSelected && s.methodCardSelected]}
-              onPress={() => setSelectedMethodId(m.id)}
-              activeOpacity={0.85}
-            >
-              <View style={s.methodIconWrap}>
-                <Ionicons name={m.icon} size={22} color="#15A765" />
-              </View>
-              <View style={s.methodBody}>
-                <Text style={s.methodTitle}>{m.label}</Text>
-                <Text style={s.methodSub}>{m.sub}</Text>
-              </View>
-            </TouchableOpacity>
-          );
-        })}
+        {Number(totalAmount) === 0 ? (
+          /* Free slot — no payment method to choose */
+          <View style={s.methodCard}>
+            <View style={s.methodIconWrap}>
+              <Ionicons name="gift-outline" size={22} color="#15A765" />
+            </View>
+            <View style={s.methodBody}>
+              <Text style={s.methodTitle}>This slot is free</Text>
+              <Text style={s.methodSub}>No payment required — tap Create Booking to confirm.</Text>
+            </View>
+          </View>
+        ) : (
+          METHODS.map((m) => {
+            const isSelected = selectedMethodId === m.id;
+            return (
+              <TouchableOpacity
+                key={m.id}
+                style={[s.methodCard, isSelected && s.methodCardSelected]}
+                onPress={() => setSelectedMethodId(m.id)}
+                activeOpacity={0.85}
+              >
+                <View style={s.methodIconWrap}>
+                  <Ionicons name={m.icon} size={22} color="#15A765" />
+                </View>
+                <View style={s.methodBody}>
+                  <Text style={s.methodTitle}>{m.label}</Text>
+                  <Text style={s.methodSub}>{m.sub}</Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })
+        )}
       </ScrollView>
 
       {/* Bottom: Total + Pay now */}
       <View style={[s.bottomBar, { paddingBottom: insets.bottom + 12 }]}>
         <View style={s.totalRow}>
           <Text style={s.totalLabel}>Total</Text>
-          <Text style={s.totalValue}>₹{totalAmount}/-</Text>
+          <Text style={s.totalValue}>{Number(totalAmount) === 0 ? 'Free' : `₹${totalAmount}/-`}</Text>
         </View>
-        <TouchableOpacity
-          style={[
-            s.payBtn,
-            (!selectedMethodId || submitting) && s.payBtnDisabled,
-          ]}
-          onPress={handlePay}
-          disabled={!selectedMethodId || submitting}
-          activeOpacity={0.85}
-        >
-          {submitting ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <Text style={s.payBtnText}>Pay now</Text>
-          )}
-        </TouchableOpacity>
+        {Number(totalAmount) === 0 ? (
+          <TouchableOpacity
+            style={[s.payBtn, submitting && s.payBtnDisabled]}
+            onPress={handleFreeBooking}
+            disabled={submitting}
+            activeOpacity={0.85}
+          >
+            {submitting ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={s.payBtnText}>Create Booking</Text>
+            )}
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={[
+              s.payBtn,
+              (!selectedMethodId || submitting) && s.payBtnDisabled,
+            ]}
+            onPress={handlePay}
+            disabled={!selectedMethodId || submitting}
+            activeOpacity={0.85}
+          >
+            {submitting ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={s.payBtnText}>Pay now</Text>
+            )}
+          </TouchableOpacity>
+        )}
       </View>
     </SafeAreaView>
   );

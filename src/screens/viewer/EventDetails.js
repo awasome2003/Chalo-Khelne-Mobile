@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getSportName, getTournamentType, getCategories } from "../../utils/sportTrack";
 import { useFocusEffect } from "@react-navigation/native";
 import TOURNAMENTS from "../../api/tournaments";
+import { authFetch } from "../../api/authFetch";
 import { assetUrl } from "../../utils/assetUrl";
 
 // ─── Green design system tokens ──────────────────────────────────────────────
@@ -59,7 +60,7 @@ const EventDetails = ({ route, navigation }) => {
     try {
       // Use the BY_ID endpoint from the TOURNAMENTS configuration
       const url = TOURNAMENTS.ENDPOINTS.BY_ID(tournamentId);
-      const response = await fetch(url);
+      const response = await authFetch(url);
       if (!response.ok) {
         throw new Error(`Server responded with ${response.status}`);
       }

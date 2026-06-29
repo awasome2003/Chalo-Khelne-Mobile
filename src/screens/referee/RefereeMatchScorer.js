@@ -20,6 +20,8 @@ import * as ScreenOrientation from "expo-screen-orientation";
 import axios from "axios";
 import API from "../../api/tournaments";
 import { useAuth } from "../../context/AuthContext";
+import CricketScorer from "./CricketScorer";
+import CarromScorer from "./CarromScorer";
 
 /**
  * Detects whether match format uses nested games (Tennis) or flat sets (TT, Badminton).
@@ -248,6 +250,29 @@ export default function RefereeMatchScorer() {
     "Player 2";
   const p1Short = (p1Name || "").split(" ")[0] || "P1";
   const p2Short = (p2Name || "").split(" ")[0] || "P2";
+
+  // Sport-type router: cricket (innings) and carrom (board) use dedicated
+  // touch scorers; everything else uses the set/points UI below.
+  const _scoringType = match.matchFormat?.scoringType || null;
+  if (_scoringType === "innings") {
+    return (
+      <CricketScorer
+        matchId={matchId} match={match} authConfig={authConfig}
+        onRefresh={fetchMatch} onBack={() => navigation.goBack()}
+        insets={insets} p1Name={p1Name} p2Name={p2Name}
+      />
+    );
+  }
+  if (_scoringType === "board") {
+    return (
+      <CarromScorer
+        matchId={matchId} match={match} authConfig={authConfig}
+        onRefresh={fetchMatch} onBack={() => navigation.goBack()}
+        insets={insets} p1Name={p1Name} p2Name={p2Name}
+      />
+    );
+  }
+
   const sets = Array.isArray(match.sets) ? match.sets : [];
   const p1SetsWon = sets.filter(
     (s) => s.status === "COMPLETED" && s.winner?.playerName === p1Name

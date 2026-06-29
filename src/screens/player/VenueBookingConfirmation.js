@@ -38,6 +38,13 @@ const formatDateFull = (raw) => {
 // "07:00 - 08:00" / "7:00 - 8:00" → "7:00 AM - 8:00 AM" (or PM)
 const formatTimeRange = (timeSlot) => {
   if (!timeSlot) return "";
+  // Multiple booked slots arrive comma-separated — format each part.
+  if (String(timeSlot).includes(",")) {
+    return String(timeSlot)
+      .split(",")
+      .map((p) => formatTimeRange(p.trim()))
+      .join(", ");
+  }
   const matches = timeSlot.match(/(\d{1,2}):(\d{2})/g);
   if (!matches || matches.length === 0) return timeSlot;
   const fmt = (t) => {
@@ -87,6 +94,7 @@ const VenueBookingConfirmation = ({ route }) => {
     type = "Turf Booking",
     date = null,
     time = null,
+    slotCount = 1,
     venue = null,
     amount = null,
     status = "Confirmed",
@@ -147,11 +155,13 @@ const VenueBookingConfirmation = ({ route }) => {
           turfName: b.turfName,
           sportName: b.sport?.name || type || "Not specified",
           date: b.date,
-          timeSlot: b.timeSlot,
+          // For a multi-slot order the fetched record is only the first slot —
+          // show all booked slot times and the full order total instead.
+          timeSlot: slotCount > 1 ? time : b.timeSlot,
           venue: b.turfId?.address
             ? `${b.turfId.address.area}, ${b.turfId.address.city}`
             : venue || "Venue not specified",
-          amount: b.amount,
+          amount: slotCount > 1 ? amount : b.amount,
           status: b.status,
           name: b.userName,
           email: b.userEmail,
