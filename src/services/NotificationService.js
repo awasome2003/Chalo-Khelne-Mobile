@@ -110,7 +110,16 @@ class NotificationService {
 
       return token;
     } catch (error) {
-      console.error("Error registering push token:", error);
+      const msg = String(error?.message || error);
+      // Android push needs FCM set up (google-services.json + FCM credentials +
+      // a native rebuild). Until that one-time step is done, this fails
+      // expectedly — log a calm one-liner instead of a scary red error. The app
+      // is unaffected (returns null). Other, unexpected errors still surface.
+      if (/FirebaseApp is not initialized|Default FirebaseApp|FirebaseApp\.initializeApp|fcm-credentials/i.test(msg)) {
+        console.log("[PUSH] Skipped — FCM not configured on this build (add google-services.json + FCM credentials, then rebuild).");
+      } else {
+        console.warn("[PUSH] Could not register push token:", msg);
+      }
       return null;
     }
   };

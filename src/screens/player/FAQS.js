@@ -26,8 +26,8 @@ const faqData = [
   },
   {
     id: 3,
-    question: "Who can use Chalo Khelne ?",
-    answer: "Anyone who wants to organize or participate in sports tournaments, including sports enthusiasts, clubs, schools, and organizations.",
+    question: "How do I book a turf or venue ?",
+    answer: "Open the Turf tab, pick a venue, choose your date, time slot and court, then confirm. You can pay online or select pay-at-venue.",
   },
   {
     id: 4, question: "Can I customize the tournament format ?",
@@ -35,8 +35,8 @@ const faqData = [
   },
   {
     id: 5,
-    question: "Who can use Chalo Khelne ?",
-    answer: "Anyone who wants to organize or participate in sports tournaments, including sports enthusiasts, clubs, schools, and organizations.",
+    question: "Can I buy or sell sports equipment on the app ?",
+    answer: "Yes. Browse the Store to buy gear, or use 'Sell Now' to list your own equipment for sale or donation.",
   },
   { id: 6, question: "Is there a fee to use Chalo Khelne ?", answer: "No, Chalo Khelne is completely free to use. You can access all the essential features without any charges." },
   {

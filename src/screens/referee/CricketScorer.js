@@ -6,6 +6,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import axios from "axios";
 import API from "../../api/tournaments";
+import { scoreErrorMessage } from "../../utils/scoreError";
 
 /**
  * Mobile cricket (innings) scorer — touch-first.
@@ -67,7 +68,7 @@ export default function CricketScorer({ matchId, match, authConfig, onRefresh, o
       await onRefresh();
       return res;
     } catch (e) {
-      Alert.alert("Error", e?.response?.data?.message || "Could not record");
+      Alert.alert("Cannot record", scoreErrorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -114,7 +115,7 @@ export default function CricketScorer({ matchId, match, authConfig, onRefresh, o
               ]);
             } else { await onRefresh(); }
           } catch (e) {
-            Alert.alert("Error", e?.response?.data?.message || "Could not finish");
+            Alert.alert("Cannot finish match", scoreErrorMessage(e));
           } finally { setBusy(false); }
         },
       },

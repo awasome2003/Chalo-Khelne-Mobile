@@ -794,26 +794,20 @@ const StoreStack = () => {
 // Custom Tab Bar component (friend's redesign — green pill style with descriptor-based hide)
 const CustomTabBar = ({ state, descriptors, navigation, insets }) => {
   const route = state.routes[state.index];
-  const focusedRoute = getFocusedRouteNameFromRoute(route);
   const focusedOptions = descriptors[route.key].options;
 
-  // Hide tab bar when the focused screen explicitly opts out via tabBarStyle.display === "none"
+  // Show the tab bar EVERYWHERE by default; hide it only when the focused nested
+  // screen explicitly opts out via tabBarStyle: { display: 'none' } (React
+  // Navigation propagates the focused child's tabBarStyle up to here).
+  //
+  // The previous "backup whitelist" of allowed root-screen names was removed:
+  // getFocusedRouteNameFromRoute() is undefined right after a fresh mount (so a
+  // restart always showed the bar) but resolves to the real route name once the
+  // navigation state settles. Any screen not in that short whitelist then made
+  // this return null and UNMOUNT the whole bar — the intermittent
+  // "navbar disappears on Home after login" bug. Now the bar can't wrongly hide
+  // on a root screen, because roots never set display:'none'.
   if (focusedOptions?.tabBarStyle?.display === "none") {
-    return null;
-  }
-
-  // Backup whitelist of root screens where the tab bar is allowed.
-  const showOnScreens = [
-    "PlayerHome",
-    "EventScreen",
-    "SocialHome",
-    "Play",
-    "EquipmentHub",
-    "Player Profile",
-    undefined, // initial route of a stack
-  ];
-
-  if (focusedRoute && !showOnScreens.includes(focusedRoute)) {
     return null;
   }
 

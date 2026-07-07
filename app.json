@@ -41,7 +41,8 @@
       ],
       "expo-font",
       "@react-native-google-signin/google-signin",
-      "expo-secure-store"
+      "expo-secure-store",
+      "@sentry/react-native"
     ],
     "ios": {
       "supportsTablet": true,

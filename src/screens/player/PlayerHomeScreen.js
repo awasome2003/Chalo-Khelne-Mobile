@@ -891,7 +891,17 @@ const PlayerHomeScreen = () => {
                     key={`${item.name}-${index}`}
                     style={styles.sportItem}
                     activeOpacity={0.85}
-                    onPress={() => navigation.navigate("SportsLibrary")}
+                    onPress={() =>
+                      navigation.navigate("SportDetails", {
+                        // Go straight to this sport's page. Slug is derived the
+                        // same way the backend generates it (name → lower, spaces→-),
+                        // and name is passed so the header shows while it fetches.
+                        sport: {
+                          name: item.name,
+                          slug: item.slug || item.name.toLowerCase().replace(/\s+/g, "-"),
+                        },
+                      })
+                    }
                   >
                     <View>
                       <Image source={item.icon} style={styles.sportIcon} />

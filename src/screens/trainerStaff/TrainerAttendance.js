@@ -12,6 +12,15 @@ import { colors } from "../../theme";
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+// Current wall-clock as "HH:mm" (24h) — what we store for coach check-in/out.
+const nowHM = () => { const d = new Date(); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+// "HH:mm" → "3:45 PM" for display.
+const fmtHM = (t) => {
+  const m = String(t || "").match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return "—";
+  let h = +m[1]; const ap = h >= 12 ? "PM" : "AM"; h = h % 12 || 12;
+  return `${h}:${m[2]} ${ap}`;
+};
 
 export default function TrainerAttendance() {
   const [date, setDate] = useState(new Date());
@@ -20,7 +29,9 @@ export default function TrainerAttendance() {
   const [students, setStudents] = useState([]);       // school roster for the standard
   const [self, setSelf] = useState(null);             // "present" | "absent" | null
   const [selfReason, setSelfReason] = useState("");   // required when self === "absent"
-  const [marks, setMarks] = useState({});             // { studentId: "present"|"absent" }
+  const [checkInTime, setCheckInTime] = useState(""); // "HH:mm" — coach check-in
+  const [checkOutTime, setCheckOutTime] = useState(""); // "HH:mm" — coach check-out
+  const [marks, setMarks] = useState({});             // { studentId: "present"|"absent"|"leave" }
   const [loadingSched, setLoadingSched] = useState(true);
   const [loadingSession, setLoadingSession] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -57,7 +68,7 @@ export default function TrainerAttendance() {
 
   // Load the standard's students + existing attendance for this session/date.
   const loadSession = useCallback(async () => {
-    if (!session) { setStudents([]); setSelf(null); setSelfReason(""); setMarks({}); return; }
+    if (!session) { setStudents([]); setSelf(null); setSelfReason(""); setCheckInTime(""); setCheckOutTime(""); setMarks({}); return; }
     setLoadingSession(true);
     try {
       const [stu, att] = await Promise.all([
@@ -67,9 +78,11 @@ export default function TrainerAttendance() {
       setStudents(stu.data?.students || []);
       setSelf(att.data?.self || null);
       setSelfReason(att.data?.selfReason || "");
+      setCheckInTime(att.data?.checkInTime || "");
+      setCheckOutTime(att.data?.checkOutTime || "");
       setMarks(att.data?.students || {});
     } catch {
-      setStudents([]); setSelf(null); setSelfReason(""); setMarks({});
+      setStudents([]); setSelf(null); setSelfReason(""); setCheckInTime(""); setCheckOutTime(""); setMarks({});
     } finally {
       setLoadingSession(false);
     }
@@ -97,6 +110,8 @@ export default function TrainerAttendance() {
         standard: session.standard,
         self,
         selfReason: self === "absent" ? selfReason.trim() : "",
+        checkInTime: self === "present" ? checkInTime : "",
+        checkOutTime: self === "present" ? checkOutTime : "",
         students: students.map((s) => ({ studentId: s._id, status: marks[s._id] })).filter((x) => x.status),
       });
       Alert.alert("Saved", "Attendance saved.");
@@ -165,6 +180,28 @@ export default function TrainerAttendance() {
                   </View>
                 </View>
 
+                {self === "present" && (
+                  <View style={styles.checkCard}>
+                    <View style={styles.checkCol}>
+                      <Text style={styles.checkLabel}>Check-in</Text>
+                      <Text style={styles.checkTime}>{checkInTime ? fmtHM(checkInTime) : "Not set"}</Text>
+                      <TouchableOpacity onPress={() => setCheckInTime(nowHM())} style={styles.checkBtn}>
+                        <Ionicons name="log-in-outline" size={15} color={"#15A765"} />
+                        <Text style={styles.checkBtnText}>{checkInTime ? "Update" : "Check in"}</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <View style={styles.checkDivider} />
+                    <View style={styles.checkCol}>
+                      <Text style={styles.checkLabel}>Check-out</Text>
+                      <Text style={styles.checkTime}>{checkOutTime ? fmtHM(checkOutTime) : "Not set"}</Text>
+                      <TouchableOpacity onPress={() => setCheckOutTime(nowHM())} style={styles.checkBtn}>
+                        <Ionicons name="log-out-outline" size={15} color={"#F59E0B"} />
+                        <Text style={styles.checkBtnText}>{checkOutTime ? "Update" : "Check out"}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+
                 {self === "absent" && (
                   <View style={styles.reasonBox}>
                     <Text style={styles.reasonLabel}>Reason for your absence *</Text>
@@ -204,6 +241,7 @@ export default function TrainerAttendance() {
                         <View style={styles.toggleRow}>
                           <Toggle label="P" active={marks[s._id] === "present"} tone="present" small onPress={() => setMarks((m) => ({ ...m, [s._id]: "present" }))} />
                           <Toggle label="A" active={marks[s._id] === "absent"} tone="absent" small onPress={() => setMarks((m) => ({ ...m, [s._id]: "absent" }))} />
+                          <Toggle label="L" active={marks[s._id] === "leave"} tone="leave" small onPress={() => setMarks((m) => ({ ...m, [s._id]: "leave" }))} />
                         </View>
                       </View>
                     ))}
@@ -223,7 +261,7 @@ export default function TrainerAttendance() {
 }
 
 function Toggle({ label, active, tone, small, onPress }) {
-  const activeBg = tone === "present" ? "#15A765" : colors.error;
+  const activeBg = tone === "present" ? "#15A765" : tone === "leave" ? "#F59E0B" : colors.error;
   return (
     <TouchableOpacity onPress={onPress}
       style={[small ? styles.toggleSmall : styles.toggle, active && { backgroundColor: activeBg, borderColor: activeBg }]}>
@@ -253,6 +291,13 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 15, fontFamily: "Montserrat_600SemiBold", fontWeight: "800", color: colors.text, marginTop: 18 },
   selfCard: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: colors.white, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: colors.border, marginTop: 8 },
   selfLabel: { fontSize: 14, fontFamily: "Montserrat_500Medium", fontWeight: "600", color: colors.text },
+  checkCard: { flexDirection: "row", alignItems: "stretch", backgroundColor: colors.white, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: colors.border, marginTop: 8 },
+  checkCol: { flex: 1, alignItems: "center" },
+  checkDivider: { width: 1, backgroundColor: colors.border, marginHorizontal: 12 },
+  checkLabel: { fontSize: 12, fontFamily: "Montserrat_500Medium", fontWeight: "600", color: colors.textSub },
+  checkTime: { fontSize: 16, fontFamily: "Montserrat_600SemiBold", fontWeight: "800", color: colors.text, marginTop: 4 },
+  checkBtn: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 8, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background },
+  checkBtnText: { fontSize: 12, fontFamily: "Montserrat_600SemiBold", fontWeight: "700", color: colors.text },
   reasonBox: { marginTop: 10 },
   reasonLabel: { fontSize: 12, fontFamily: "Montserrat_600SemiBold", fontWeight: "700", color: colors.error, marginBottom: 6 },
   reasonInput: { minHeight: 64, backgroundColor: colors.white, borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingTop: 10, paddingBottom: 10, fontSize: 14, fontFamily: "Montserrat_400Regular", color: colors.text, textAlignVertical: "top" },

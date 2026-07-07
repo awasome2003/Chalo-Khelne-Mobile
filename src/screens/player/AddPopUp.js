@@ -186,8 +186,9 @@ const AddPopUpModal = ({
 
       setLoading(true);
 
-      // Ensure valid token
-      const authToken = token || (await AsyncStorage.getItem(TOKEN_KEY));
+      // Ensure valid token (context is source of truth; global axios
+      // interceptor attaches the live token on the request itself).
+      const authToken = token;
       if (!isAuthenticated || !authToken) {
         Alert.alert("Authentication Required", "Please sign in to create a post");
         setLoading(false);

@@ -426,7 +426,7 @@ const DonationDetailScreen = () => {
               onPress={async () => {
                 try {
                   await axios.post(
-                    `${DONATIONS.LISTINGS}/../vendor-click/${listing._id}`
+                    DONATIONS.ENDPOINTS.VENDOR_CLICK(listing._id)
                   );
                 } catch {}
                 Linking.openURL(listing.vendorLink);

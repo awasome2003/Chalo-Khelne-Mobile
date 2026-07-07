@@ -20,15 +20,20 @@ function detectDevHost() {
 }
 
 // ──────────────────────────────────────────────────────────────
-// 👉 SWITCH SERVER: keep exactly ONE line below uncommented.
-//    Comment the active one and uncomment the other to switch.
+// Server URL is ENV-DRIVEN — no more comment-toggling a line before release.
+//   EXPO_PUBLIC_SERVER_URL : explicit override (wins if set)
+//   EXPO_PUBLIC_ENV        : "production" | "staging" | "development" (default)
+// Development falls back to the auto-detected LAN IP so phone + laptop just
+// work. Configure these in `.env` (see `.env.example`).
 // ──────────────────────────────────────────────────────────────
-
-// LOCAL — development (auto-detects this machine's LAN IP from Metro)
-const SERVER_URL = `http://${detectDevHost()}:3003`;
-
-// LIVE — production
-// const SERVER_URL = "https://chalokhelne.com";
+const ENV = process.env.EXPO_PUBLIC_ENV || "development";
+const ENV_URLS = {
+  production: "https://chalokhelne.com",
+  staging: "https://chalo-khelne-backend-hp3z.onrender.com",
+  development: `http://${detectDevHost()}:3003`,
+};
+const SERVER_URL =
+  process.env.EXPO_PUBLIC_SERVER_URL || ENV_URLS[ENV] || ENV_URLS.development;
 
 const Wbsite_SERVER_URL = SERVER_URL; // kept for existing imports
 const BASE_URL = `${SERVER_URL}/api`;

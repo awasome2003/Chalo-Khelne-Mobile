@@ -16,6 +16,10 @@ import { queryClient } from "./src/config/queryClient";
 import FlashMessage from "react-native-flash-message";
 import Toast from 'react-native-toast-message';
 import NotificationService from "./src/services/NotificationService";
+import { initSentry, Sentry } from "./src/services/sentry";
+
+// Initialize crash reporting as early as possible (no-op until a DSN is set).
+initSentry();
 
 const linking = {
   prefixes: ["chalokhelne://"],
@@ -45,7 +49,7 @@ const linking = {
   },
 };
 
-export default function App() {
+function App() {
   const navigationRef = useNavigationContainerRef();
   const lastBackPressRef = useRef(0);
 
@@ -117,3 +121,7 @@ export default function App() {
     </SafeAreaProvider>
   );
 }
+
+// Sentry.wrap adds error-boundary + touch/navigation breadcrumbs. Harmless when
+// Sentry is not initialized (no DSN), so it's safe to wrap unconditionally.
+export default Sentry.wrap(App);

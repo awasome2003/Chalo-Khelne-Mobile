@@ -43,6 +43,34 @@ function hasNestedGames(fmt) {
   return false;
 }
 
+// Turn a scoring API error into a clean, human message for the umpire — so a
+// 403 reads as a real explanation instead of a silent failure / raw status.
+function sbScoreErrorMessage(err) {
+  const status = err?.response?.status;
+  const serverMsg = err?.response?.data?.message || err?.response?.data?.error || "";
+  const m = String(serverMsg).toLowerCase();
+  if (status === 403) {
+    if (m.includes("not a scorer")) {
+      return "You're not authorised to score this match yet. Ask the organiser to assign you, then accept the match invitation before scoring.";
+    }
+    if (m.includes("permission") || m.includes("access denied")) {
+      return "You don't have permission to update scores. Ask the tournament organiser to give you scoring access.";
+    }
+    return serverMsg || "You're not allowed to update this score.";
+  }
+  if (status === 400 && (m.includes("not in progress") || m.includes("completed") || m.includes("already finished"))) {
+    if (m.includes("completed") || m.includes("already finished")) {
+      return "This match is already completed — its score can't be changed.";
+    }
+    return "This match hasn't been started yet. Start the match before scoring.";
+  }
+  if (status === 401) return "Your session has expired. Please log in again and retry.";
+  if (err?.message === "Network Error" || !err?.response) {
+    return "Network problem — check your connection and try again.";
+  }
+  return serverMsg || "Could not update the score. Please try again.";
+}
+
 const TournamentLeaderboardDetail = ({ route, navigation }) => {
   const { tournament, tournamentId, tournamentName, tournamentType } = route.params;
   const { user, token } = useAuth();
@@ -215,6 +243,7 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
     const p2Id = m.player2?.playerId?._id || m.player2?.playerId || m.player2?._id;
     setScoreboardMatch({
       matchId: m._id,
+      groupId: m.groupId || m.group || null, // stage signal — group matches only
       playerAName: p1Name,
       playerBName: p2Name,
       playerAId: p1Id,
@@ -352,7 +381,7 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
       );
       if (autoCheck) sbCheckGameCompletion(a, b);
     } catch (err) {
-      console.error('Error updating live score:', err);
+      console.error('Error updating live score:', err?.response?.status, JSON.stringify(err?.response?.data));
       throw err;
     }
   };
@@ -366,8 +395,8 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
       setSbPlayerBPoints(0);
       await sbUpdateLiveScore(0, 0, false);
     } catch (err) {
-      console.error('Error resetting scores:', err);
-      sbShowAlert('Error', 'Failed to reset scores');
+      console.error('Error resetting scores:', err?.response?.status, JSON.stringify(err?.response?.data));
+      sbShowAlert('Cannot reset scores', sbScoreErrorMessage(err));
     } finally {
       setSbButtonDisabled(false);
       setSbMessage('');
@@ -468,8 +497,8 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
         sbSyncScoreToPointsTable();
       }
     } catch (err) {
-      console.error('Error completing game:', err);
-      sbShowAlert('Error', err?.response?.data?.message || err.message || 'Failed to complete game');
+      console.error('Error completing game:', err?.response?.status, JSON.stringify(err?.response?.data));
+      sbShowAlert('Cannot complete game', sbScoreErrorMessage(err));
     }
   };
 
@@ -478,15 +507,21 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
     setSbTapCooldown(true);
     setSbButtonDisabled(true);
     setSbMessage('Please wait...');
+    const prevA = sbPlayerAPoints;
+    const prevB = sbPlayerBPoints;
     try {
-      const newA = isA ? sbPlayerAPoints + 1 : sbPlayerAPoints;
-      const newB = isA ? sbPlayerBPoints : sbPlayerBPoints + 1;
+      const newA = isA ? prevA + 1 : prevA;
+      const newB = isA ? prevB : prevB + 1;
       if (isA) setSbPlayerAPoints(newA);
       else setSbPlayerBPoints(newB);
       await sbUpdateLiveScore(newA, newB);
     } catch (err) {
-      console.error('Error incrementing player:', err);
-      sbShowAlert('Error', 'Failed to update score');
+      // Server rejected the update — revert the optimistic bump so the board
+      // never shows a point that wasn't actually saved.
+      setSbPlayerAPoints(prevA);
+      setSbPlayerBPoints(prevB);
+      console.error('Error incrementing player:', err?.response?.status, JSON.stringify(err?.response?.data));
+      sbShowAlert('Cannot update score', sbScoreErrorMessage(err));
     } finally {
       setTimeout(() => {
         setSbTapCooldown(false);
@@ -497,25 +532,38 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
   };
 
   const sbDecrementPlayer = async (isA) => {
-    if (isA && sbPlayerAPoints > 0) {
-      const newA = sbPlayerAPoints - 1;
-      setSbPlayerAPoints(newA);
-      await sbUpdateLiveScore(newA, sbPlayerBPoints, false);
-    } else if (!isA && sbPlayerBPoints > 0) {
-      const newB = sbPlayerBPoints - 1;
-      setSbPlayerBPoints(newB);
-      await sbUpdateLiveScore(sbPlayerAPoints, newB, false);
+    const prevA = sbPlayerAPoints;
+    const prevB = sbPlayerBPoints;
+    try {
+      if (isA && prevA > 0) {
+        const newA = prevA - 1;
+        setSbPlayerAPoints(newA);
+        await sbUpdateLiveScore(newA, prevB, false);
+      } else if (!isA && prevB > 0) {
+        const newB = prevB - 1;
+        setSbPlayerBPoints(newB);
+        await sbUpdateLiveScore(prevA, newB, false);
+      }
+    } catch (err) {
+      // Server rejected — revert the optimistic decrement so the board stays
+      // truthful, and surface the reason (mirrors sbIncrementPlayer).
+      setSbPlayerAPoints(prevA);
+      setSbPlayerBPoints(prevB);
+      console.error('Error decrementing player:', err?.response?.status, JSON.stringify(err?.response?.data));
+      sbShowAlert('Cannot update score', sbScoreErrorMessage(err));
     }
   };
 
   const sbSyncScoreToPointsTable = async () => {
     try {
-      if (
-        sbMatchData?.round &&
-        ['pre-quarter', 'quarter-final', 'semi-final', 'final'].includes(sbMatchData.round)
-      ) {
-        return; // skip knockout
-      }
+      // Points-table sync applies ONLY to group-stage matches — they live in the
+      // group Match model that the sync endpoint reads. Knockout matches live in
+      // other models, so syncing them 404s ("Match not found"). Detect the stage
+      // the same way the server / umpireAuth do: group matches carry a groupId.
+      // (The old check only skipped 4 named knockout rounds, so knockout matches
+      // with any other round value slipped through and 404'd after a set.)
+      const isGroupStage = !!(scoreboardMatch?.groupId || sbMatchData?.groupId);
+      if (!isGroupStage) return; // knockout / non-group → nothing to sync
       await axios.post(
         `${API.BASE_URL}/tournaments/matches/${scoreboardMatch.matchId}/sync-scores`,
         {},
@@ -544,27 +592,48 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
     setSbButtonDisabled(true);
     setSbMessage('Submitting all game scores...');
     try {
+      let submitted = 0;
+      let stoppedEarly = false;
       for (let i = 0; i < games.length; i++) {
         const g = games[i];
         const a = parseInt(g.a, 10);
         const b = parseInt(g.b, 10);
         if (Number.isNaN(a) || Number.isNaN(b)) continue;
         setSbMessage(`Submitting game ${i + 1} of ${games.length}...`);
-        await axios.post(
-          `${API.BASE_URL}/tournaments/matches/${scoreboardMatch.matchId}/complete-game`,
-          { finalPlayer1Points: a, finalPlayer2Points: b },
-          sbAuthConfig
-        );
+        try {
+          await axios.post(
+            `${API.BASE_URL}/tournaments/matches/${scoreboardMatch.matchId}/complete-game`,
+            { finalPlayer1Points: a, finalPlayer2Points: b },
+            sbAuthConfig
+          );
+          submitted++;
+        } catch (err) {
+          // Best-of-N matches finish once a player wins enough sets; the backend
+          // then rejects any further games as "already completed". That's the
+          // correct end state (the deciding games were already accepted), not a
+          // failure — so stop submitting the extra dead-rubber games.
+          const msg = String(err?.response?.data?.message || '').toLowerCase();
+          const matchDone =
+            err?.response?.status === 400 &&
+            (msg.includes('completed') || msg.includes('already finished') || msg.includes('not in progress'));
+          if (matchDone && submitted > 0) { stoppedEarly = true; break; }
+          throw err; // genuine error (or completed before any game) → outer catch
+        }
         await new Promise((r) => setTimeout(r, 500));
       }
       await sbInitializeMatch();
       await sbSyncScoreToPointsTable();
       const totalSets = sbMatchFormat?.totalSets || 5;
       setSbManualGames(Array(totalSets).fill().map(() => ({ a: '', b: '' })));
-      sbShowAlert('Success', 'All game scores submitted successfully!');
+      sbShowAlert(
+        'Success',
+        stoppedEarly
+          ? 'Scores saved — the match was decided before the remaining games.'
+          : 'All game scores submitted successfully!'
+      );
     } catch (err) {
-      console.error('Bulk submission error:', err);
-      sbShowAlert('Error', err?.response?.data?.message || err.message || 'Failed to submit some scores.');
+      console.error('Bulk submission error:', err?.response?.status, JSON.stringify(err?.response?.data));
+      sbShowAlert('Cannot submit scores', sbScoreErrorMessage(err));
       await sbInitializeMatch();
     } finally {
       setSbButtonDisabled(false);
@@ -1272,8 +1341,13 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
           // umpires) opens the read-only match details modal — same pattern
           // as the knockout bracket cards (~line 1791).
           const canScore = isAuthorizedForMatch(match);
-          const isCompleted = match.status === 'COMPLETED' || match.status === 'completed';
-          const canOpenScorer = canScore && !isCompleted;
+          const isCompleted = String(match.status || '').toLowerCase() === 'completed';
+          // A bye has no real opponent — auto-decided, never scoreable.
+          const isBye = match.isBye === true || ['player1', 'player2'].some((k) => {
+            const n = match[k]?.playerName || match[k]?.userName || match[k]?.name;
+            return n === 'BYE' || n === 'Bye';
+          });
+          const canOpenScorer = canScore && !isCompleted && !isBye;
           const matchLabel = match.matchNumber
             ? `M${match.matchNumber} • ${(match.player1?.userName || match.player1?.playerName || 'P1')} vs ${(match.player2?.userName || match.player2?.playerName || 'P2')}`
             : (tournamentName || 'Match');
@@ -2209,7 +2283,9 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
                           const p2Score = match.score?.player2Sets ?? match.result?.finalScore?.player2Sets ?? match.result?.player2Sets ?? 0;
 
                           const isLive = match.status === 'in-progress';
-                          const isCompleted = match.status === 'completed';
+                          const isCompleted = String(match.status || '').toLowerCase() === 'completed';
+                          // A bye has no real opponent — it's auto-decided and never scoreable.
+                          const isBye = match.isBye === true || p1Name === 'BYE' || p2Name === 'BYE' || p1Name === 'Bye' || p2Name === 'Bye';
 
                           // Winner detection — try multiple fields, fall back to score compare
                           const winnerName =
@@ -2218,13 +2294,17 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
                             match.result?.winner?.playerName ||
                             match.matchResult?.winner?.playerName ||
                             null;
-                          const p1Won = isCompleted && (
+                          // A bye is a resolved result too — the real player advances
+                          // automatically (backend sets match.winner + status "BYE"),
+                          // so treat it like a completed match for winner highlighting.
+                          const resolved = isCompleted || isBye;
+                          const p1Won = resolved && (
                             (winnerName && winnerName === p1Name) ||
-                            (!winnerName && p1Score > p2Score)
+                            (!winnerName && (isBye ? p2Name === 'BYE' || p2Name === 'Bye' : p1Score > p2Score))
                           );
-                          const p2Won = isCompleted && (
+                          const p2Won = resolved && (
                             (winnerName && winnerName === p2Name) ||
-                            (!winnerName && p2Score > p1Score)
+                            (!winnerName && (isBye ? p1Name === 'BYE' || p1Name === 'Bye' : p2Score > p1Score))
                           );
 
                           // Highlighting Logic
@@ -2246,8 +2326,9 @@ const TournamentLeaderboardDetail = ({ route, navigation }) => {
                                   if (p1Id || p2Id) handlePlayerPress(p1Id || p2Id);
                                 }}
                                 onPress={() => {
-                                  // Authorized umpires open the in-screen scoreboard modal; everyone else opens the read-only modal.
-                                  if (isAuthorizedForMatch(match) && !isCompleted) {
+                                  // Authorized umpires open the in-screen scoreboard modal; everyone else
+                                  // (and byes / completed matches) opens the read-only modal.
+                                  if (isAuthorizedForMatch(match) && !isCompleted && !isBye) {
                                     openScoreboard(match);
                                   } else {
                                     setSelectedMatch(match);

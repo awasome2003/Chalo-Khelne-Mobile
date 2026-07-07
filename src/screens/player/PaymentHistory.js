@@ -90,24 +90,37 @@ const PaymentHistoryScreen = () => {
         axios.get(API.ENDPOINTS.TURF_BOOKINGS.USER_BOOKINGS(userId)),
         axios.get(TournamentConfig.ENDPOINTS.BOOKINGS.BY_USER(userId)),
       ]);
-      // Process turf bookings
-      // const turfBookings = turfResponse.data.success
-      //   ? turfResponse.data.bookings.map((booking) => ({
-      //       id: booking._id,
-      //       type: "Turf Booking",
-      //       title: booking.turfName || "Turf Booking",
-      //       date: new Date(booking.date),
-      //       dateStr: new Date(booking.date).toLocaleDateString(),
-      //       timeSlot: booking.timeSlot,
-      //       amount: booking.amount,
-      //       status: booking.status,
-      //       paymentStatus: booking.paymentStatus || "pending",
-      //       paymentMethod: booking.paymentMethod || "cash",
-      //       avatar: booking.turfId?.images?.[0]
-      //         ? { uri: `${API.UPLOADS_URL}/${booking.turfId.images[0]}` }
-      //         : require("../../../assets/turf.jpg"),
-      //     }))
-      //   : [];
+      // Process turf bookings with the same robust shape handling as tournaments
+      // (backend has been observed returning array / {data} / {bookings} / {payments}).
+      const turfRaw = Array.isArray(turfResponse.data)
+        ? turfResponse.data
+        : Array.isArray(turfResponse.data?.data)
+          ? turfResponse.data.data
+          : Array.isArray(turfResponse.data?.bookings)
+            ? turfResponse.data.bookings
+            : Array.isArray(turfResponse.data?.payments)
+              ? turfResponse.data.payments
+              : [];
+
+      const turfBookings = turfRaw.map((booking) => {
+        const createdAt = booking.createdAt || booking.date || Date.now();
+        const status = booking.status || booking.paymentStatus || "pending";
+        return {
+          id: booking._id || booking.id,
+          type: "Turf Booking",
+          title: booking.turfName || "Turf Booking",
+          date: new Date(createdAt),
+          dateStr: new Date(createdAt).toLocaleDateString(),
+          timeSlot: booking.timeSlot,
+          amount: booking.amount || booking.paymentAmount || 0,
+          status,
+          paymentStatus: booking.paymentStatus || status,
+          paymentMethod: booking.paymentMethod || "cash",
+          avatar: booking.turfId?.images?.[0]
+            ? { uri: `${API.UPLOADS_URL}/${booking.turfId.images[0]}` }
+            : require("../../../assets/turf.jpg"),
+        };
+      });
 
       // Process tournament bookings with robust shape handling
       const tRaw = Array.isArray(tournamentResponse.data)
@@ -145,7 +158,7 @@ const PaymentHistoryScreen = () => {
       });
 
       // Combine all transactions and sort by date (newest first)
-      const allTransactions = [...tournamentBookings].sort(
+      const allTransactions = [...turfBookings, ...tournamentBookings].sort(
         (a, b) => b.date - a.date
       );
 
@@ -744,21 +757,16 @@ const PaymentHistoryScreen = () => {
         <View style={styles.emptyContainer}>
           <MaterialIcons name="receipt-long" size={60} color="#ddd" />
           <Text style={styles.emptyText}>
-            {search ||
-              Object.keys(appliedFilters).length > 0 ||
-              selectedTab !== "All Payments"
+            {search || Object.keys(appliedFilters).length > 0
               ? "No transactions match your search or filters"
               : "No payment history found"}
           </Text>
-          {(search ||
-            Object.keys(appliedFilters).length > 0 ||
-            selectedTab !== "All Payments") && (
+          {(search || Object.keys(appliedFilters).length > 0) && (
               <TouchableOpacity
                 style={styles.clearSearchButton}
                 onPress={() => {
                   setSearch("");
                   clearAppliedFilters();
-                  setSelectedTab("All Payments");
                 }}
               >
                 <Text style={styles.clearSearchText}>Clear All Filters</Text>

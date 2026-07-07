@@ -1,5 +1,6 @@
 import React from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { createStackNavigator } from "@react-navigation/stack";
 import { Ionicons } from "@expo/vector-icons";
 import TrainerStaffHome from "../screens/trainerStaff/TrainerStaffHome";
 import TrainerSchedule from "../screens/trainerStaff/TrainerSchedule";
@@ -7,14 +8,17 @@ import TrainerSyllabus from "../screens/trainerStaff/TrainerSyllabus";
 import TrainerProgress from "../screens/trainerStaff/TrainerProgress";
 import TrainerAttendance from "../screens/trainerStaff/TrainerAttendance";
 import TrainerProfile from "../screens/trainerStaff/TrainerProfile";
+import TrainerLeave from "../screens/trainerStaff/TrainerLeave";
+import TrainerSessionChange from "../screens/trainerStaff/TrainerSessionChange";
 import { colors } from "../theme";
 
 const Tab = createBottomTabNavigator();
+const Stack = createStackNavigator();
 
 // Bottom-tab navigator for club-staff trainers / coaches (Manager accounts).
 // Home = their sports; Schedule = the admin-set timetable; Attendance = mark
 // self + students; Profile = edit + change password + attendance history.
-export default function TrainerStaffNavigator() {
+function TrainerTabs() {
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -41,5 +45,17 @@ export default function TrainerStaffNavigator() {
       <Tab.Screen name="Attendance" component={TrainerAttendance} />
       <Tab.Screen name="Profile" component={TrainerProfile} />
     </Tab.Navigator>
+  );
+}
+
+// Stack wrapper so coach request flows (Apply for Leave, Request Session Change)
+// can be pushed over the tabs from Home without crowding the tab bar.
+export default function TrainerStaffNavigator() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="TrainerTabs" component={TrainerTabs} />
+      <Stack.Screen name="TrainerLeave" component={TrainerLeave} />
+      <Stack.Screen name="TrainerSessionChange" component={TrainerSessionChange} />
+    </Stack.Navigator>
   );
 }

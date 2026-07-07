@@ -6,6 +6,7 @@ import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import axios from "axios";
 import API from "../../api/tournaments";
+import { scoreErrorMessage } from "../../utils/scoreError";
 
 /**
  * Mobile carrom (board) scorer. Hydrates from match.liveScore and submits each
@@ -39,7 +40,7 @@ export default function CarromScorer({ matchId, match, authConfig, onRefresh, on
       setPoints(""); setQueen(false);
       await onRefresh();
     } catch (e) {
-      Alert.alert("Error", e?.response?.data?.message || "Could not record board");
+      Alert.alert("Cannot record board", scoreErrorMessage(e));
     } finally { setBusy(false); }
   };
 

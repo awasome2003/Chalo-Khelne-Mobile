@@ -20,6 +20,7 @@ import * as ScreenOrientation from "expo-screen-orientation";
 import axios from "axios";
 import API from "../../api/tournaments";
 import { useAuth } from "../../context/AuthContext";
+import { scoreErrorMessage } from "../../utils/scoreError";
 import CricketScorer from "./CricketScorer";
 import CarromScorer from "./CarromScorer";
 
@@ -119,7 +120,7 @@ export default function RefereeMatchScorer() {
       setHistory([]);
       await fetchMatch();
     } catch (e) {
-      setError(e?.response?.data?.message || e.message || "Submission failed.");
+      setError(scoreErrorMessage(e));
     } finally {
       setSubmitting(false);
     }

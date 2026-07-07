@@ -6,6 +6,7 @@ const ENDPOINTS = {
   // Public
   LISTINGS: `${BASE_URL}/donations/listings`,
   LISTING_BY_ID: (id) => `${BASE_URL}/donations/listings/${id}`,
+  VENDOR_CLICK: (id) => `${BASE_URL}/donations/vendor-click/${id}`,
 
   // Authenticated
   CREATE: `${BASE_URL}/donations/list`,

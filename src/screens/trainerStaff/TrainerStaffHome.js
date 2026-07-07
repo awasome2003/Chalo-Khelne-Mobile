@@ -16,7 +16,7 @@ const GREEN = "#15A765";
 
 // Trainer / coach (or a substitute standing in for one) home. Shows assigned
 // sports, plus a substitute-request flow for coaches who'll be absent.
-export default function TrainerStaffHome() {
+export default function TrainerStaffHome({ navigation }) {
   const { user, token, logout } = useAuth();
   const isSubstitute = String(user?.role || "") === "Substitute";
 
@@ -196,6 +196,24 @@ export default function TrainerStaffHome() {
 
         {renderSubCard()}
 
+        {/* Quick actions — coach request flows (leave / session change) */}
+        <View style={styles.quickRow}>
+          <TouchableOpacity style={styles.quickCard} onPress={() => navigation?.navigate("TrainerLeave")}>
+            <View style={[styles.quickIcon, { backgroundColor: "rgba(21,167,101,0.10)" }]}>
+              <Ionicons name="calendar-outline" size={18} color={GREEN} />
+            </View>
+            <Text style={styles.quickTitle}>Apply for Leave</Text>
+            <Text style={styles.quickDesc}>Request days off</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.quickCard} onPress={() => navigation?.navigate("TrainerSessionChange")}>
+            <View style={[styles.quickIcon, { backgroundColor: "rgba(245,158,11,0.12)" }]}>
+              <Ionicons name="swap-horizontal-outline" size={18} color="#F59E0B" />
+            </View>
+            <Text style={styles.quickTitle}>Session Change</Text>
+            <Text style={styles.quickDesc}>Postpone / cancel</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* My Sports */}
         <Text style={styles.sectionTitle}>My Sports</Text>
         <Text style={styles.sectionSub}>Sports you've been assigned to train.</Text>
@@ -272,6 +290,11 @@ const styles = StyleSheet.create({
   endBtn: { marginTop: 12, height: 40, borderRadius: 10, borderWidth: 1, borderColor: colors.error, justifyContent: "center", alignItems: "center" },
   endBtnText: { color: colors.error, fontSize: 13, fontFamily: "Montserrat_600SemiBold", fontWeight: "700" },
 
+  quickRow: { flexDirection: "row", gap: 12, marginBottom: 20 },
+  quickCard: { flex: 1, backgroundColor: colors.white, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: colors.border },
+  quickIcon: { width: 36, height: 36, borderRadius: 10, justifyContent: "center", alignItems: "center", marginBottom: 10 },
+  quickTitle: { fontSize: 14, fontFamily: "Montserrat_600SemiBold", fontWeight: "800", color: colors.text },
+  quickDesc: { fontSize: 12, fontFamily: "Montserrat_400Regular", color: colors.textSub, marginTop: 2 },
   sectionTitle: { fontSize: 16, fontFamily: "Montserrat_600SemiBold", fontWeight: "800", color: colors.text },
   sectionSub: { fontSize: 13, fontFamily: "Montserrat_400Regular", color: colors.textSub, marginTop: 2 },
   loadingBox: { paddingVertical: 32, alignItems: "center" },

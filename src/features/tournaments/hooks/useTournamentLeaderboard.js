@@ -12,7 +12,9 @@
  */
 import { useQuery } from "@tanstack/react-query";
 import axios from "axios";
-import API from "../../../api/api";
+// Endpoints live in api/tournaments (BOOKING_GROUPS / TOP_PLAYERS / MATCHES),
+// not the base api/api module — importing the wrong one made this hook throw.
+import API from "../../../api/tournaments";
 
 async function fetchGroups(tournamentId, activeSportId) {
   let endpoint = `${API.ENDPOINTS.BOOKING_GROUPS.BY_TOURNAMENT(tournamentId)}?mobile=true`;
